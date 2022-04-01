@@ -24,6 +24,12 @@ pub struct Generator {
     output_dir: String
 }
 
+impl Default for Generator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Generator {
     pub fn new() -> Generator {
         Generator { output_dir: env::temp_dir().display().to_string() }
