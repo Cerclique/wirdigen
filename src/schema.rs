@@ -43,10 +43,11 @@ pub const JSON_SCHEMA: &str = r#"
                         "type" : "string",
                         "enum" : ["none", "uint8", "uint16", "uint24", "uint32", "uint64", "int8", "int16", "int24", "int32", "int64", "framenum", "bool", "absolute_time", "relative_time", "float", "double", "string", "stringz", "bytes", "ubytes", "ipv4", "ipv6", "ether", "guid", "oid", "protocol", "rel_oid", "systemid", "eui64"] 
                     },
-                    "filter" : { 
-                        "type" : "string" 
+                    "filter_name" : { 
+                        "type" : "string", 
+                        "maxLength" : 20
                     },
-                    "short_description" : { 
+                    "description" : { 
                         "type" : "string",
                         "maxLength" : 50 
                     },
@@ -61,7 +62,7 @@ pub const JSON_SCHEMA: &str = r#"
                         "type" : "number"
                     }
                 },
-                "required" : ["name", "format", "filter", "short_description", "base", "offset", "size"]
+                "required" : ["name", "format", "filter_name", "description", "base", "offset", "size"]
             }
         }
     },

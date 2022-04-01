@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-pub struct Connection {
+pub(crate) struct Connection {
     pub protocol: String,
     pub ports: Vec<u16>
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct DataChunck {
+pub(crate) struct DataChunck {
     pub name: String,
     pub format: String,
     pub filter_name: String,
@@ -18,7 +18,7 @@ pub struct DataChunck {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Dissector {
+pub(crate) struct Dissector {
     pub name: String,
     pub connection: Connection,
     pub data: Vec<DataChunck>

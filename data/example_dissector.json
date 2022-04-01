@@ -8,8 +8,8 @@
         {
             "name" : "item_one",
             "format" : "uint8",
-            "filter" : "item_one_field",
-            "short_description" : "item one description",
+            "filter_name" : "item_one_field",
+            "description" : "item one description",
             "base" : "DEC",
             "offset" : 0,
             "size" : 1
@@ -17,8 +17,8 @@
         {
             "name" : "item_two",
             "format" : "uint32",
-            "filter" : "item_two_field",
-            "short_description" : "item two description",
+            "filter_name" : "item_two_field",
+            "description" : "item two description",
             "base" : "DEC",
             "offset" : 1,
             "size" : 4
@@ -26,8 +26,8 @@
         {
             "name" : "item_three",
             "format" : "uint16",
-            "filter" : "item_three_field",
-            "short_description" : "item three description",
+            "filter_name" : "item_three_field",
+            "description" : "item three description",
             "base" : "HEX",
             "offset" : 5,
             "size" : 2

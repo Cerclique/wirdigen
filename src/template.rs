@@ -1,4 +1,4 @@
-const DISSECTOR_TEMPLATE: &str = r#"
+pub(crate) const DISSECTOR_TEMPLATE: &str = r#"
 --[[
     Author: %PROJECT_NAME%
     Language: Lua
