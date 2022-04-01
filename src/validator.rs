@@ -27,17 +27,17 @@ impl Validator {
             Ok(data) => Ok(Validator { schema_value:  data })
         }
     } 
-}
 
-impl Validator {
     pub fn validate(self, json_raw: &Value) -> bool {
-        if let Err(errors) = self.schema_value.validate(json_raw) {
-            for err in errors {
-                println!("{:#?}", err);
-            }
-            return false
+        match self.schema_value.validate(json_raw) {
+            Err(errors) => {
+                for err in errors {
+                    eprintln!("{:#?}", err);
+                }
+                false
+            },
+            Ok(_) => true
         }
-        true
     }
 }
 
@@ -58,7 +58,7 @@ mod unit_test {
     fn validator_validate() -> Result<(), ValidatorError> {
         let mgr = Validator::new()?;
         
-        let file = File::open("./test/example_dissector.json").expect("A valid file");
+        let file = File::open("./data/example_dissector.json").expect("A valid file");
         let rdr = BufReader::new(file);
         let value: Value = serde_json::from_reader(rdr)?;
 
