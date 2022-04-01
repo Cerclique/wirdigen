@@ -3,6 +3,7 @@ use std::io::{Read, Write, BufWriter};
 use serde_json::Value;
 use regex::Regex;
 use chrono::offset::Local;
+use std::env;
 
 use crate::dissector::Dissector;
 use crate::keyword::Keyword;
@@ -19,29 +20,45 @@ pub enum GeneratorError {
     SerdeJsonError (#[from] serde_json::Error)
 }
 
-pub struct Generator;
+pub struct Generator {
+    output_dir: String
+}
 
 impl Generator {
-    pub fn from_reader<R>(rdr: R) -> Result<(), GeneratorError> where R : Read {
-        let json_value: Value = serde_json::from_reader(rdr)?;
-        Self::run(json_value)?;
-        Ok(())
-    }
-
-    pub fn from_value(value: Value) -> Result<(), GeneratorError> {
-        Self::run(value)?;
-        Ok(())
+    pub fn new() -> Generator {
+        Generator { output_dir: env::temp_dir().display().to_string() }
     }
 }
 
 impl Generator {
-    fn run(value: Value) -> Result<(), GeneratorError> {
-        let dissector: Dissector = serde_json::from_value(value)?;
-        Self::generate_dissector(dissector)?;
+    pub fn from_reader<R>(&self, rdr: R) -> Result<(), GeneratorError> where R : Read {
+        let json_value: Value = serde_json::from_reader(rdr)?;
+        self.run(json_value)?;
         Ok(())
     }
 
-    fn generate_dissector(dissector: Dissector) -> Result<(), GeneratorError> {
+    pub fn from_value(&self, value: Value) -> Result<(), GeneratorError> {
+        self.run(value)?;
+        Ok(())
+    }
+
+    pub fn set_output_directory(&mut self, dir_path: &str) {
+        self.output_dir = dir_path.to_string();
+    }
+
+    pub fn get_output_directory(&self) -> &str {
+        &self.output_dir
+    }
+}
+
+impl Generator {
+    fn run(&self, value: Value) -> Result<(), GeneratorError> {
+        let dissector: Dissector = serde_json::from_value(value)?;
+        self.generate_dissector(dissector)?;
+        Ok(())
+    }
+
+    fn generate_dissector(&self, dissector: Dissector) -> Result<(), GeneratorError> {
         // Load template from string constant
         let mut output_data: String = String::from(DISSECTOR_TEMPLATE);
 
@@ -137,7 +154,7 @@ impl Generator {
         output_data =
             Self::find_and_replace_all(&output_data, Keyword::Ports.as_str(), &ports_buffer);
 
-        let output_filename: String = format!("data/dissector_{}.lua", dissector.name);
+        let output_filename: String = format!("{}/dissector_{}.lua", self.output_dir, dissector.name);
 
         let output_file = File::create(output_filename)?;
         let mut f = BufWriter::new(output_file);
@@ -170,12 +187,29 @@ mod unit_test {
     }
 
     #[test]
+    fn generator_set_output_directory() {
+        let output_dir: &str = "/tmp/null";
+
+        let mut gen = Generator::new();
+        
+        let expected = "/tmp";
+        assert_eq!(gen.get_output_directory(), expected);
+
+        gen.set_output_directory(output_dir);
+        
+        let expected = output_dir;
+        assert_eq!(gen.get_output_directory(), expected);
+    }
+
+    #[test]
     fn generator_generate_dissector() -> Result<(), GeneratorError> {
         let file = File::open("./data/example_dissector.json")?;
         let rdr = BufReader::new(file);
         let value: Dissector = serde_json::from_reader(rdr)?;
 
-        Generator::generate_dissector(value)?;
+        let gen = Generator::new();
+        
+        gen.generate_dissector(value)?;
 
         Ok(())
     }
