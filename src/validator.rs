@@ -75,7 +75,7 @@ mod unit_test {
         let value = serde_json::from_str(valid_schema)?;
         
         if let Err(_) = Validator::compile_schema(value) {
-            assert!(false, "The schema should have compiled")
+            panic!("The schema should have compiled")
         }
         Ok(())
   }
@@ -95,7 +95,7 @@ mod unit_test {
         let value = serde_json::from_str(invalid_schema)?;
         
         if let Ok(_) = Validator::compile_schema(value) {
-            assert!(false, "The schema should not have compiled")
+            panic!("The schema should not have compiled")
         }
         Ok(())
     }
