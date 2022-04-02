@@ -11,7 +11,7 @@ pub(crate) enum Keyword {
 }
 
 impl Keyword {
-    pub (crate) fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::ProjectName => "%PROJECT_NAME%",
             Self::DissectorName => "%DISSECTOR_NAME%",
