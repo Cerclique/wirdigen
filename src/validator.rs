@@ -22,11 +22,9 @@ impl Validator {
     pub fn new() -> Result<Validator, ValidatorError> {
         let json_schema: Value = serde_json::from_str(JSON_SCHEMA)?;
 
-        match Self::compile_schema(json_schema) {
-            Err(e) => Err(e),
-            Ok(data) => Ok(Validator { schema_value: data })
-        }
-    } 
+        let data = Self::compile_schema(json_schema)?;
+        Ok(Validator { schema_value: data })
+   } 
 
     pub fn validate(self, json_raw: &Value) -> bool {
         match self.schema_value.validate(json_raw) {
@@ -76,12 +74,11 @@ mod unit_test {
 
         let value = serde_json::from_str(valid_schema)?;
         
-        match Validator::compile_schema(value) {
-            Err(_) => assert!(false, "[CASE 2] The schema should have compiled"),
-            Ok(_) => ()
+        if let Err(_) = Validator::compile_schema(value) {
+            assert!(false, "The schema should have compiled")
         }
         Ok(())
-    }
+  }
 
     #[test]
     fn validator_compile_schema_invalid() -> Result<(), ValidatorError> {
@@ -97,9 +94,8 @@ mod unit_test {
 
         let value = serde_json::from_str(invalid_schema)?;
         
-        match Validator::compile_schema(value) {
-            Err(_) => (),
-            Ok(_) => assert!(false, "The schema should not have compiled")
+        if let Ok(_) = Validator::compile_schema(value) {
+            assert!(false, "The schema should not have compiled")
         }
         Ok(())
     }
