@@ -2,6 +2,7 @@ name: Security audit
 
 on:
   push:
+    branches: [ master]
     paths: 
       - '**/Cargo.toml'
       - '**/Cargo.lock'
