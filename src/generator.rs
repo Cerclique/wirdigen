@@ -8,17 +8,7 @@ use std::env;
 use crate::dissector::Dissector;
 use crate::keyword::Keyword;
 use crate::template::DISSECTOR_TEMPLATE;
-
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum GeneratorError {
-    #[error(transparent)]
-    IOError (#[from] std::io::Error),
-
-    #[error(transparent)]
-    SerdeJsonError (#[from] serde_json::Error)
-}
+use crate::error::WirdigenError;
 
 pub struct Generator {
     output_dir: String
@@ -37,15 +27,14 @@ impl Generator {
 }
 
 impl Generator {
-    pub fn from_reader<R>(&self, rdr: R) -> Result<(), GeneratorError> where R : Read {
-        let json_value: Value = serde_json::from_reader(rdr)?;
-        self.run(json_value)?;
-        Ok(())
+    pub fn from_reader<R>(&self, rdr: R) -> Result<(), WirdigenError> where R : Read {
+        let dissector_value: Dissector = serde_json::from_reader(rdr)?;
+        self.generate_dissector(dissector_value)
     }
 
-    pub fn from_value(&self, value: Value) -> Result<(), GeneratorError> {
-        self.run(value)?;
-        Ok(())
+    pub fn from_value(&self, value: Value) -> Result<(), WirdigenError> {
+        let dissector: Dissector = serde_json::from_value(value)?;
+        self.generate_dissector(dissector)
     }
 
     pub fn set_output_directory(&mut self, dir_path: &str) {
@@ -58,13 +47,7 @@ impl Generator {
 }
 
 impl Generator {
-    fn run(&self, value: Value) -> Result<(), GeneratorError> {
-        let dissector: Dissector = serde_json::from_value(value)?;
-        self.generate_dissector(dissector)?;
-        Ok(())
-    }
-
-    fn generate_dissector(&self, dissector: Dissector) -> Result<(), GeneratorError> {
+    fn generate_dissector(&self, dissector: Dissector) -> Result<(), WirdigenError> {
         // Load template from string constant
         let mut output_data: String = String::from(DISSECTOR_TEMPLATE);
 
@@ -181,6 +164,11 @@ mod unit_test {
 
     use std::io::BufReader;
 
+    #[test] 
+    fn generator_default() {
+        let _ = Generator::default();
+    }
+
     #[test]
     fn generator_find_and_replace_all() {
         let buffer: &str = "one two three one one";
@@ -190,6 +178,26 @@ mod unit_test {
         let expected: &str = "zero two three zero zero";
 
         assert_eq!(Generator::find_and_replace_all(buffer, to_search, to_replace), expected);
+    }
+
+    #[test]
+    fn generator_from_reader() -> Result<(), WirdigenError> {
+        let file = File::open("./data/example_dissector.json")?;
+        let rdr = BufReader::new(file);
+
+        let gen = Generator::default();
+
+        gen.from_reader(rdr)
+    }
+
+    #[test]
+    fn generator_from_value() -> Result<(), WirdigenError> {
+        let file = File::open("./data/example_dissector.json")?;
+        let rdr = BufReader::new(file);
+        let value: Value = serde_json::from_reader(rdr)?;
+
+        let gen = Generator::default();
+        gen.from_value(value)
     }
 
     #[test]
@@ -205,18 +213,5 @@ mod unit_test {
         
         let expected = output_dir;
         assert_eq!(gen.get_output_directory(), expected);
-    }
-
-    #[test]
-    fn generator_generate_dissector() -> Result<(), GeneratorError> {
-        let file = File::open("./data/example_dissector.json")?;
-        let rdr = BufReader::new(file);
-        let value: Dissector = serde_json::from_reader(rdr)?;
-
-        let gen = Generator::new();
-        
-        gen.generate_dissector(value)?;
-
-        Ok(())
     }
 }

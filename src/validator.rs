@@ -1,25 +1,15 @@
 use serde_json::Value;
 use jsonschema::JSONSchema;
 
-use thiserror::Error;
-
 use crate::schema::JSON_SCHEMA;
+use crate::error::WirdigenError;
 
 pub struct Validator {
     schema_value: JSONSchema
 }
 
-#[derive(Error, Debug)]
-pub enum ValidatorError {
-    #[error(transparent)]
-    SerdeJsonError (#[from] serde_json::Error),
-
-    #[error("Failed to compile JSON schema")]
-    JSONSchemaCompilation(String)
-}
-
 impl Validator {
-    pub fn new() -> Result<Validator, ValidatorError> {
+    pub fn new() -> Result<Validator, WirdigenError> {
         let json_schema: Value = serde_json::from_str(JSON_SCHEMA)?;
 
         let data = Self::compile_schema(json_schema)?;
@@ -40,9 +30,9 @@ impl Validator {
 }
 
 impl Validator {
-    fn compile_schema(value: Value) -> Result<JSONSchema, ValidatorError> {
+    fn compile_schema(value: Value) -> Result<JSONSchema, WirdigenError> {
         match JSONSchema::compile(&value) {
-            Err(e) => Err(ValidatorError::JSONSchemaCompilation(e.to_string())),
+            Err(e) => Err(WirdigenError::JSONSchemaCompilation(e.to_string())),
             Ok(data) => Ok(data)
         }
     }
@@ -56,13 +46,13 @@ mod unit_test {
     use std::io::BufReader;
 
     #[test]
-    fn validator_new() -> Result<(), ValidatorError> {
+    fn validator_new() -> Result<(), WirdigenError> {
         let _ = Validator::new()?;
         Ok(())
     }
 
     #[test]
-    fn validator_compile_schema_valid() -> Result<(), ValidatorError> {
+    fn validator_compile_schema_valid() -> Result<(), WirdigenError> {
         let valid_schema = r#"
         {
             "properties" : {
@@ -78,10 +68,10 @@ mod unit_test {
             panic!("The schema should have compiled")
         }
         Ok(())
-  }
+    }
 
     #[test]
-    fn validator_compile_schema_invalid() -> Result<(), ValidatorError> {
+    fn validator_compile_schema_invalid() -> Result<(), WirdigenError> {
         // "any" is no longer a valid type keyword for a schema
         let invalid_schema = r#"
         {
@@ -101,7 +91,7 @@ mod unit_test {
     }
 
     #[test]
-    fn validator_validate_true() -> Result<(), ValidatorError> {        
+    fn validator_validate_true() -> Result<(), WirdigenError> {        
         let file = File::open("./data/example_dissector.json").expect("A valid file");
         let rdr = BufReader::new(file);
         let value: Value = serde_json::from_reader(rdr)?;
@@ -109,12 +99,11 @@ mod unit_test {
         let mgr = Validator::new()?;
 
         assert_eq!(mgr.validate(&value), true);
-
         Ok(())
     }
 
     #[test]
-    fn validator_validate_false() -> Result<(), ValidatorError> {
+    fn validator_validate_false() -> Result<(), WirdigenError> {
         // Invalid dissector
         let json_raw = r#"
         {
@@ -125,7 +114,6 @@ mod unit_test {
         let mgr = Validator::new()?;
 
         assert_eq!(mgr.validate(&value), false);
-
         Ok(())
     }
 }
