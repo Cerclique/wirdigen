@@ -27,12 +27,12 @@ impl Generator {
 }
 
 impl Generator {
-    pub fn from_reader<R>(&self, rdr: R) -> Result<(), WirdigenError> where R : Read {
+    pub fn from_reader<R>(&self, rdr: R) -> Result<String, WirdigenError> where R : Read {
         let dissector_value: Dissector = serde_json::from_reader(rdr)?;
         self.generate_dissector(dissector_value)
     }
 
-    pub fn from_value(&self, value: Value) -> Result<(), WirdigenError> {
+    pub fn from_value(&self, value: Value) -> Result<String, WirdigenError> {
         let dissector: Dissector = serde_json::from_value(value)?;
         self.generate_dissector(dissector)
     }
@@ -47,7 +47,7 @@ impl Generator {
 }
 
 impl Generator {
-    fn generate_dissector(&self, dissector: Dissector) -> Result<(), WirdigenError> {
+    fn generate_dissector(&self, dissector: Dissector) -> Result<String, WirdigenError> {
         // Load template from string constant
         let mut output_data: String = String::from(DISSECTOR_TEMPLATE);
 
@@ -145,10 +145,10 @@ impl Generator {
 
         let output_filename: String = format!("{}/dissector_{}.lua", self.output_dir, dissector.name);
 
-        let output_file = File::create(output_filename)?;
+        let output_file = File::create(&output_filename)?;
         let mut f = BufWriter::new(output_file);
         f.write_all(output_data.as_bytes())?;
-        Ok(())
+        Ok(output_filename)
     }
 
     fn find_and_replace_all(&self, buffer: &str, to_search: &str, to_replace: &str) -> Result<String, WirdigenError> {
@@ -187,7 +187,8 @@ mod unit_test {
         let file = File::open("./data/example_dissector.json")?;
         let rdr = BufReader::new(file);
 
-        Generator::default().from_reader(rdr)
+        let _ = Generator::default().from_reader(rdr)?;
+        Ok(())
     }
 
     #[test]
@@ -196,7 +197,8 @@ mod unit_test {
         let rdr = BufReader::new(file);
         let value: Value = serde_json::from_reader(rdr)?;
 
-        Generator::default().from_value(value)
+        let _ = Generator::default().from_value(value)?;
+        Ok(())
     }
 
     #[test]

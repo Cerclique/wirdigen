@@ -6,7 +6,7 @@ pub const JSON_SCHEMA: &str = r#"
         "name:" : { 
             "type" : "string",
             "minLength" : 1,
-            "maxLength" : 10
+            "maxLength" : 20
         },
         "connection" : { 
             "type" : "object",

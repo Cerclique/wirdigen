@@ -92,7 +92,7 @@ mod unit_test {
 
     #[test]
     fn validator_validate_true() -> Result<(), WirdigenError> {        
-        let file = File::open("./data/example_dissector.json").expect("A valid file");
+        let file = File::open("./data/example_dissector.json")?;
         let rdr = BufReader::new(file);
         let value: Value = serde_json::from_reader(rdr)?;
 
