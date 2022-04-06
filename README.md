@@ -1,10 +1,11 @@
 # Wirdigen
 
-![example workflow](https://github.com/cerclique/wirdigen/actions/workflows/rust-build.yml/badge.svg)
-![example workflow](https://github.com/cerclique/wirdigen/actions/workflows/rust-test.yml/badge.svg)
-![example workflow](https://github.com/cerclique/wirdigen/actions/workflows/rust-coverage.yml/badge.svg)
-![example workflow](https://github.com/cerclique/wirdigen/actions/workflows/rust-audit.yml/badge.svg)
-![example workflow](https://github.com/cerclique/wirdigen/actions/workflows/rust-clippy.yml/badge.svg)
+![RustBuild](https://github.com/cerclique/wirdigen/actions/workflows/rust-build.yml/badge.svg)
+![RustTest](https://github.com/cerclique/wirdigen/actions/workflows/rust-test.yml/badge.svg)
+[![Codecov](https://codecov.io/gh/Cerclique/wirdigen/branch/master/graph/badge.svg?token=7TATDXMKQA)](https://codecov.io/gh/Cerclique/wirdigen)
+
+![RustAudit](https://github.com/cerclique/wirdigen/actions/workflows/rust-audit.yml/badge.svg)
+![RustClippy](https://github.com/cerclique/wirdigen/actions/workflows/rust-clippy.yml/badge.svg)
 
 ---
 
