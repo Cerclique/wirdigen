@@ -1,8 +1,8 @@
-mod schema;
 mod dissector;
 mod keyword;
+mod schema;
 mod template;
 
 pub mod error;
-pub mod validator;
 pub mod generator;
+pub mod validator;

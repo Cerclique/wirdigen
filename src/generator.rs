@@ -1,17 +1,19 @@
-use std::fs::File;
-use std::io::{Read, Write, BufWriter};
-use serde_json::Value;
-use regex::Regex;
 use chrono::offset::Local;
+use regex::Regex;
+use serde_json::Value;
 use std::env;
+use std::fs::File;
+use std::io::{BufWriter, Read, Write};
 
 use crate::dissector::Dissector;
+use crate::error::WirdigenError;
 use crate::keyword::Keyword;
 use crate::template::DISSECTOR_TEMPLATE;
-use crate::error::WirdigenError;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct Generator {
-    output_dir: String
+    output_dir: String,
 }
 
 impl Default for Generator {
@@ -22,12 +24,17 @@ impl Default for Generator {
 
 impl Generator {
     pub fn new() -> Generator {
-        Generator { output_dir: env::temp_dir().display().to_string() }
+        Generator {
+            output_dir: env::temp_dir().display().to_string(),
+        }
     }
 }
 
 impl Generator {
-    pub fn from_reader<R>(&self, rdr: R) -> Result<String, WirdigenError> where R : Read {
+    pub fn from_reader<R>(&self, rdr: R) -> Result<String, WirdigenError>
+    where
+        R: Read,
+    {
         let dissector_value: Dissector = serde_json::from_reader(rdr)?;
         self.generate_dissector(dissector_value)
     }
@@ -51,9 +58,10 @@ impl Generator {
         // Load template from string constant
         let mut output_data: String = String::from(DISSECTOR_TEMPLATE);
 
+        let tool_name = format!("WIRDIGEN {}", VERSION);
         // Project name
         output_data =
-            self.find_and_replace_all(&output_data, Keyword::ProjectName.as_str(), "WIRDIGEN")?;
+            self.find_and_replace_all(&output_data, Keyword::ProjectName.as_str(), &tool_name)?;
 
         // Dissector name
         output_data = self.find_and_replace_all(
@@ -71,36 +79,40 @@ impl Generator {
 
         // Fields list
         // Fields declaration
-        // Local variable declaration
         // Subtree population
 
         let mut fields_list_buffer = String::new();
         let mut fields_declaration_buffer = String::new();
-        let mut local_var_declaration_buffer = String::new();
         let mut subtree_population_buffer = String::new();
 
+        let data_prefix_name = dissector.name.to_lowercase();
+
         for data in dissector.data {
-            let full_filter_name = format!("{}.{}", data.name, data.filter_name);
+            let full_filter_name = format!("{}.{}", data_prefix_name, data.name);
 
             fields_declaration_buffer.push_str(&format!(
-                "{}=Protofield.{}(\"{}\", \"{}\", base.{})\n",
-                data.filter_name, data.format, full_filter_name, data.description, data.base
+                "{} = ProtoField.{}(\"{}\", \"{}\", base.{})\n",
+                data.name, data.format, full_filter_name, data.name, data.base
             ));
 
-            fields_list_buffer.push_str(&format!("{},\n\t", data.filter_name));
+            fields_list_buffer.push_str(&format!("{},\n\t", data.name));
 
-            local_var_declaration_buffer.push_str(&format!(
-                "local{} = buffer({}, {})\n\t",
-                data.filter_name, data.offset, data.size
+            let add_endianness = if dissector.endianness == "little" {
+                String::from("add_le")
+            } else {
+                String::from("add")
+            };
+
+            let buffer_declaration = format!("buffer({}, {})", data.offset, data.size);
+
+            subtree_population_buffer.push_str(&format!(
+                "subtree:{}({}, {})\n\t",
+                add_endianness, data.name, buffer_declaration
             ));
-
-            subtree_population_buffer
-                .push_str(&format!("subtree:add({}, {})\n\t", data.filter_name, data.name));
         }
 
         fields_declaration_buffer.truncate(fields_declaration_buffer.chars().count() - 1);
         fields_list_buffer.truncate(fields_list_buffer.chars().count() - 2);
-        local_var_declaration_buffer.truncate(local_var_declaration_buffer.chars().count() - 2);
 
         output_data = self.find_and_replace_all(
             &output_data,
@@ -112,12 +124,6 @@ impl Generator {
             &output_data,
             Keyword::FieldsDeclaration.as_str(),
             &fields_declaration_buffer,
-        )?;
-
-        output_data = self.find_and_replace_all(
-            &output_data,
-            Keyword::LocalVarDeclaration.as_str(),
-            &local_var_declaration_buffer,
         )?;
 
         output_data = self.find_and_replace_all(
@@ -141,9 +147,18 @@ impl Generator {
         }
 
         output_data =
-        self.find_and_replace_all(&output_data, Keyword::Ports.as_str(), &ports_buffer)?;
+            self.find_and_replace_all(&output_data, Keyword::Ports.as_str(), &ports_buffer)?;
 
-        let output_filename: String = format!("{}/dissector_{}.lua", self.output_dir, dissector.name);
+        let slash_platform: String = if cfg!(windows) {
+            String::from("\\")
+        } else {
+            String::from("/")
+        };
+
+        let output_filename: String = format!(
+            "{}{}dissector_{}.lua",
+            self.output_dir, slash_platform, dissector.name
+        );
 
         let output_file = File::create(&output_filename)?;
         let mut f = BufWriter::new(output_file);
@@ -151,7 +166,12 @@ impl Generator {
         Ok(output_filename)
     }
 
-    fn find_and_replace_all(&self, buffer: &str, to_search: &str, to_replace: &str) -> Result<String, WirdigenError> {
+    fn find_and_replace_all(
+        &self,
+        buffer: &str,
+        to_search: &str,
+        to_replace: &str,
+    ) -> Result<String, WirdigenError> {
         let re = Regex::new(to_search)?;
         Ok(re.replace_all(buffer, to_replace).to_string())
     }
@@ -163,7 +183,7 @@ mod unit_test {
 
     use std::io::BufReader;
 
-    #[test] 
+    #[test]
     fn generator_default() {
         let _ = Generator::default();
     }
@@ -187,7 +207,9 @@ mod unit_test {
         let file = File::open("./data/example_dissector.json")?;
         let rdr = BufReader::new(file);
 
-        let _ = Generator::default().from_reader(rdr)?;
+        let output_file_path = Generator::default().from_reader(rdr)?;
+        println!("{}", output_file_path);
+
         Ok(())
     }
 
@@ -197,20 +219,22 @@ mod unit_test {
         let rdr = BufReader::new(file);
         let value: Value = serde_json::from_reader(rdr)?;
 
-        let _ = Generator::default().from_value(value)?;
+        let output_file_path = Generator::default().from_value(value)?;
+        println!("{}", output_file_path);
+
         Ok(())
     }
 
     #[test]
     fn generator_set_output_directory() {
         let mut gen = Generator::default();
-        
+
         let expected = env::temp_dir().display().to_string();
         assert_eq!(gen.get_output_directory(), expected);
 
         let new_output_dir = format!("{}/toast", expected);
         gen.set_output_directory(&new_output_dir);
-        
+
         let expected = new_output_dir;
         assert_eq!(gen.get_output_directory(), expected);
     }

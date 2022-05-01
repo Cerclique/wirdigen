@@ -1,5 +1,3 @@
-# Wirdigen
-
 ![RustBuild](https://github.com/cerclique/wirdigen/actions/workflows/rust-build.yml/badge.svg)
 ![RustTest](https://github.com/cerclique/wirdigen/actions/workflows/rust-test.yml/badge.svg)
 [![Codecov](https://codecov.io/gh/Cerclique/wirdigen/branch/master/graph/badge.svg?token=7TATDXMKQA)](https://codecov.io/gh/Cerclique/wirdigen)
@@ -9,19 +7,19 @@
 
 ---
 
-## Overview
+# **Overview**
 
-Wirdigen (_Wireshark Dissector Generator_) is a library that aims to generate LUA plugin for Wireshark based on a JSON description of the packet you want to dissect.
+**Wirdigen** (_**Wir**eshark **Di**ssector **Gen**erator_) is a small library that aims to generate LUA dissector for Wireshark based on a JSON description of the packet you want to analyze.
 
 For more information about packet dissection, please refer to Wireshark [documentation](https://www.wireshark.org/docs/wsdg_html_chunked/ChapterDissection.html) and [wiki](https://wiki.wireshark.org/Lua/Dissectors).
 
-## How to use
+# **How to use**
 
 The library is composed of two tools:
 
-### Validator
+## **Validator**
 
-Validator compare a JSON packet description with a predefined JSON schema to ensure data integrity for plugin generation.
+`Validator` compare a JSON packet description with a predefined JSON schema to ensure data integrity for plugin generation.
 
 If the packet description is invalid, errors are automatically reported to the user through `stderr` with detailled location/description.
 
@@ -50,9 +48,9 @@ fn foo() -> Result<(), WirdigenError> {
 }
 ```
 
-### Generator
+## **Generator**
 
-Generator generate LUA plugin based on JSON input given by the user.
+`Generator` generate LUA plugin based on JSON input given by the user.
 
 ```rust
 use wirdigen::generator::Generator;
@@ -71,17 +69,15 @@ fn foo() -> Result<(), WirdigenError> {
     // Generate from a reader source
     let generated_file_path: String = gen.from_reader(rdr)?;
     println!("Generated: {}", generated_file_path);
+
     Ok(())
 }
 ```
 
 **Note:**
+The `Generator` does not perform any pre-validation on the user input. This is the role of the `Validator`. In case of invalid file, method from `Generator` will return appropriate `Err(WirdigenError)`. To avoid these kinds of problem, it's best to first perform a validation and, then, generate the LUA dissector.
 
-The `Generator` does not perform any pre-validation on the user input. This is the role of the `Validator`. In case of invalid file, method from `Generator` will return appropriate `Err(WirdigenError)`.
-
-To avoid these kinds of problem, it's best to first perform a validation and, then, generate the associate LUA plugin.
-
-`Generator` object also have a `from_value` method to reuse the serde-json `Value` from the validation task for the generation.
+`Generator` object also have a `from_value` method in order to reuse the serde-json `Value` from the validation task for the generation.
 
 ```rust
 fn foo() -> Result<(), WirdigenError> {
@@ -108,16 +104,12 @@ fn foo() -> Result<(), WirdigenError> {
     else {
         println!("Invalid user input: {}", file_path);
     }
+    
     Ok(())
 }
 ```
 
-By default, the plugin is generated in the temporary folder of the machine:
-- Unix: `/tmp`
-- Windows: `C:\Temp`
-
-
-The user can modify the output directory though `set_output_directory()` method and retrieve the current one through `get_output_directory()` method.
+By default, the plugin is generated in the temporary folder defined in environment variable. The user can modify the output directory through `set_output_directory()` method and retrieve the current one through `get_output_directory()`.
 
 ```rust
 fn foo {
@@ -133,42 +125,122 @@ fn foo {
 ```
 
 **Note:**
-
-The method `set_output_directory` does not create non-existent directory from user input.
+The method `set_output_directory` does not create non-existant directory from user input.
 If the output directory is not reachable, the error will be propagated from the generation method when trying to create the final LUA file.
 
-## Dissector format
+# **Dissector format**
 
-A JSON dissector description is composed of 3 elements:
+A JSON dissector description is composed of 4 elements:
 - `name`
+- `endianness`
 - `connection`
 - `data`
 
-### **Name**
+## **Name**
 
-`name` element is a string (max size: 20) representing the name of the protocol to dissect that  will be used inside Wireshark to identify your packet.
+`name` element is a string (max size: 32) representing the name of the protocol to dissect that  will be used inside Wireshark ("Protocol" column) to identify your packet.
 
-Note: This name is also used for the generated LUA file. For example, if the attribute is `MY_PROTO`, the generated plugin will be called `dissector_MY_PROTO.lua`.
+**Note:** This name is also used for the generated LUA file. For example, if the attribute is `MY_PROTO`, the generated plugin will be called `dissector_MY_PROTO.lua`.
 
-### **Connection**
+## **Endianness**
+
+String defining which endianness is used by the protocol.
+Possible values are `little` and `big`.
+
+## **Connection**
 
 The `connection` object contains 2 fields :
 - `protocol`: String. Either `udp` or `tcp`.
-- `ports`: Array of port the dissector need to spy (between 1 and 65365).
+- `ports`: Array of port the dissector need to spy (between 1 and 65535).
 
-### **Data**
+## **Data**
 
 `data` is an array of object describing the packet. Each object define a chunk of the packet we want to identify.
 
 Each chunk must contains the following attributes:
-- `name`: String (max size: 20).
-- `format`: String representing the type of the chunk. Available values are `none`, `uint8`, `uint16`, `uint24`, `uint32`, `uint64`, `int8`, `int16`, `int24`, `int32`, `int64`, `framenum`, `bool`, `absolute_time`, `relative_time`, `float`, `double`, `string`, `stringz`, `bytes`, `ubytes`, `ipv4`, `ipv6`, `ether`, `guid`, `oid`, `protocol`, `rel_oid`, `systemid`, `eui64`.
-- `filter_name`: String (max size: 20) representing the chunk.
-- `description`: String (max size: 50). Short description of the chunk.
-- `base`: String representing how the chunk should be displayed. Available values are `NONE`, `DEC`, `HEX`, `OCT`, `DEC_HEX`, `HEX_DEC`, `UNIT_STRING`, `RANGE_STRING`.
+- `name`: String (max size: 32).
+- `format`: String representing the data type of the chunk. Refer to format/base matrices below for available values.
+- `base`: String representing how the value should be displayed. Refer to format/base matrices below for available values. 
 - `offset`: Position offset, in byte, from the begining of the packet.
 - `size`: Size, in byte, of the chunk inside the packet.
 
-## Import dissector into Wireshark
+# **Format/Base compatibility matrices**
 
-=== TODO ===
+These matrices show which format/base combination are supported by Wirdigen. 
+
+## **Numeric**
+
+| Format \ Base | NONE | DEC | OCT | HEX | DEC_HEX | HEX_DEC |
+|:-------------:|:----:|:---:|:---:|:---:|:-------:|:-------:|
+|      bool     |   X  |     |     |     |         |         |
+|      char     |      |     |  X  |  X  |         |         |
+|     uint8     |      |  X  |  X  |  X  |    X    |    X    |
+|     uint16    |      |  X  |  X  |  X  |    X    |    X    |
+|     uint32    |      |  X  |  X  |  X  |    X    |    X    |
+|     uint64    |      |  X  |  X  |  X  |    X    |    X    |
+|      int8     |      |  X  |     |     |         |         |
+|     int16     |      |  X  |     |     |         |         |
+|     int32     |      |  X  |     |     |         |         |
+|     int64     |      |  X  |     |     |         |         |
+|    float(*)   |   X  |  X  |  X  |  X  |    X    |    X    |
+|   double(*)   |   X  |  X  |  X  |  X  |    X    |    X    |
+
+_(*) = For the specified `format`, the `base` is ignored by Wireshark._ 
+
+## **Time**
+
+|   Format \ Base  | LOCAL | UTC | DOY_UTC |
+|:----------------:|:-----:|:---:|:-------:|
+|   absolute_time  |   X   |  X  |    X    |
+| relative_time(*) |   X   |  X  |    X    |
+
+_(*) = For the specified `format`, the `base` is ignored by Wireshark._
+
+## **Raw**
+
+| Format \ Base | NONE | DOT | DASH | COLON | SPACE |
+|:-------------:|:----:|:---:|:----:|:-----:|:-----:|
+|      byte     |   X  |  X  |   X  |   X   |   X   |
+
+## **Specific**
+
+For these specific type of data, display is automatically handled by Wirehsark. Hense, `base` is ignored. I would recommend using `NONE` in these case.
+
+- none
+- ipv4
+- ipv6
+- ether
+- guid
+- oid
+
+# **Import dissector into Wireshark**
+
+First, you need to check in which directory Wireshark is looking for LUA plugin.
+
+To do this, open Wireshark and go to `help -> About Wireshark -> Folder`.
+
+Find the path associated to `"Personal Lua plugins"`. This is where you need to copy your dissector. If the path does not exist on your machine, you can manually create missing directories.
+
+The dissector script will be active after Wireshark is refreshed. You can either restart Wireshark or press **Ctrl + Shift + L** to reload all Lua scripts.
+
+**Note:** You need to reload/restart everytime you make a change in a dissector. 
+
+# **Roadmap**
+
+- Missing data type:
+    -  uint24
+    - int24
+    - framenum
+    - string
+    - stringz
+    - ubytes
+    - protocol
+    - rel_oid
+    - systemid
+    - eui64
+
+- Extended atrtibute description
+    - For a attribute, add the possibility for a user to specify a string description for specific value (eg: HTML - 404 -> NOT FOUND, 200 -> OK).
+
+- Support for child subtree to clearly describe more complex packet.
+    
