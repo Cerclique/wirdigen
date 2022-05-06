@@ -1,36 +1,318 @@
 {
-    "name" : "customProtocol",
+    "name" : "test",
+    "endianness" : "little",
     "connection" : {
         "protocol" : "udp",
         "ports" : [60001, 60002]
     },
     "data" : [
         {
-            "name" : "item_one",
-            "format" : "uint8",
-            "filter_name" : "item_one_field",
-            "description" : "item one description",
-            "base" : "DEC",
+            "name" : "bool_NONE",
+            "format" : "bool",
+            "base" : "NONE",
             "offset" : 0,
             "size" : 1
         },
         {
-            "name" : "item_two",
-            "format" : "uint32",
-            "filter_name" : "item_two_field",
-            "description" : "item two description",
-            "base" : "DEC",
+            "name" : "char_OCT",
+            "format" : "char",
+            "base" : "OCT",
             "offset" : 1,
+            "size" : 1
+        },
+        {
+            "name" : "char_HEX",
+            "format" : "char",
+            "base" : "HEX",
+            "offset" : 2,
+            "size" : 1
+        },
+        {
+            "name" : "uint8_DEC",
+            "format" : "uint8",
+            "base" : "DEC",
+            "offset" : 3,
+            "size" : 1
+        },
+        {
+            "name" : "uint8_OCT",
+            "format" : "uint8",
+            "base" : "OCT",
+            "offset" : 4,
+            "size" : 1
+        },
+        {
+            "name" : "uint8_HEX",
+            "format" : "uint8",
+            "base" : "HEX",
+            "offset" : 5,
+            "size" : 1
+        },
+        {
+            "name" : "uint8_DEC_HEX",
+            "format" : "uint8",
+            "base" : "DEC_HEX",
+            "offset" : 6,
+            "size" : 1
+        },
+        {
+            "name" : "uint8_HEX_DEC",
+            "format" : "uint8",
+            "base" : "HEX_DEC",
+            "offset" : 7,
+            "size" : 1
+        },
+        {
+            "name" : "uint16_DEC",
+            "format" : "uint16",
+            "base" : "DEC",
+            "offset" : 8,
+            "size" : 2
+        },
+        {
+            "name" : "uint16_OCT",
+            "format" : "uint16",
+            "base" : "OCT",
+            "offset" : 10,
+            "size" : 2
+        },
+        {
+            "name" : "uint16_HEX",
+            "format" : "uint16",
+            "base" : "HEX",
+            "offset" : 12,
+            "size" : 2
+        },
+        {
+            "name" : "uint16_DEC_HEX",
+            "format" : "uint16",
+            "base" : "DEC_HEX",
+            "offset" : 14,
+            "size" : 2
+        },
+        {
+            "name" : "uint16_HEX_DEC",
+            "format" : "uint16",
+            "base" : "HEX_DEC",
+            "offset" : 16,
+            "size" : 2
+        },
+        {
+            "name" : "uint32_DEC",
+            "format" : "uint32",
+            "base" : "DEC",
+            "offset" : 18,
             "size" : 4
         },
         {
-            "name" : "item_three",
-            "format" : "uint16",
-            "filter_name" : "item_three_field",
-            "description" : "item three description",
+            "name" : "uint32_OCT",
+            "format" : "uint32",
+            "base" : "OCT",
+            "offset" : 22,
+            "size" : 4
+        },
+        {
+            "name" : "uint32_HEX",
+            "format" : "uint32",
             "base" : "HEX",
-            "offset" : 5,
+            "offset" : 26,
+            "size" : 4
+        },
+        {
+            "name" : "uint32_DEC_HEX",
+            "format" : "uint32",
+            "base" : "DEC_HEX",
+            "offset" : 30,
+            "size" : 4
+        },
+        {
+            "name" : "uint32_HEX_DEC",
+            "format" : "uint32",
+            "base" : "HEX_DEC",
+            "offset" : 34,
+            "size" : 4
+        },
+        {
+            "name" : "uint64_DEC",
+            "format" : "uint64",
+            "base" : "DEC",
+            "offset" : 38,
+            "size" : 8
+        },
+        {
+            "name" : "uint64_OCT",
+            "format" : "uint64",
+            "base" : "OCT",
+            "offset" : 46,
+            "size" : 8
+        },
+        {
+            "name" : "uint64_HEX",
+            "format" : "uint64",
+            "base" : "HEX",
+            "offset" : 54,
+            "size" : 8
+        },
+        {
+            "name" : "uint64_DEC_HEX",
+            "format" : "uint64",
+            "base" : "DEC_HEX",
+            "offset" : 62,
+            "size" : 8
+        },
+        {
+            "name" : "uint64_HEX_DEC",
+            "format" : "uint64",
+            "base" : "HEX_DEC",
+            "offset" : 70,
+            "size" : 8
+        },
+        {
+            "name" : "int8_DEC",
+            "format" : "int8",
+            "base" : "DEC",
+            "offset" : 78,
+            "size" : 1
+        },
+        {
+            "name" : "int16_DEC",
+            "format" : "int16",
+            "base" : "DEC",
+            "offset" : 79,
             "size" : 2
+        },
+        {
+            "name" : "int32_DEC",
+            "format" : "int32",
+            "base" : "DEC",
+            "offset" : 81,
+            "size" : 4
+        },
+        {
+            "name" : "int64_DEC",
+            "format" : "int64",
+            "base" : "DEC",
+            "offset" : 85,
+            "size" : 8
+        },
+        {
+            "name" : "float_NONE",
+            "format" : "float",
+            "base" : "NONE",
+            "offset" : 93,
+            "size" : 4
+        },
+        {
+            "name" : "double_NONE",
+            "format" : "double",
+            "base" : "NONE",
+            "offset" : 97,
+            "size" : 8
+        },
+        {
+            "name" : "absolute_time_LOCAL",
+            "format" : "absolute_time",
+            "base" : "LOCAL",
+            "offset" : 105,
+            "size" : 8
+        },
+        {
+            "name" : "absolute_time_UTC",
+            "format" : "absolute_time",
+            "base" : "UTC",
+            "offset" : 113,
+            "size" : 8
+        },
+        {
+            "name" : "absolute_time_DOY_UTC",
+            "format" : "absolute_time",
+            "base" : "DOY_UTC",
+            "offset" : 121,
+            "size" : 8
+        },
+        {
+            "name" : "relative_time_NONE",
+            "format" : "relative_time",
+            "base" : "NONE",
+            "offset" : 129,
+            "size" : 8
+        },
+        {
+            "name" : "bytes_NONE",
+            "format" : "bytes",
+            "base" : "NONE",
+            "offset" : 137,
+            "size" : 10
+        },
+        {
+            "name" : "bytes_DOT",
+            "format" : "bytes",
+            "base" : "DOT",
+            "offset" : 147,
+            "size" : 10
+        },
+        {
+            "name" : "bytes_DASH",
+            "format" : "bytes",
+            "base" : "DASH",
+            "offset" : 157,
+            "size" : 10
+        },
+        {
+            "name" : "bytes_COLON",
+            "format" : "bytes",
+            "base" : "COLON",
+            "offset" : 167,
+            "size" : 10
+        },
+        {
+            "name" : "bytes_SPACE",
+            "format" : "bytes",
+            "base" : "SPACE",
+            "offset" : 177,
+            "size" : 10
+        },
+        {
+            "name" : "unused",
+            "format" : "none",
+            "base" : "NONE",
+            "offset" : 187,
+            "size" : 3
+        },
+        {
+            "name" : "ipv4_NONE",
+            "format" : "ipv4",
+            "base" : "NONE",
+            "offset" : 190,
+            "size" : 4
+        },
+        {
+            "name" : "ipv6_NONE",
+            "format" : "ipv6",
+            "base" : "NONE",
+            "offset" : 194,
+            "size" : 16
+        },
+        {
+            "name" : "ether_NONE",
+            "format" : "ether",
+            "base" : "NONE",
+            "offset" : 210,
+            "size" : 6
+        },
+        {
+            "name" : "guid_NONE",
+            "format" : "guid",
+            "base" : "NONE",
+            "offset" : 216,
+            "size" : 16
+        },
+        {
+            "name" : "oid_NONE",
+            "format" : "oid",
+            "base" : "NONE",
+            "offset" : 232,
+            "size" : 16
         }
     ]
 }

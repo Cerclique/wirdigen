@@ -1,9 +1,8 @@
 pub(crate) const DISSECTOR_TEMPLATE: &str = r#"
 --[[
     Author: %PROJECT_NAME%
-    Language: Lua
     Date: %DATE%
-    Description: Wireshark Dissector for %DISSECTOR_NAME%
+    Description: Wireshark Dissector for "%DISSECTOR_NAME%"
 ]]--
 
 %DISSECTOR_NAME% = Proto("%DISSECTOR_NAME%", "%DISSECTOR_NAME% Protocol")
@@ -25,9 +24,6 @@ function %DISSECTOR_NAME%.dissector(buffer, pinfo, tree)
     
     -- Creates the subtree
     local subtree = tree:add(%DISSECTOR_NAME%, buffer(),"%DISSECTOR_NAME% Protocol Data")
-
-    -- Local Variables Declaration
-    %LOCAL_VAR_DECLARATION%
 
     -- Adds Variables to the subtree
     %SUBTREE_POPULATION%

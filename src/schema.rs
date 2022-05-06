@@ -3,10 +3,14 @@ pub const JSON_SCHEMA: &str = r#"
     "id": "schemaTemplate",
     "type" : "object",
     "properties" : {
-        "name:" : { 
+        "name" : { 
             "type" : "string",
             "minLength" : 1,
-            "maxLength" : 20
+            "maxLength" : 32
+        },
+        "endianness" : {
+            "type" : "string",
+            "enum" : ["little", "big"]
         },
         "connection" : { 
             "type" : "object",
@@ -37,23 +41,15 @@ pub const JSON_SCHEMA: &str = r#"
                     "name" : {
                         "type" : "string",
                         "minLength" : 1,
-                        "maxLength" : 20
+                        "maxLength" : 32
                     },
                     "format" : {
                         "type" : "string",
-                        "enum" : ["none", "uint8", "uint16", "uint24", "uint32", "uint64", "int8", "int16", "int24", "int32", "int64", "framenum", "bool", "absolute_time", "relative_time", "float", "double", "string", "stringz", "bytes", "ubytes", "ipv4", "ipv6", "ether", "guid", "oid", "protocol", "rel_oid", "systemid", "eui64"] 
-                    },
-                    "filter_name" : { 
-                        "type" : "string", 
-                        "maxLength" : 20
-                    },
-                    "description" : { 
-                        "type" : "string",
-                        "maxLength" : 50 
+                        "enum" : ["bool", "char", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float", "double", "absolute_time", "relative_time", "ether", "bytes", "ipv4", "ipv6", "guid", "oid", "none"] 
                     },
                     "base" : { 
                         "type" : "string",
-                        "enum" : ["NONE", "DEC", "HEX", "OCT", "DEC_HEX", "HEX_DEC", "UNIT_STRING", "RANGE_STRING"]
+                        "enum" : ["NONE", "DEC", "HEX", "OCT", "DEC_HEX", "HEX_DEC", "UTC", "LOCAL", "DOY_UTC", "DOT", "DASH", "COLON", "SPACE"]
                     },
                     "offset" : {
                         "type" : "number"
@@ -62,10 +58,10 @@ pub const JSON_SCHEMA: &str = r#"
                         "type" : "number"
                     }
                 },
-                "required" : ["name", "format", "filter_name", "description", "base", "offset", "size"]
+                "required" : ["name", "format", "base", "offset", "size"]
             }
         }
     },
-    "required" : ["name", "connection", "data"]
+    "required" : ["name", "endianness", "connection", "data"]
 }
 "#;

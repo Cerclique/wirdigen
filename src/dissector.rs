@@ -2,24 +2,42 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Connection {
+    /// Protocol to spy: TCP or UDP
     pub protocol: String,
-    pub ports: Vec<u16>
+    
+    /// List of port to listen
+    pub ports: Vec<u16>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct DataChunck {
+pub(crate) struct DataChunk {
+    /// Name of the attribute
     pub name: String,
+
+    /// Data type of the attribute
     pub format: String,
-    pub filter_name: String,
-    pub description: String,
+
+    /// How the data should be displayed
     pub base: String,
+
+    /// Offset from the begining of the packet
     pub offset: u32,
-    pub size: u32
+
+    /// Size of the attribute
+    pub size: u32,
 }
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Dissector {
+    /// Name of the dissector 
     pub name: String,
+
+    /// Big or little endian
+    pub endianness: String,
+
+    /// Network information
     pub connection: Connection,
-    pub data: Vec<DataChunck>
+
+    /// Packet description
+    pub data: Vec<DataChunk>,
 }

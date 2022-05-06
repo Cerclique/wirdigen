@@ -4,7 +4,6 @@ pub(crate) enum Keyword {
     Date,
     FieldsList,
     FieldsDeclaration,
-    LocalVarDeclaration,
     SubtreePopulation,
     Protocol,
     Ports,
@@ -18,7 +17,6 @@ impl Keyword {
             Self::Date => "%DATE%",
             Self::FieldsList => "%FIELDS_LIST%",
             Self::FieldsDeclaration => "%FIELDS_DECLARATION%",
-            Self::LocalVarDeclaration => "%LOCAL_VAR_DECLARATION%",
             Self::SubtreePopulation => "%SUBTREE_POPULATION%",
             Self::Protocol => "%PROTOCOL%",
             Self::Ports => "%PORTS%",
@@ -26,7 +24,7 @@ impl Keyword {
     }
 }
 
-#[cfg(test)] 
+#[cfg(test)]
 mod unit_test {
     use super::Keyword;
 
@@ -37,7 +35,6 @@ mod unit_test {
         assert_eq!(Keyword::Date.as_str(), "%DATE%");
         assert_eq!(Keyword::FieldsList.as_str(), "%FIELDS_LIST%");
         assert_eq!(Keyword::FieldsDeclaration.as_str(), "%FIELDS_DECLARATION%");
-        assert_eq!(Keyword::LocalVarDeclaration.as_str(), "%LOCAL_VAR_DECLARATION%");
         assert_eq!(Keyword::SubtreePopulation.as_str(), "%SUBTREE_POPULATION%");
         assert_eq!(Keyword::Protocol.as_str(), "%PROTOCOL%");
         assert_eq!(Keyword::Ports.as_str(), "%PORTS%");
