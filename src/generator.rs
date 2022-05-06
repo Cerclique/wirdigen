@@ -1,11 +1,13 @@
 //! Module to generate LUA plugin from JSON of a dissector
 
+use std::fmt::Write as StringWrite;
 use chrono::offset::Local;
 use regex::Regex;
 use serde_json::Value;
 use std::env;
 use std::fs::File;
-use std::io::{BufWriter, Read, Write};
+use std::io::{BufWriter, Read};
+use std::io::Write as FileWrite;
 
 use crate::dissector::Dissector;
 use crate::error::WirdigenError;
@@ -101,12 +103,18 @@ impl Generator {
         for data in dissector.data {
             let full_filter_name = format!("{}.{}", data_prefix_name, data.name);
 
-            fields_declaration_buffer.push_str(&format!(
-                "{} = ProtoField.{}(\"{}\", \"{}\", base.{})\n",
+            let _ = writeln!(fields_declaration_buffer, "{} = ProtoField.{}(\"{}\", \"{}\", base.{})",
                 data.name, data.format, full_filter_name, data.name, data.base
-            ));
+            );
 
-            fields_list_buffer.push_str(&format!("{},\n\t", data.name));
+            // fields_declaration_buffer.push_str(&format!(
+            //     "{} = ProtoField.{}(\"{}\", \"{}\", base.{})\n",
+            //     data.name, data.format, full_filter_name, data.name, data.base
+            // ));
+
+            let _ = write!(fields_list_buffer, "{},\n\t", data.name);
+
+            // fields_list_buffer.push_str(&format!("{},\n\t", data.name));
 
             let add_endianness = if dissector.endianness == "little" {
                 String::from("add_le")
@@ -116,10 +124,12 @@ impl Generator {
 
             let buffer_declaration = format!("buffer({}, {})", data.offset, data.size);
 
-            subtree_population_buffer.push_str(&format!(
-                "subtree:{}({}, {})\n\t",
-                add_endianness, data.name, buffer_declaration
-            ));
+            let _ = write!(subtree_population_buffer, "subtree:{}({}, {})\n\t", add_endianness, data.name, buffer_declaration);
+
+            // subtree_population_buffer.push_str(&format!(
+            //     "subtree:{}({}, {})\n\t",
+            //     add_endianness, data.name, buffer_declaration
+            // ));
         }
 
         fields_declaration_buffer.truncate(fields_declaration_buffer.chars().count() - 1);
@@ -151,10 +161,11 @@ impl Generator {
 
         let mut ports_buffer = String::new();
         for port in dissector.connection.ports {
-            ports_buffer.push_str(&format!(
-                "{}_port:add({}, {})\n",
-                dissector.connection.protocol, port, dissector.name
-            ));
+            let _ = writeln!(ports_buffer, "{}_port:add({}, {})", dissector.connection.protocol, port, dissector.name);
+            // ports_buffer.push_str(&format!(
+            //     "{}_port:add({}, {})\n",
+            //     dissector.connection.protocol, port, dissector.name
+            // ));
         }
 
         output_data =
