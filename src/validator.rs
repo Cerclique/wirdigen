@@ -1,3 +1,5 @@
+//! Module to validate a dissector JSON description
+
 use jsonschema::JSONSchema;
 use serde_json::Value;
 
@@ -9,6 +11,7 @@ pub struct Validator {
 }
 
 impl Validator {
+    /// Create a new validator object.
     pub fn new() -> Result<Validator, WirdigenError> {
         let json_schema: Value = serde_json::from_str(JSON_SCHEMA)?;
 
@@ -16,6 +19,7 @@ impl Validator {
         Ok(Validator { schema_value: data })
     }
 
+    /// Validate a dissector in serde_json format against predefined schema.
     pub fn validate(self, json_raw: &Value) -> bool {
         match self.schema_value.validate(json_raw) {
             Err(errors) => {

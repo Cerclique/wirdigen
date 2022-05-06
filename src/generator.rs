@@ -1,3 +1,5 @@
+//! Module to generate LUA plugin from JSON of a dissector
+
 use chrono::offset::Local;
 use regex::Regex;
 use serde_json::Value;
@@ -23,6 +25,7 @@ impl Default for Generator {
 }
 
 impl Generator {
+    /// Create a new generator object
     pub fn new() -> Generator {
         Generator {
             output_dir: env::temp_dir().display().to_string(),
@@ -31,6 +34,7 @@ impl Generator {
 }
 
 impl Generator {
+    /// Try to generate LUA plugin from a reader
     pub fn from_reader<R>(&self, rdr: R) -> Result<String, WirdigenError>
     where
         R: Read,
@@ -39,15 +43,22 @@ impl Generator {
         self.generate_dissector(dissector_value)
     }
 
+    /// Try to generate LUA plugin from a serde_json value
     pub fn from_value(&self, value: Value) -> Result<String, WirdigenError> {
         let dissector: Dissector = serde_json::from_value(value)?;
         self.generate_dissector(dissector)
     }
 
+    /// Set the output directory where plugin are generated.
+    ///
+    /// Note: This function does not create non-existent directory
     pub fn set_output_directory(&mut self, dir_path: &str) {
         self.output_dir = dir_path.to_string();
     }
 
+    /// Get current output directory of generated directory
+    /// 
+    /// Note: By default, the value is set to the temporary directory of the OS
     pub fn get_output_directory(&self) -> &str {
         &self.output_dir
     }
