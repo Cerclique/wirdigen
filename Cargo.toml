@@ -1,9 +1,14 @@
 [package]
 name = "wirdigen"
 version = "0.1.0"
+authors = ["Aurélien VERNIZEAU <aurelien.vernizeau@gmail.com>"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "LUA Wireshark dissector validator/generator from JSON"
+readme = "README.md"
+homepage = "https://github.com/Cerclique/wirdigen/"
+repository = "https://github.com/Cerclique/wirdigen/"
+license-file = "LICENSE"
+keywords = ["wireshark", "dissector", "lua"]
 
 [dependencies]
 serde = { version = "1.0.136", features = ["derive"] }
