@@ -7,17 +7,38 @@
 
 ---
 
-# **Overview**
+
+### Table of Contents
+
+* [Overview](#overview)
+* [How to use](#howtouse)
+    * [Validator](#howtouse_validator)
+    * [Generator](#howtouse_generator)
+* [Dissector format](#dissector_format)
+    * [Name](#dissector_name)
+    * [Endianess](#dissector_endianness)
+    * [Connection](#dissector_connection)
+    * [Data](#dissector_data)
+* [Compatibility matrices](#compat_matrices)
+    * [Numeric](#matrix_numeric)
+    * [Time](#matrix_time)
+    * [Raw](#matrix_raw)
+    * [Specific](#matrix_specific)
+* [Import dissector into wireshark](#import_dissector)
+* [Roadmap](#roadmap)
+* [Related tools](#related_tools)
+
+# **Overview** <a class="anchor" id="overview"></a>
 
 **Wirdigen** (_**Wir**eshark **Di**ssector **Gen**erator_) is a small library that aims to generate LUA dissector for Wireshark based on a JSON description of the packet you want to analyze.
 
 For more information about packet dissection, please refer to Wireshark [documentation](https://www.wireshark.org/docs/wsdg_html_chunked/ChapterDissection.html) and [wiki](https://wiki.wireshark.org/Lua/Dissectors).
 
-# **How to use**
+# **How to use** <a class="anchor" id="howtouse"></a>
 
 The library is composed of two tools:
 
-## **Validator**
+## **Validator** <a class="anchor" id="howtouse_validator"></a>
 
 `Validator` compare a JSON packet description with a predefined JSON schema to ensure data integrity for plugin generation.
 
@@ -48,7 +69,7 @@ fn foo() -> Result<(), WirdigenError> {
 }
 ```
 
-## **Generator**
+## **Generator** <a class="anchor" id="howtouse_generator"></a>
 
 `Generator` generate LUA plugin based on JSON input given by the user.
 
@@ -136,24 +157,24 @@ A JSON dissector description is composed of 4 elements:
 - `connection`
 - `data`
 
-## **Name**
+## **Name** <a class="anchor" id="dissector_name"></a>
 
 `name` element is a string (max size: 32) representing the name of the protocol to dissect that  will be used inside Wireshark ("Protocol" column) to identify your packet.
 
 **Note:** This name is also used for the generated LUA file. For example, if the attribute is `MY_PROTO`, the generated plugin will be called `dissector_MY_PROTO.lua`.
 
-## **Endianness**
+## **Endianness** <a class="anchor" id="dissector_endianness"></a>
 
 String defining which endianness is used by the protocol.
 Possible values are `little` and `big`.
 
-## **Connection**
+## **Connection** <a class="anchor" id="dissector_connection"></a>
 
 The `connection` object contains 2 fields :
 - `protocol`: String. Either `udp` or `tcp`.
 - `ports`: Array of port the dissector need to spy (between 1 and 65535).
 
-## **Data**
+## **Data** <a class="anchor" id="dissector_data"></a>
 
 `data` is an array of object describing the packet. Each object define a chunk of the packet we want to identify.
 
@@ -168,7 +189,7 @@ Each chunk must contains the following attributes:
 
 These matrices show which format/base combination are supported by Wirdigen. 
 
-## **Numeric**
+## **Numeric** <a class="anchor" id="matrix_numeric"></a>
 
 | Format \ Base | NONE | DEC | OCT | HEX | DEC_HEX | HEX_DEC |
 |:-------------:|:----:|:---:|:---:|:---:|:-------:|:-------:|
@@ -187,7 +208,7 @@ These matrices show which format/base combination are supported by Wirdigen.
 
 _(*) = For the specified `format`, the `base` is ignored by Wireshark._ 
 
-## **Time**
+## **Time** <a class="anchor" id="matrix_time"></a>
 
 |   Format \ Base  | LOCAL | UTC | DOY_UTC |
 |:----------------:|:-----:|:---:|:-------:|
@@ -196,13 +217,13 @@ _(*) = For the specified `format`, the `base` is ignored by Wireshark._
 
 _(*) = For the specified `format`, the `base` is ignored by Wireshark._
 
-## **Raw**
+## **Raw** <a class="anchor" id="matrix_raw"></a>
 
 | Format \ Base | NONE | DOT | DASH | COLON | SPACE |
 |:-------------:|:----:|:---:|:----:|:-----:|:-----:|
 |      byte     |   X  |  X  |   X  |   X   |   X   |
 
-## **Specific**
+## **Specific** <a class="anchor" id="matrix_specific"></a>
 
 For these specific type of data, display is automatically handled by Wirehsark. Hense, `base` is ignored. I would recommend using `NONE` in these case.
 
@@ -213,7 +234,7 @@ For these specific type of data, display is automatically handled by Wirehsark. 
 - guid
 - oid
 
-# **Import dissector into Wireshark**
+# **Import dissector into Wireshark** <a class="anchor" id="import_dissector"></a>
 
 First, you need to check in which directory Wireshark is looking for LUA plugin.
 
@@ -225,7 +246,7 @@ The dissector script will be active after Wireshark is refreshed. You can either
 
 **Note:** You need to reload/restart everytime you make a change in a dissector. 
 
-# **Roadmap**
+# **Roadmap** <a class="anchor" id="roadmap"></a>
 
 - Missing data type:
     -  uint24
@@ -244,3 +265,7 @@ The dissector script will be active after Wireshark is refreshed. You can either
 
 - Support for child subtree to clearly describe more complex packet.
     
+# Related tools <a class="anchor" id="related_tools"></a>
+
+- [rust_dissector_generator](https://github.com/Cerclique/rust_dissector_generator): Simple executable using Wirdigen library
+- [rust_dissector_udp](https://github.com/Cerclique/rust_dissector_udp): Send custom packet over UDP to test generated plugin by the library inside wireshark.
