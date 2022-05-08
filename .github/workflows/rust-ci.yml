@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build_tests:
+  rust_ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -18,9 +18,6 @@ jobs:
         run: cargo build --verbose
       - name: Test
         run: cargo test --verbose
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
