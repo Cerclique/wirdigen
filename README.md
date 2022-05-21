@@ -194,10 +194,12 @@ These matrices show which format/base combination are supported by Wirdigen.
 |      char     |      |     |  X  |  X  |         |         |
 |     uint8     |      |  X  |  X  |  X  |    X    |    X    |
 |     uint16    |      |  X  |  X  |  X  |    X    |    X    |
+|     uint24    |      |  X  |  X  |  X  |    X    |    X    |
 |     uint32    |      |  X  |  X  |  X  |    X    |    X    |
 |     uint64    |      |  X  |  X  |  X  |    X    |    X    |
 |      int8     |      |  X  |     |     |         |         |
 |     int16     |      |  X  |     |     |         |         |
+|     int24     |      |  X  |     |     |         |         |
 |     int32     |      |  X  |     |     |         |         |
 |     int64     |      |  X  |     |     |         |         |
 |    float(*)   |   X  |  X  |  X  |  X  |    X    |    X    |
@@ -260,7 +262,7 @@ The dissector script will be active after Wireshark is refreshed. You can either
 
 - Support for child subtree to clearly describe more complex packet.
 
-- Support for array (drop `size` attribute for primitive type and make it exclusive for array declaration ?)
+- Thinking about potential support for array.
 # Related tools <a class="anchor" id="related_tools"></a>
 
 - [rust_dissector_generator](https://github.com/Cerclique/rust_dissector_generator): Simple executable using Wirdigen library
