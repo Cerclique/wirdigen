@@ -1,9 +1,6 @@
-![RustBuild](https://github.com/cerclique/wirdigen/actions/workflows/rust-build.yml/badge.svg)
-![RustTest](https://github.com/cerclique/wirdigen/actions/workflows/rust-test.yml/badge.svg)
+![RustCI](https://github.com/cerclique/wirdigen/actions/workflows/rust-ci.yml/badge.svg)
 [![Codecov](https://codecov.io/gh/Cerclique/wirdigen/branch/master/graph/badge.svg?token=7TATDXMKQA)](https://codecov.io/gh/Cerclique/wirdigen)
-
 ![RustAudit](https://github.com/cerclique/wirdigen/actions/workflows/rust-audit.yml/badge.svg)
-![RustClippy](https://github.com/cerclique/wirdigen/actions/workflows/rust-clippy.yml/badge.svg)
 
 ---
 
@@ -249,8 +246,6 @@ The dissector script will be active after Wireshark is refreshed. You can either
 # **Roadmap** <a class="anchor" id="roadmap"></a>
 
 - Missing data type:
-    -  uint24
-    - int24
     - framenum
     - string
     - stringz
@@ -264,7 +259,8 @@ The dissector script will be active after Wireshark is refreshed. You can either
     - For a attribute, add the possibility for a user to specify a string description for specific value (eg: HTML - 404 -> NOT FOUND, 200 -> OK).
 
 - Support for child subtree to clearly describe more complex packet.
-    
+
+- Support for array (drop `size` attribute for primitive type and make it exclusive for array declaration ?)
 # Related tools <a class="anchor" id="related_tools"></a>
 
 - [rust_dissector_generator](https://github.com/Cerclique/rust_dissector_generator): Simple executable using Wirdigen library
