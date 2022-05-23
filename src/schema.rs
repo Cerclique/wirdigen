@@ -45,7 +45,7 @@ pub const JSON_SCHEMA: &str = r#"
                     },
                     "format" : {
                         "type" : "string",
-                        "enum" : ["bool", "char", "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float", "double", "absolute_time", "relative_time", "ether", "bytes", "ipv4", "ipv6", "guid", "oid", "none"] 
+                        "enum" : ["bool", "char", "uint8", "uint16", "uint24", "uint32", "uint64", "int8", "int16", "int24", "int32", "int64", "float", "double", "absolute_time", "relative_time", "ether", "bytes", "ipv4", "ipv6", "guid", "oid", "none"] 
                     },
                     "base" : { 
                         "type" : "string",

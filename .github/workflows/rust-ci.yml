@@ -1,8 +1,8 @@
-name: ci-pipeline
+name: Rust CI
 
 on: 
   push:
-    branches: [master]
+    branches: [master, dev]
   pull_request:
     branches: [master]
 
@@ -10,15 +10,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build_tests:
+  cargo_build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - name: Build
         run: cargo build --verbose
-      - name: Test
+  cargo_test:
+    needs: cargo_build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
         run: cargo test --verbose
-  clippy:
+  cargo_clippy:
+    needs: [cargo_build, cargo_test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

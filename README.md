@@ -1,9 +1,6 @@
-![RustBuild](https://github.com/cerclique/wirdigen/actions/workflows/rust-build.yml/badge.svg)
-![RustTest](https://github.com/cerclique/wirdigen/actions/workflows/rust-test.yml/badge.svg)
+![RustCI](https://github.com/cerclique/wirdigen/actions/workflows/rust-ci.yml/badge.svg)
 [![Codecov](https://codecov.io/gh/Cerclique/wirdigen/branch/master/graph/badge.svg?token=7TATDXMKQA)](https://codecov.io/gh/Cerclique/wirdigen)
-
 ![RustAudit](https://github.com/cerclique/wirdigen/actions/workflows/rust-audit.yml/badge.svg)
-![RustClippy](https://github.com/cerclique/wirdigen/actions/workflows/rust-clippy.yml/badge.svg)
 
 ---
 
@@ -197,10 +194,12 @@ These matrices show which format/base combination are supported by Wirdigen.
 |      char     |      |     |  X  |  X  |         |         |
 |     uint8     |      |  X  |  X  |  X  |    X    |    X    |
 |     uint16    |      |  X  |  X  |  X  |    X    |    X    |
+|     uint24    |      |  X  |  X  |  X  |    X    |    X    |
 |     uint32    |      |  X  |  X  |  X  |    X    |    X    |
 |     uint64    |      |  X  |  X  |  X  |    X    |    X    |
 |      int8     |      |  X  |     |     |         |         |
 |     int16     |      |  X  |     |     |         |         |
+|     int24     |      |  X  |     |     |         |         |
 |     int32     |      |  X  |     |     |         |         |
 |     int64     |      |  X  |     |     |         |         |
 |    float(*)   |   X  |  X  |  X  |  X  |    X    |    X    |
@@ -249,8 +248,6 @@ The dissector script will be active after Wireshark is refreshed. You can either
 # **Roadmap** <a class="anchor" id="roadmap"></a>
 
 - Missing data type:
-    -  uint24
-    - int24
     - framenum
     - string
     - stringz
@@ -264,7 +261,8 @@ The dissector script will be active after Wireshark is refreshed. You can either
     - For a attribute, add the possibility for a user to specify a string description for specific value (eg: HTML - 404 -> NOT FOUND, 200 -> OK).
 
 - Support for child subtree to clearly describe more complex packet.
-    
+
+- Thinking about potential support for array.
 # Related tools <a class="anchor" id="related_tools"></a>
 
 - [rust_dissector_generator](https://github.com/Cerclique/rust_dissector_generator): Simple executable using Wirdigen library
