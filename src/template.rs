@@ -5,7 +5,7 @@ pub(crate) const DISSECTOR_TEMPLATE: &str = r#"
     Description: Wireshark Dissector for "%DISSECTOR_NAME%"
 ]]--
 
-%DISSECTOR_NAME% = Proto("%DISSECTOR_NAME%", "%DISSECTOR_NAME% Protocol")
+local %DISSECTOR_NAME% = Proto("%DISSECTOR_NAME%", "%DISSECTOR_NAME% Protocol")
 
 -- Fields Declaration Section
 %FIELDS_DECLARATION%
@@ -16,7 +16,7 @@ pub(crate) const DISSECTOR_TEMPLATE: &str = r#"
 
 -- Dissector Callback Declaration
 function %DISSECTOR_NAME%.dissector(buffer, pinfo, tree)
-    length = buffer:len()
+    local length = buffer:len()
     if length == 0 then return end
 
     -- Adds dissector name to protocol column

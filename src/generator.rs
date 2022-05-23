@@ -103,7 +103,7 @@ impl Generator {
         for data in dissector.data {
             let full_filter_name = format!("{}.{}", data_prefix_name, data.name);
 
-            let _ = writeln!(fields_declaration_buffer, "{} = ProtoField.{}(\"{}\", \"{}\", base.{})",
+            let _ = writeln!(fields_declaration_buffer, "local {} = ProtoField.{}(\"{}\", \"{}\", base.{})",
                 data.name, data.format, full_filter_name, data.name, data.base
             );
 
