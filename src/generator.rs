@@ -226,7 +226,7 @@ mod unit_test {
 
     #[test]
     fn generator_from_reader() -> Result<(), WirdigenError> {
-        let file = File::open("./data/example_dissector.json")?;
+        let file = File::open("./example/example_dissector.json")?;
         let rdr = BufReader::new(file);
 
         let output_file_path = Generator::default().from_reader(rdr)?;
@@ -237,7 +237,7 @@ mod unit_test {
 
     #[test]
     fn generator_from_value() -> Result<(), WirdigenError> {
-        let file = File::open("./data/example_dissector.json")?;
+        let file = File::open("./example/example_dissector.json")?;
         let rdr = BufReader::new(file);
         let value: Value = serde_json::from_reader(rdr)?;
 

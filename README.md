@@ -47,7 +47,7 @@ use wirdigen::error::WirdigenError;
 
 fn foo() -> Result<(), WirdigenError> {
     // Load JSON file
-    let file_path = "./data/example_dissector.json";
+    let file_path = "./example/example_dissector.json";
     let file = File::open(file_path)?;
     let rdr = BufReader::new(file);
 
@@ -76,7 +76,7 @@ use wirdigen::error::WirdigenError;
 
 fn foo() -> Result<(), WirdigenError> {
     // Load JSON file
-    let file_path = "./data/example_dissector.json";
+    let file_path = "./example/example_dissector.json";
     let file = File::open(file_path)?;
     let rdr = BufReader::new(file);
 
@@ -100,7 +100,7 @@ The `Generator` does not perform any pre-validation on the user input. This is t
 ```rust
 fn foo() -> Result<(), WirdigenError> {
     // Open the JSON file
-    let file_path = "./data/example_dissector.json";
+    let file_path = "./example/example_dissector.json";
     let file = File::open(file_path)?;
     let rdr = BufReader::new(file);
 
