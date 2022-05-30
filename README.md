@@ -47,7 +47,7 @@ use wirdigen::error::WirdigenError;
 
 fn foo() -> Result<(), WirdigenError> {
     // Load JSON file
-    let file_path = "./data/example_dissector.json";
+    let file_path = "./example/example_dissector.json";
     let file = File::open(file_path)?;
     let rdr = BufReader::new(file);
 
@@ -76,7 +76,7 @@ use wirdigen::error::WirdigenError;
 
 fn foo() -> Result<(), WirdigenError> {
     // Load JSON file
-    let file_path = "./data/example_dissector.json";
+    let file_path = "./example/example_dissector.json";
     let file = File::open(file_path)?;
     let rdr = BufReader::new(file);
 
@@ -100,7 +100,7 @@ The `Generator` does not perform any pre-validation on the user input. This is t
 ```rust
 fn foo() -> Result<(), WirdigenError> {
     // Open the JSON file
-    let file_path = "./data/example_dissector.json";
+    let file_path = "./example/example_dissector.json";
     let file = File::open(file_path)?;
     let rdr = BufReader::new(file);
 
@@ -175,13 +175,28 @@ The `connection` object contains 2 fields :
 
 `data` is an array of object describing the packet. Each object define a chunk of the packet we want to identify.
 
-Each chunk must contains the following attributes:
+Each chunk contains the following attributes:
 - `name`: String (max size: 32).
 - `format`: String representing the data type of the chunk. Refer to format/base matrices below for available values.
 - `base`: String representing how the value should be displayed. Refer to format/base matrices below for available values. 
 - `offset`: Position offset, in byte, from the begining of the packet.
 - `size`: Size, in byte, of the chunk inside the packet.
+- `valstr` (Optional) : Array of value/string object to identify specific values in the payload. See below for more information.
 
+**About `strval`:**
+
+This attribute can be used to identify and replace specific value by its string representation (max size: 32). For instance, when dealing with webpage status code, it can be usefull to view status code `404` as `"NOT FOUND"` or `200` as `"OK"` inside wireshark capture view.
+This example can be described as follow inside the dissector JSON file :
+
+```json
+{
+    ..., // First part of data chunk description
+    "valstr" : [
+        { "value": 404, "string": "NOT FOUND" },
+        { "value": 200, "string": "OK"}
+    ]
+}
+```
 # **Format/Base compatibility matrices**
 
 These matrices show which format/base combination are supported by Wirdigen. 
@@ -257,12 +272,8 @@ The dissector script will be active after Wireshark is refreshed. You can either
     - systemid
     - eui64
 
-- Extended atrtibute description
-    - For a attribute, add the possibility for a user to specify a string description for specific value (eg: HTML - 404 -> NOT FOUND, 200 -> OK).
-
 - Support for child subtree to clearly describe more complex packet.
 
-- Thinking about potential support for array.
 # Related tools <a class="anchor" id="related_tools"></a>
 
 - [rust_dissector_generator](https://github.com/Cerclique/rust_dissector_generator): Simple executable using Wirdigen library

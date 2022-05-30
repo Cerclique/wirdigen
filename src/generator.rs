@@ -1,13 +1,13 @@
 //! Module to generate LUA plugin from JSON of a dissector
 
-use std::fmt::Write as StringWrite;
 use chrono::offset::Local;
 use regex::Regex;
 use serde_json::Value;
 use std::env;
+use std::fmt::Write as StringWrite;
 use std::fs::File;
-use std::io::{BufWriter, Read};
 use std::io::Write as FileWrite;
+use std::io::{BufWriter, Read};
 
 use crate::dissector::Dissector;
 use crate::error::WirdigenError;
@@ -59,7 +59,7 @@ impl Generator {
     }
 
     /// Get current output directory of generated directory
-    /// 
+    ///
     /// Note: By default, the value is set to the temporary directory of the OS
     pub fn get_output_directory(&self) -> &str {
         &self.output_dir
@@ -93,28 +93,53 @@ impl Generator {
         // Fields list
         // Fields declaration
         // Subtree population
+        // ValueString 
 
-        let mut fields_list_buffer = String::new();
-        let mut fields_declaration_buffer = String::new();
-        let mut subtree_population_buffer = String::new();
+        let mut fields_list_buffer: String = String::new();
+        let mut fields_declaration_buffer: String = String::new();
+        let mut subtree_population_buffer: String = String::new();
+        let mut valstr_buffer: String = String::new();
 
-        let data_prefix_name = dissector.name.to_lowercase();
+        let data_prefix_name: String = dissector.name.to_lowercase();
 
         for data in dissector.data {
-            let full_filter_name = format!("{}.{}", data_prefix_name, data.name);
+            let full_filter_name: String = format!("{}.{}", data_prefix_name, data.name);
 
-            let _ = writeln!(fields_declaration_buffer, "{} = ProtoField.{}(\"{}\", \"{}\", base.{})",
-                data.name, data.format, full_filter_name, data.name, data.base
-            );
+            // Check if 'valstr' is defined for current data chunk
+            if let Some(valstr_vec) = data.valstr {
+                let mut valstr_value_buffer: String = String::new();
+                for valstr_item in valstr_vec {
+                    let _ = write!(
+                        valstr_value_buffer,
+                        "[{}] = \"{}\", ",
+                        valstr_item.value, valstr_item.string
+                    );
+                }
 
-            // fields_declaration_buffer.push_str(&format!(
-            //     "{} = ProtoField.{}(\"{}\", \"{}\", base.{})\n",
-            //     data.name, data.format, full_filter_name, data.name, data.base
-            // ));
+                // Remove last whitespace and ','
+                valstr_value_buffer.truncate(valstr_value_buffer.chars().count() - 2);
+
+                let valstr_name = format!("VALSTR_{}", data.name.to_uppercase());
+                let _ = writeln!(
+                    valstr_buffer,
+                    "local {} = {{ {} }}",
+                    valstr_name, valstr_value_buffer
+                );
+
+                let _ = writeln!(
+                    fields_declaration_buffer,
+                    "local {} = ProtoField.{}(\"{}\", \"{}\", base.{}, {})",
+                    data.name, data.format, full_filter_name, data.name, data.base, valstr_name
+                );
+            } else {
+                let _ = writeln!(
+                    fields_declaration_buffer,
+                    "local {} = ProtoField.{}(\"{}\", \"{}\", base.{})",
+                    data.name, data.format, full_filter_name, data.name, data.base
+                );
+            }
 
             let _ = write!(fields_list_buffer, "{},\n\t", data.name);
-
-            // fields_list_buffer.push_str(&format!("{},\n\t", data.name));
 
             let add_endianness = if dissector.endianness == "little" {
                 String::from("add_le")
@@ -122,14 +147,13 @@ impl Generator {
                 String::from("add")
             };
 
-            let buffer_declaration = format!("buffer({}, {})", data.offset, data.size);
+            let buffer_declaration: String = format!("buffer({}, {})", data.offset, data.size);
 
-            let _ = write!(subtree_population_buffer, "subtree:{}({}, {})\n\t", add_endianness, data.name, buffer_declaration);
-
-            // subtree_population_buffer.push_str(&format!(
-            //     "subtree:{}({}, {})\n\t",
-            //     add_endianness, data.name, buffer_declaration
-            // ));
+            let _ = write!(
+                subtree_population_buffer,
+                "subtree:{}({}, {})\n\t",
+                add_endianness, data.name, buffer_declaration
+            );
         }
 
         fields_declaration_buffer.truncate(fields_declaration_buffer.chars().count() - 1);
@@ -140,6 +164,9 @@ impl Generator {
             Keyword::FieldsList.as_str(),
             &fields_list_buffer,
         )?;
+
+        output_data =
+            self.find_and_replace_all(&output_data, Keyword::ValueString.as_str(), &valstr_buffer)?;
 
         output_data = self.find_and_replace_all(
             &output_data,
@@ -159,13 +186,13 @@ impl Generator {
             &dissector.connection.protocol,
         )?;
 
-        let mut ports_buffer = String::new();
+        let mut ports_buffer: String = String::new();
         for port in dissector.connection.ports {
-            let _ = writeln!(ports_buffer, "{}_port:add({}, {})", dissector.connection.protocol, port, dissector.name);
-            // ports_buffer.push_str(&format!(
-            //     "{}_port:add({}, {})\n",
-            //     dissector.connection.protocol, port, dissector.name
-            // ));
+            let _ = writeln!(
+                ports_buffer,
+                "{}_port:add({}, {})",
+                dissector.connection.protocol, port, dissector.name
+            );
         }
 
         output_data =
@@ -226,7 +253,7 @@ mod unit_test {
 
     #[test]
     fn generator_from_reader() -> Result<(), WirdigenError> {
-        let file = File::open("./data/example_dissector.json")?;
+        let file = File::open("./example/example_dissector.json")?;
         let rdr = BufReader::new(file);
 
         let output_file_path = Generator::default().from_reader(rdr)?;
@@ -237,7 +264,7 @@ mod unit_test {
 
     #[test]
     fn generator_from_value() -> Result<(), WirdigenError> {
-        let file = File::open("./data/example_dissector.json")?;
+        let file = File::open("./example/example_dissector.json")?;
         let rdr = BufReader::new(file);
         let value: Value = serde_json::from_reader(rdr)?;
 
