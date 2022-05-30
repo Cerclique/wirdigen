@@ -7,6 +7,9 @@ pub(crate) const DISSECTOR_TEMPLATE: &str = r#"
 
 local %DISSECTOR_NAME% = Proto("%DISSECTOR_NAME%", "%DISSECTOR_NAME% Protocol")
 
+-- ValueString Declaration Section
+%VALUESTRING_DECLARATION%
+
 -- Fields Declaration Section
 %FIELDS_DECLARATION%
 

@@ -355,6 +355,26 @@
             "base" : "NONE",
             "offset" : 250,
             "size" : 16
+        },
+        {
+            "name": "answer_to_universe",
+            "format" : "uint8",
+            "base" : "DEC",
+            "offset" : 266,
+            "size" : 1,
+            "valstr" : [
+                { "value" : 42, "string" : "FORTY-TWO"}
+            ]
+        },
+        {
+            "name": "temperature",
+            "format" : "int32",
+            "base" : "DEC",
+            "offset" : 267,
+            "size" : 4,
+            "valstr" : [
+                { "value" : -273, "string" : "ABSOLUTE ZERO" }
+            ]
         }
     ]
 }

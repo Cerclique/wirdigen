@@ -56,6 +56,24 @@ pub const JSON_SCHEMA: &str = r#"
                     },
                     "size" : {
                         "type" : "number"
+                    },
+                    "valstr" : {
+                        "type": "array",
+                        "minItems" : 1,
+                        "items" : {
+                            "type" : "object",
+                            "properties" : {
+                                "value" : {
+                                    "type" : "number"
+                                },
+                                "string" : {
+                                    "type" : "string",
+                                    "minLength" : 1,
+                                    "maxLength" : 32
+                                }
+                            },
+                            "required" : ["value", "string"]
+                        }
                     }
                 },
                 "required" : ["name", "format", "base", "offset", "size"]

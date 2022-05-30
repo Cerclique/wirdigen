@@ -1,6 +1,6 @@
 [package]
 name = "wirdigen"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Aurélien VERNIZEAU <aurelien.vernizeau@gmail.com>"]
 edition = "2021"
 description = "LUA Wireshark dissector validator/generator from JSON"
