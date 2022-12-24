@@ -33,7 +33,7 @@ pub(crate) struct DataChunk {
     pub offset: u32,
 
     /// Size of the attribute
-    pub size: u32,
+    pub size: Option<u32>,
 
     /// ValueString (Optionnal)
     pub valstr: Option<Vec<ValueString>>

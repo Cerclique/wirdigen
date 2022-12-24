@@ -76,7 +76,7 @@ pub const JSON_SCHEMA: &str = r#"
                         }
                     }
                 },
-                "required" : ["name", "format", "base", "offset", "size"]
+                "required" : ["name", "format", "base", "offset"]
             }
         }
     },

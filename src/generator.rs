@@ -13,6 +13,7 @@ use crate::dissector::Dissector;
 use crate::error::WirdigenError;
 use crate::keyword::Keyword;
 use crate::template::DISSECTOR_TEMPLATE;
+use crate::data_size::get_data_size;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -93,7 +94,7 @@ impl Generator {
         // Fields list
         // Fields declaration
         // Subtree population
-        // ValueString 
+        // ValueString
 
         let mut fields_list_buffer: String = String::new();
         let mut fields_declaration_buffer: String = String::new();
@@ -147,13 +148,34 @@ impl Generator {
                 String::from("add")
             };
 
-            let buffer_declaration: String = format!("buffer({}, {})", data.offset, data.size);
-
-            let _ = write!(
-                subtree_population_buffer,
-                "subtree:{}({}, {})\n\t",
-                add_endianness, data.name, buffer_declaration
-            );
+            // No size found in the description mean we have one element (not an array).
+            if data.size.is_none() {
+                if let Some(data_size) = get_data_size(&data.format) {
+                    let buffer_declaration: String = format!("buffer({}, {})", data.offset, data_size);
+                    let _ = write!(
+                        subtree_population_buffer,
+                        "subtree:{}({}, {})\n\t",
+                        add_endianness, data.name, buffer_declaration
+                    );
+                }
+                else {
+                    panic!("Unable to get size for data: {}", data.format);
+                }
+            }
+            else {
+                println!("WARNING - ARRAY DETECTED BUT STILL TREATED AS SINGLE VALUE FOR NOW");
+                if let Some(data_size) = get_data_size(&data.format) {
+                    let buffer_declaration: String = format!("buffer({}, {})", data.offset, data_size);
+                    let _ = write!(
+                        subtree_population_buffer,
+                        "subtree:{}({}, {})\n\t",
+                        add_endianness, data.name, buffer_declaration
+                    );
+                }
+                else {
+                    panic!("Unable to get size for data: {}", data.format);
+                }
+            }
         }
 
         fields_declaration_buffer.truncate(fields_declaration_buffer.chars().count() - 1);
