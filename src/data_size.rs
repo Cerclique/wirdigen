@@ -7,6 +7,6 @@ pub(crate) fn get_data_size(data_str: &str) -> Option<u32> {
         "ether" => Some(6),
         "uint64" | "int64" | "double" | "absolute_time" | "relative_time" => Some(8),
         "ipv6" | "guid" | "oid" => Some(16),
-        _ => None 
+        _ => None,
     }
 }

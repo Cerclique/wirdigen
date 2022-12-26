@@ -24,7 +24,7 @@ impl Validator {
         match self.schema_value.validate(json_raw) {
             Err(errors) => {
                 for err in errors {
-                    eprintln!("{:#?}", err);
+                    eprintln!("{err:#?}");
                 }
                 false
             }

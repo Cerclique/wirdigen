@@ -21,7 +21,7 @@ impl Keyword {
             Self::ProjectName => "%PROJECT_NAME%",
             Self::Protocol => "%PROTOCOL%",
             Self::SubtreePopulation => "%SUBTREE_POPULATION%",
-            Self::ValueString => "%VALUESTRING_DECLARATION%"
+            Self::ValueString => "%VALUESTRING_DECLARATION%",
         }
     }
 }

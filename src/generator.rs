@@ -9,11 +9,11 @@ use std::fs::File;
 use std::io::Write as FileWrite;
 use std::io::{BufWriter, Read};
 
+use crate::data_size::get_data_size;
 use crate::dissector::Dissector;
 use crate::error::WirdigenError;
 use crate::keyword::Keyword;
 use crate::template::DISSECTOR_TEMPLATE;
-use crate::data_size::get_data_size;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -72,7 +72,7 @@ impl Generator {
         // Load template from string constant
         let mut output_data: String = String::from(DISSECTOR_TEMPLATE);
 
-        let tool_name = format!("WIRDIGEN {}", VERSION);
+        let tool_name = format!("WIRDIGEN {VERSION}");
         // Project name
         output_data =
             self.find_and_replace_all(&output_data, Keyword::ProjectName.as_str(), &tool_name)?;
@@ -123,8 +123,7 @@ impl Generator {
                 let valstr_name = format!("VALSTR_{}", data.name.to_uppercase());
                 let _ = writeln!(
                     valstr_buffer,
-                    "local {} = {{ {} }}",
-                    valstr_name, valstr_value_buffer
+                    "local {valstr_name} = {{ {valstr_value_buffer} }}"
                 );
 
                 let _ = writeln!(
@@ -151,28 +150,27 @@ impl Generator {
             // No size found in the description mean we have one element (not an array).
             if data.size.is_none() {
                 if let Some(data_size) = get_data_size(&data.format) {
-                    let buffer_declaration: String = format!("buffer({}, {})", data.offset, data_size);
+                    let buffer_declaration: String =
+                        format!("buffer({}, {})", data.offset, data_size);
                     let _ = write!(
                         subtree_population_buffer,
                         "subtree:{}({}, {})\n\t",
                         add_endianness, data.name, buffer_declaration
                     );
-                }
-                else {
+                } else {
                     panic!("Unable to get size for data: {}", data.format);
                 }
-            }
-            else {
+            } else {
                 println!("WARNING - ARRAY DETECTED BUT STILL TREATED AS SINGLE VALUE FOR NOW");
                 if let Some(data_size) = get_data_size(&data.format) {
-                    let buffer_declaration: String = format!("buffer({}, {})", data.offset, data_size);
+                    let buffer_declaration: String =
+                        format!("buffer({}, {})", data.offset, data_size);
                     let _ = write!(
                         subtree_population_buffer,
                         "subtree:{}({}, {})\n\t",
                         add_endianness, data.name, buffer_declaration
                     );
-                }
-                else {
+                } else {
                     panic!("Unable to get size for data: {}", data.format);
                 }
             }
