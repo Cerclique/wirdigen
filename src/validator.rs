@@ -4,7 +4,8 @@ use jsonschema::JSONSchema;
 use serde_json::Value;
 
 use crate::error::WirdigenError;
-use crate::schema::JSON_SCHEMA;
+
+const JSON_SCHEMA: &str = include_str!("../res/schema.json");
 
 pub struct Validator {
     schema_value: JSONSchema,

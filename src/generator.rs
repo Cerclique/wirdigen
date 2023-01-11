@@ -12,7 +12,8 @@ use std::io::{BufWriter, Read};
 use crate::dissector::Dissector;
 use crate::error::WirdigenError;
 use crate::keyword::Keyword;
-use crate::template::DISSECTOR_TEMPLATE;
+
+const DISSECTOR_TEMPLATE: &str = include_str!("../res/template.lua");
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

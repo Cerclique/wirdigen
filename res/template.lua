@@ -1,4 +1,3 @@
-pub(crate) const DISSECTOR_TEMPLATE: &str = r#"
 --[[
     Author: %PROJECT_NAME%
     Date: %DATE%
@@ -34,4 +33,3 @@ end
 
 local %PROTOCOL%_port = DissectorTable.get("%PROTOCOL%.port")
 %PORTS%
-"#;

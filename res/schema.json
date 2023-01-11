@@ -1,4 +1,3 @@
-pub const JSON_SCHEMA: &str = r#"
 {
     "id": "schemaTemplate",
     "type" : "object",
@@ -82,4 +81,3 @@ pub const JSON_SCHEMA: &str = r#"
     },
     "required" : ["name", "endianness", "connection", "data"]
 }
-"#;
