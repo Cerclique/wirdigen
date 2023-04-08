@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct Connection {
     /// Protocol to spy: TCP or UDP
     pub protocol: String,
-    
+
     /// List of port to listen
     pub ports: Vec<u16>,
 }
@@ -15,7 +15,7 @@ pub(crate) struct ValueString {
     pub value: i64,
 
     /// String description of the value
-    pub string: String
+    pub string: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -27,21 +27,21 @@ pub(crate) struct DataChunk {
     pub format: String,
 
     /// How the data should be displayed
-    pub base: String,
-
-    /// Offset from the begining of the packet
-    pub offset: u32,
+    pub base: Option<String>,
 
     /// Size of the attribute
-    pub size: u32,
+    pub size: Option<u32>,
 
-    /// ValueString (Optionnal)
-    pub valstr: Option<Vec<ValueString>>
+    /// ValueString (Optional)
+    pub valstr: Option<Vec<ValueString>>,
+
+    /// DataChunk (Optional)
+    pub subdata: Option<Vec<DataChunk>>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Dissector {
-    /// Name of the dissector 
+    /// Name of the dissector
     pub name: String,
 
     /// Big or little endian

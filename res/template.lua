@@ -13,7 +13,7 @@ local %DISSECTOR_NAME% = Proto("%DISSECTOR_NAME%", "%DISSECTOR_NAME% Protocol")
 %FIELDS_DECLARATION%
 
 %DISSECTOR_NAME%.fields = {
-    %FIELDS_LIST%
+        %FIELDS_LIST%
 }
 
 -- Dissector Callback Declaration
@@ -28,7 +28,7 @@ function %DISSECTOR_NAME%.dissector(buffer, pinfo, tree)
     local subtree = tree:add(%DISSECTOR_NAME%, buffer(),"%DISSECTOR_NAME% Protocol Data")
 
     -- Adds Variables to the subtree
-    %SUBTREE_POPULATION%
+        %SUBTREE_POPULATION%
 end
 
 local %PROTOCOL%_port = DissectorTable.get("%PROTOCOL%.port")

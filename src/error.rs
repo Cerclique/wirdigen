@@ -1,22 +1,19 @@
-//! Enum of possible error returned by modules
+pub type Result<T> = std::result::Result<T, Error>;
 
-use thiserror::Error;
+#[derive(Debug)]
+pub enum Error {
+    /// Failed to deserialize value
+    DeserializationFailed(serde_json::Error),
 
-#[derive(Error, Debug)]
-pub enum WirdigenError {
-    /// Error inherited from std::io::Error
-    #[error(transparent)]
-    IOError(#[from] std::io::Error),
+    /// Failed to validate dissector
+    InvalidDissector(String),
 
-    /// Error inherited from serde_json::Error
-    #[error(transparent)]
-    SerdeJsonError(#[from] serde_json::Error),
+    /// Failed to create Regex
+    InvalidRegex(regex::Error),
 
-    /// Error inherited from regex::Error
-    #[error(transparent)]
-    RegexError(#[from] regex::Error),
+    /// Failed to create output file
+    FileCreation(std::io::Error),
 
-    /// String descripton of error returned by jsonschema::ValidationError
-    #[error("Failed to compile JSON schema")]
-    JSONSchemaCompilation(String),
+    /// Failed to write into output file
+    FileWrite(std::io::Error),
 }
