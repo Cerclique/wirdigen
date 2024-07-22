@@ -1,2 +1,14 @@
-/target
+
+# Build/Debug directories
+debug
+target
+
+# Remove for executable
 Cargo.lock
+
+# WASM
+wasm/pkg
+
+# IDE specific
+.idea
+.vscode

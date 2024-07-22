@@ -1,0 +1,16 @@
+[package]
+name = "wirdigen"
+version = "0.1.0"
+description = "CLI tool to create Wireshark dissector for TCP/UDP frames"
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.8", features = ["derive"] }
+
+dissector_generator.workspace = true
+dissector_parser.workspace = true
+thiserror.workspace = true

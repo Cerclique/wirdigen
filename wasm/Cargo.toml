@@ -1,0 +1,16 @@
+[package]
+name = "wasm"
+version = "0.1.0"
+authors = ["Aurélien VERNIZEAU <aurelien.vernizeau@gmail.com>"]
+edition = "2021"
+description = "WASM interface for Wirdigen"
+repository = "https://github.com/cerclique/widigen"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dissector_parser = { path = "../lib/dissector_parser" }
+dissector_configuration = { path = "../lib/dissector_configuration" }
+wasm-bindgen = "0.2.92"

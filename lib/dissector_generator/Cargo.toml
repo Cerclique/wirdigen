@@ -1,0 +1,13 @@
+[package]
+name = "dissector_generator"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+dissector_configuration.workspace = true
+thiserror.workspace = true
+
+regex = "1.10.5"
