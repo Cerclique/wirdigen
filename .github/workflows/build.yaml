@@ -12,17 +12,24 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-        
+
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt
 
-      - name: Rustfmt check
+      - name: Check formatting Wirdigen
         uses: actions-rust-lang/rustfmt@v1
+        with:
+          manifest-path: './Cargo.toml'
+          
+      - name: Check formatting Wirdigen WASM
+        uses: actions-rust-lang/rustfmt@v1
+        with:
+          manifest-path: './wasm/Cargo.toml'
 
   build:
-    name: Build
+    name: Build Wirdigen
     needs: formatting
     runs-on: ubuntu-latest
     steps:
@@ -36,7 +43,7 @@ jobs:
         run: cargo check --release
 
   test:
-    name: Test
+    name: Test Wirdigen
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -47,4 +54,4 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --release
