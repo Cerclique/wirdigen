@@ -7,7 +7,7 @@ env:
 
 jobs:
   formatting:
-    name: Format
+    name: Check formatting
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -18,7 +18,7 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Check formatting Wirdigen
+      - name: Check formatting Wirdigen CLI
         uses: actions-rust-lang/rustfmt@v1
         with:
           manifest-path: './Cargo.toml'
@@ -28,8 +28,8 @@ jobs:
         with:
           manifest-path: './wasm/Cargo.toml'
 
-  check_cli:
-    name: Check Wirdigen CLI
+  wirdigen_cli:
+    name: Wirdigen CLI
     needs: formatting
     runs-on: ubuntu-latest
     steps:
@@ -38,54 +38,23 @@ jobs:
 
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
 
       - name: Check sources
         run: cargo check --release
 
-  clippy_cli:
-    name: Run linter Wirdigen CLI
-    needs: check_cli
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install stable toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Run cargo clippy
+      - name: Run clippy
         run: cargo clippy
-
-  build_cli:
-    name: Build Wirdigen CLI
-    needs: check_cli
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install stable toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Build sources
         run: cargo build --release
 
-  test_cli:
-    name: Test Wirdigen CLI
-    needs: build_cli
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install stable toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
       - name: Run tests
         run: cargo test --release
 
-  build_wasm:
-    name: Build Wirdigen WASM
+  wirdigen_wasm:
+    name: Wirdigen WASM
     needs: formatting
     runs-on: ubuntu-latest
     steps:
@@ -99,42 +68,8 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build sources
-        run: |
-          cd wasm
-          wasm-pack build -t nodejs --out-name wirdigen --release
-
-  test_wasm:
-    name: Test Wirdigen WASM
-    needs: build_wasm
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install stable toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - name: Run tests
         run: wasm-pack build wasm -t nodejs --out-name wirdigen_wasm --target-dir target
 
-  pack_wasm:
-    name: Pack Wirdigen WASM
-    needs: test_wasm
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install stable toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - name: Build sources
-        run: |
-          wasm-pack build wasm -t nodejs --out-name wirdigen_wasm --target-dir target
-          wasm-pack pack wasm
+      - name: Pack NPM package
+        run: wasm-pack pack wasm
+        
