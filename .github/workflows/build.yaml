@@ -28,8 +28,8 @@ jobs:
         with:
           manifest-path: './wasm/Cargo.toml'
 
-  build_cli:
-    name: Build Wirdigen CLI
+  check_cli:
+    name: Check Wirdigen CLI
     needs: formatting
     runs-on: ubuntu-latest
     steps:
@@ -39,8 +39,36 @@ jobs:
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Build sources
+      - name: Check sources
         run: cargo check --release
+
+  clippy_cli:
+    name: Run linter Wirdigen CLI
+    needs: check_cli
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Run cargo clippy
+        run: cargo clippy
+
+  build_cli:
+    name: Build Wirdigen CLI
+    needs: check_cli
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build sources
+        run: cargo build --release
 
   test_cli:
     name: Test Wirdigen CLI
@@ -90,6 +118,23 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Run tests
+        run: wasm-pack build wasm -t nodejs --out-name wirdigen_wasm --target-dir target
+
+  pack_wasm:
+    name: Pack Wirdigen WASM
+    needs: test_wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build sources
         run: |
-          cd wasm
-          wasm-pack test --node
+          wasm-pack build wasm -t nodejs --out-name wirdigen_wasm --target-dir target
+          wasm-pack pack wasm
