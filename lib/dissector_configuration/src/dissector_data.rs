@@ -3,6 +3,7 @@ use crate::format::Format;
 
 /// Data chunk description inside the payload
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Data {
     /// Name
     name: String,

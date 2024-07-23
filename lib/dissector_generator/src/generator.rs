@@ -35,7 +35,7 @@ impl DissectorGenerator {
             );
         }
 
-        output_buffer = output_buffer.replace("%PORTS%", &ports_buffer);
+        let _ = output_buffer.replace("%PORTS%", &ports_buffer);
 
         todo!()
     }
