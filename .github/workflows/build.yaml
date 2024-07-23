@@ -3,8 +3,8 @@ name: Wirdigen Workflow
 on: [ push, pull_request ]
 
 jobs:
-  formatting:
-    name: Check formatting
+  wirdigen_cli:
+    name: Wirdigen CLI
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -13,30 +13,12 @@ jobs:
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
-      - name: Check formatting Wirdigen CLI
+      - name: Check formatting
         uses: actions-rust-lang/rustfmt@v1
         with:
           manifest-path: './Cargo.toml'
-
-      - name: Check formatting Wirdigen WASM
-        uses: actions-rust-lang/rustfmt@v1
-        with:
-          manifest-path: './wasm/Cargo.toml'
-
-  wirdigen_cli:
-    name: Wirdigen CLI
-    needs: formatting
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install stable toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy
 
       - name: Check sources
         run: cargo check --release
@@ -59,9 +41,13 @@ jobs:
 
   wirdigen_wasm:
     name: Wirdigen WASM
-    needs: formatting
     runs-on: ubuntu-latest
     steps:
+      - name: Check formatting
+        uses: actions-rust-lang/rustfmt@v1
+        with:
+          manifest-path: './wasm/Cargo.toml'
+
       - name: Checkout sources
         uses: actions/checkout@v4
 
@@ -72,10 +58,10 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build sources
-        run: wasm-pack build wasm -t nodejs --out-name wirdigen_wasm --target-dir target
+        run: wasm-pack build ./wasm -t nodejs --out-name wirdigen_wasm --target-dir target
 
       - name: Pack NPM package
-        run: wasm-pack pack wasm
+        run: wasm-pack pack ./wasm
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
