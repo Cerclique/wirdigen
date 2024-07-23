@@ -22,14 +22,14 @@ jobs:
         uses: actions-rust-lang/rustfmt@v1
         with:
           manifest-path: './Cargo.toml'
-          
+
       - name: Check formatting Wirdigen WASM
         uses: actions-rust-lang/rustfmt@v1
         with:
           manifest-path: './wasm/Cargo.toml'
 
-  build:
-    name: Build Wirdigen
+  build_cli:
+    name: Build Wirdigen CLI
     needs: formatting
     runs-on: ubuntu-latest
     steps:
@@ -42,9 +42,9 @@ jobs:
       - name: Build sources
         run: cargo check --release
 
-  test:
-    name: Test Wirdigen
-    needs: build
+  test_cli:
+    name: Test Wirdigen CLI
+    needs: build_cli
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -55,3 +55,41 @@ jobs:
 
       - name: Run tests
         run: cargo test --release
+
+  build_wasm:
+    name: Build Wirdigen WASM
+    needs: formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build sources
+        run:
+          cd wasm
+          wasm-pack build -t nodejs --out-name wirdigen --release
+
+  test_wasm:
+    name: Test Wirdigen WASM
+    needs: build_wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Run tests
+        run:
+          cd wasm
+          wasm-pack test --node
