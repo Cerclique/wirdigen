@@ -55,6 +55,7 @@ jobs:
         with:
           name: wirdigen_cli
           path: target/release/wirdigen
+          retention-days: 7
 
   wirdigen_wasm:
     name: Wirdigen WASM
@@ -81,3 +82,4 @@ jobs:
         with:
           name: wirdigen_wasm
           path: wasm/pkg/*.tgz
+          retention-days: 7
