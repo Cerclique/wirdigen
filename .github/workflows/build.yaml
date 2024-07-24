@@ -60,6 +60,9 @@ jobs:
       - name: Build sources
         run: wasm-pack build ./wasm -t nodejs --out-name wirdigen_wasm --target-dir target
 
+      - name: Run tests
+        run: wasm-pack test --node --release ./wasm
+
       - name: Pack NPM package
         run: wasm-pack pack ./wasm
 
