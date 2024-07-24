@@ -10,7 +10,7 @@ jobs:
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, cargo2junit
 
       - name: Checkout sources
         uses: actions/checkout@v4
