@@ -10,6 +10,7 @@ jobs:
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          toolchain: nightly
           components: rustfmt, clippy
 
       - name: Install cargo2junit
@@ -33,7 +34,7 @@ jobs:
         run: cargo build --release
 
       - name: Run tests
-        run: cargo test --release -- --format json | cargo2junit > results.xml
+        run: cargo test --release -- -Z unstable-options --format json | cargo2junit > results.xml
 
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -54,6 +55,8 @@ jobs:
     steps:
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
