@@ -10,7 +10,10 @@ jobs:
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: rustfmt, clippy, cargo2junit
+          components: rustfmt, clippy
+
+      - name: Install cargo2junit
+        run: cargo install cargo2junit
 
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -30,7 +33,13 @@ jobs:
         run: cargo build --release
 
       - name: Run tests
-        run: cargo test --release
+        run: cargo test --release --format json | cargo2junit > results.xml
+
+      - name: Upload test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          check_name: Test Results
+          files: results.xml
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
