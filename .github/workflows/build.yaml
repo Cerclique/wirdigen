@@ -7,7 +7,7 @@ jobs:
     name: Wirdigen CLI
     runs-on: ubuntu-latest
     steps:
-      - name: Install stable toolchain
+      - name: Install nightly toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
@@ -53,10 +53,11 @@ jobs:
     name: Wirdigen WASM
     runs-on: ubuntu-latest
     steps:
-      - name: Install stable toolchain
+      - name: Install nightly toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
+          components: rustfmt
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
