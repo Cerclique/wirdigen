@@ -28,3 +28,11 @@ pub fn dissector_get_base_list() -> Vec<String> {
 pub fn dissector_get_format_list() -> Vec<String> {
     Format::get_values_as_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn test_empty() {}
+}
