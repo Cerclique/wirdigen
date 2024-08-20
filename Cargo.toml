@@ -11,7 +11,7 @@ resolver = "2"
 [workspace.package]
 authors = ["Aurélien VERNIZEAU <aurelien.vernizeau@gmail.com>"]
 edition = "2021"
-repository = "https://github.com/cerclique/widigen"
+repository = "https://github.com/cerclique/wirdigen"
 license = "MIT"
 
 [workspace.dependencies]
@@ -20,3 +20,4 @@ thiserror = "1.0.61"
 dissector_configuration = { path = "lib/dissector_configuration" }
 dissector_parser = { path = "lib/dissector_parser" }
 dissector_generator = { path = "lib/dissector_generator" }
+

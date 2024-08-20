@@ -1,6 +1,6 @@
 use strum::{Display, EnumIter, IntoEnumIterator};
 
-#[derive(Debug, EnumIter, Display)]
+#[derive(Debug, EnumIter, Display, Eq, PartialEq)]
 pub enum Format {
     None,
     Bool,
@@ -60,5 +60,23 @@ impl From<String> for Format {
 impl Format {
     pub fn get_values_as_string() -> Vec<String> {
         Self::iter().map(|x| format!("{}", x)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::format::Format;
+
+    #[test]
+    fn test_get_values_as_string_not_empty() {
+        let list = Format::get_values_as_string();
+        assert!(list.len() > 0)
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_base_from_invalid_string() {
+        let str = "InvalidString".to_string();
+        let _ = Format::from(str);
     }
 }

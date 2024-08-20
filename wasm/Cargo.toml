@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Aurélien VERNIZEAU <aurelien.vernizeau@gmail.com>"]
 edition = "2021"
 description = "WASM interface for Wirdigen"
-repository = "https://github.com/cerclique/widigen"
+repository = "https://github.com/cerclique/wirdigen"
 license = "MIT"
 
 [lib]

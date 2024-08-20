@@ -11,3 +11,6 @@ dissector_configuration.workspace = true
 thiserror.workspace = true
 
 regex = "1.10.5"
+
+[lib]
+doctest = false

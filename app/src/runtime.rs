@@ -40,12 +40,15 @@ impl Runtime {
     fn check_impl<T: DissectorParsing>(input_path: &str) -> anyhow::Result<()> {
         let mut rdr = Self::load_input_file(input_path)?;
 
-        match T::check(&mut rdr)? {
-            true => println!("Check succeeded (file: {input_path}"),
-            false => println!("Check failed (file: {input_path}"),
-        };
-
-        Ok(())
+        T::check(&mut rdr)
+            .map(|res| {
+                if res.status {
+                    println!("OK")
+                } else {
+                    println!("{}", res.message.unwrap())
+                }
+            })
+            .or_else(|e| bail!(e))
     }
 
     fn generate_impl<T: DissectorParsing>(

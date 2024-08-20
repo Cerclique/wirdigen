@@ -1,6 +1,6 @@
 use strum::{Display, EnumIter, IntoEnumIterator};
 
-#[derive(Debug, EnumIter, Display)]
+#[derive(Debug, EnumIter, Display, Eq, PartialEq)]
 pub enum Base {
     None,
     Dec,
@@ -45,5 +45,23 @@ impl From<Option<String>> for Base {
 impl Base {
     pub fn get_values_as_string() -> Vec<String> {
         Self::iter().map(|x| format!("{}", x)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::base::Base;
+
+    #[test]
+    fn test_get_values_as_string_not_empty() {
+        let list = Base::get_values_as_string();
+        assert!(list.len() > 0)
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_base_from_invalid_string() {
+        let str = Some("InvalidString".to_string());
+        let _ = Base::from(str);
     }
 }

@@ -12,3 +12,6 @@ jsonschema = { version = "0.18.0", default-features = false }
 serde_json = "1.0.120"
 thiserror.workspace = true
 serde = "1.0.203"
+
+[lib]
+doctest = false
