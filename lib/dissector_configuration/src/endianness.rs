@@ -2,15 +2,15 @@ use strum::{Display, EnumIter, IntoEnumIterator};
 
 #[derive(Debug, EnumIter, Display, Eq, PartialEq)]
 pub enum Endianness {
-    LittleEndian,
-    BigEndian,
+    Little,
+    Big,
 }
 
 impl From<String> for Endianness {
     fn from(value: String) -> Self {
         match value.to_lowercase().as_str() {
-            "little" => Endianness::LittleEndian,
-            "big" => Endianness::BigEndian,
+            "little" => Endianness::Little,
+            "big" => Endianness::Big,
             _ => unreachable!(),
         }
     }
