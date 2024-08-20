@@ -7,12 +7,11 @@ use dissector_parser::parsers::json::JSONParser;
 use dissector_parser::traits::DissectorParsing;
 
 #[wasm_bindgen]
-#[allow(dead_code)]
-pub(crate) struct CheckResult {
-    pub(crate) status: bool,
+pub struct CheckResult {
+    pub status: bool,
 
-    // #[wasm_bindgen(getter_with_clone)]
-    pub(crate) message: Option<String>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub message: Option<String>,
 }
 
 impl CheckResult {
