@@ -6,10 +6,8 @@ use wasm_bindgen::JsError;
 use dissector_parser::parsers::json::JSONParser;
 use dissector_parser::traits::DissectorParsing;
 
-// TODO: Remove in final code
-#[allow(dead_code)]
-
 #[wasm_bindgen]
+#[allow(dead_code)]
 pub(crate) struct CheckResult {
     pub(crate) status: bool,
 
