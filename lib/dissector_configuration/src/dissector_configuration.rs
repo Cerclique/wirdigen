@@ -45,7 +45,7 @@ mod tests {
     fn test_configuration_new() {
         let conf = DissectorConfiguration::new(
             "test_conf",
-            Endianness::BigEndian,
+            Endianness::Big,
             NetworkInformation::new(Protocol::Tcp, vec![42, 1337]),
             vec![Data::new(
                 "test_data".to_string(),
@@ -55,7 +55,7 @@ mod tests {
         );
 
         assert_eq!(conf.name, "test_conf");
-        assert_eq!(conf.endianness, Endianness::BigEndian);
+        assert_eq!(conf.endianness, Endianness::Big);
         assert_eq!(
             conf.network_information,
             NetworkInformation::new(Protocol::Tcp, vec![42, 1337])
