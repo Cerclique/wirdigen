@@ -46,9 +46,9 @@ impl Base {
     pub fn get_values_as_string() -> Vec<String> {
         Self::iter()
             .map(|x| match x {
-                Base::DecHex => "dec_hex".to_string(),
-                Base::HexDec => "hex_dec".to_string(),
-                Base::DoyUtc => "doy_utc".to_string(),
+                Base::DecHex => "Dec_Hex".to_string(),
+                Base::HexDec => "Hex_Dec".to_string(),
+                Base::DoyUtc => "Doy_Utc".to_string(),
                 b => format!("{}", b),
             })
             .collect()
