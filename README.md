@@ -1,5 +1,4 @@
 ![RustCI](https://github.com/cerclique/wirdigen/actions/workflows/rust-ci.yml/badge.svg)
-[![Codecov](https://codecov.io/gh/Cerclique/wirdigen/branch/main/graph/badge.svg?token=7TATDXMKQA)](https://codecov.io/gh/Cerclique/wirdigen)
 ![RustAudit](https://github.com/cerclique/wirdigen/actions/workflows/rust-audit.yml/badge.svg)
 
 ---
