@@ -28,6 +28,10 @@ _Avoid_: Reassembly, segmentation, PDU splitting
 A formula in a Protocol Description that computes a size, a count, a condition or a switch subject from Fields read earlier.
 _Avoid_: Formula, rule, script
 
+**Diagnostic**:
+An error or a warning that Wirdigen reports about a Protocol Description, identified by a stable name and pointing at where in the description it applies. An error stops generation; a warning does not.
+_Avoid_: Lint, issue, validation message
+
 **Dissector**:
 The Wireshark Lua plugin generated from a Protocol Description.
 _Avoid_: Plugin, LUA file
