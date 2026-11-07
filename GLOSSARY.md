@@ -24,6 +24,10 @@ _Avoid_: Struct, message, template
 How a Dissector finds where each message starts and ends in a TCP stream, so one message split across segments, or several in one segment, are dissected correctly.
 _Avoid_: Reassembly, segmentation, PDU splitting
 
+**Expression**:
+A formula in a Protocol Description that computes a size, a count, a condition or a switch subject from Fields read earlier.
+_Avoid_: Formula, rule, script
+
 **Dissector**:
 The Wireshark Lua plugin generated from a Protocol Description.
 _Avoid_: Plugin, LUA file
