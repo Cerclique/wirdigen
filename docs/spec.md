@@ -1,6 +1,6 @@
 # Wirdigen v1 specification
 
-> **Status: draft.** One part is not yet decided: how a single Field states its type, display and value mappings ([§3.4](#34-field-declaration-pending)), tracked in [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41). Everything else below is decided.
+> **Status: complete.** Every part below is decided.
 
 This document describes Wirdigen v1: the Protocol Description format, the Dissectors it produces, the architecture, the library API, the CLI, the test strategy, the documentation and the release process. It is the destination of the [Wirdigen v1 spec](https://github.com/Cerclique/wirdigen/issues/8) map and the input for breaking v1 into implementation tickets.
 
@@ -47,6 +47,7 @@ A WASM/npm surface comes after v1, as a third crate on top of the library (§14)
 | **Registration** | How a Dissector attaches to traffic in Wireshark: the ports it claims by default, and its availability in Decode As. |
 | **Field** | One named element of the payload layout, with a built-in type or a Type, and display settings. |
 | **Type** | A named, reusable group of Fields, defined once and used wherever a layout is needed, including as one kind of message among several. |
+| **Enum** | A named table of labels for integer values and value ranges, defined once and shared by every Field whose values it names. |
 | **Framing** | How a Dissector finds where each message starts and ends in a TCP stream. |
 | **Expression** | A formula that computes a size, a count, a condition or a switch subject from Fields read earlier. |
 | **Diagnostic** | An error or a warning about a Protocol Description, with a stable name and a location. An error stops generation; a warning does not. |
@@ -74,9 +75,9 @@ The flow is: **Source** (description text plus a name) → `validate` → **Vali
 
 ### 3.2 Top level
 
-*ADR 0014.*
+*ADR 0014, ADR 0015.*
 
-A Protocol Description has exactly nine top-level keys, accepted in any order. Docs, examples and the JSON Schema list them in this order:
+A Protocol Description has exactly ten top-level keys, accepted in any order. Docs, examples and the JSON Schema list them in this order:
 
 | Key | Required | Meaning |
 |---|---|---|
@@ -88,6 +89,7 @@ A Protocol Description has exactly nine top-level keys, accepted in any order. D
 | `info` | no | Info column template (§3.14). |
 | `fields` | yes | The top-level layout: a non-empty structure, spelled like an inline structure (§3.4). |
 | `types` | no | Named Types (§3.5). |
+| `enums` | no | Named value tables (§3.4.7). |
 | `allow` | no | Names of warnings to silence (§6.4). |
 
 There is no format-version key: a file without one is 1.x, and a description using a key from a newer minor already fails on that unknown key. A 2.0 can require `wirdigen: 2`. There is no `description:` key; YAML comments document a file. Ordering of top-level keys is never checked.
@@ -110,25 +112,146 @@ A `name:` or `title:` equal to a protocol built into Wireshark is the warning `p
 
 Changing `name:` renames every filter of the protocol, so it breaks that protocol's users.
 
-### 3.4 Field declaration (pending)
+### 3.4 Field declaration
 
-> **Pending: [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41).** That ticket settles the structure shape (presumably `fields:` as an ordered list of maps carrying `name:`), Field and Type name rules, the type key and built-in type names (mapping onto Wireshark's ProtoField types), display bases and their compatibility matrix, value / range / true-false / unit strings, the tree label and description, and string encoding. This section is filled in from its resolution.
+*ADR 0015, Field declaration: types, display and value mappings.*
 
-What is already decided about Fields:
+A Field is declared in Wirdigen's own vocabulary: Wireshark's names (`FT_*`, `BASE_*`, `ENC_*`, value string vs range string) never appear in a Protocol Description.
 
-- A structure is an ordered sequence of Fields read one after another (sequential layout, no absolute offsets). The top-level `fields:`, a Type's body and a Field's inline `fields:` are all structures and are spelled the same way.
-- A Field has either a built-in type or a Type (§3.5), or an inline `fields:` structure.
-- Sibling Field names must be unique (error). Field and Type names may not start with `_`, which is reserved for built-ins (§4.5).
-- Every Field read can be used in later Expressions if it is numeric (§4.3); `hidden: true` reads a Field without showing it (§3.10).
-- The baseline the pending ticket must cover: the full ProtoField type set and value-string mappings. Known Lua gaps that generated code fills itself: length-prefixed strings (`UINT_STRING`), `STRINGZPAD`/`STRINGZTRUNC`, 40/48/56-bit integers, and bitmasks (one ProtoField per bit with a mask, since there is no `add_bitmask`). Signed integers accept only a decimal base, and string Fields use `base.NONE` with the encoding given when the Field is added.
+```yaml
+fields:
+  - name: msg_type
+    type: uint8
+    values: MsgType            # an Enum (§3.4.7)
+  - name: length
+    type: uint16
+    display: hex
+    unit: [byte, bytes]
+  - name: user
+    type: string
+    prefix: uint8
+    encoding: utf8
+    label: User name
+  - { padding: 2 }
+  - name: header
+    type: Header               # a Type (§3.5)
+  - name: options
+    fields:                    # an inline structure
+      - { name: ttl, type: uint8 }
+```
 
-The Field-level keys of §3.6–§3.10 are final.
+#### 3.4.1 Structures
+
+- A structure is an ordered sequence of Fields read one after another (sequential layout, no absolute offsets). The top-level `fields:`, a Type's body, a Field's inline `fields:` and an inline `switch` case are all structures, spelled the same way.
+- A structure is an **ordered YAML list of maps**, each with a required `name:`. The only entries without a name are `{ padding: … }` (§3.10).
+- Sibling Field names must be unique (error).
+
+#### 3.4.2 Names
+
+| Names of | Rule | Error |
+|---|---|---|
+| Fields and bitfield sub-Fields | `[a-z][a-z0-9_]*` | `invalid-field-name` |
+| Types and Enums | `[A-Z][A-Za-z0-9]*` | `invalid-type-name` |
+
+- Every built-in type is lowercase, so `type: Header` is always a Type and `type: uint8` always a built-in, and a built-in added in a 1.x minor can never collide with a Type.
+- Field names exclude `-` and `.` because they appear bare in Expressions (§4). The first-character rule already keeps the `_` prefix reserved for built-ins (§4.5).
+- There is no length cap.
+
+#### 3.4.3 What a Field is
+
+A Field has exactly one of:
+
+| Key | Field kind |
+|---|---|
+| `type:` | a built-in type (§3.4.4) or a Type name (§3.5) |
+| `fields:` | an inline structure |
+| `switch:` | a choice of layout, with `cases:` / `default:` (§3.9) |
+
+None of them is the error `missing-field-kind`; more than one is `conflicting-field-kind`. Arrays add to this (§3.7): `type: Item` plus `count:`, or `fields: [...]` plus `repeat: to_end`. `bits:` goes only with a fixed-size unsigned integer `type:` (§3.8).
+
+Every numeric Field read can be used in later Expressions (§4.3); `hidden: true` reads a Field without showing it (§3.10).
+
+#### 3.4.4 Built-in types
+
+Built-in names describe the wire, not Wireshark's ftypes.
+
+| Built-in | Wire | Wireshark ProtoField |
+|---|---|---|
+| `uint8` `uint16` `uint24` `uint32` `uint64` | unsigned integer | `uintN` |
+| `uint40` `uint48` `uint56` | unsigned integer | `uint64`; generated code reads the bytes itself |
+| `int8` `int16` `int24` `int32` `int40` `int48` `int56` `int64` | signed integer | `intN`, or `int64` for 40/48/56 |
+| `bool` | 1 byte, non-zero is true | `bool` |
+| `float32` `float64` | IEEE 754 | `float` / `double` |
+| `string` | text; length from `size:`, `prefix:` or `terminator:` (§3.6) | `string` (`stringz` for `terminator: 0`) |
+| `bytes` | raw bytes; same length keys | `bytes` |
+| `ipv4` `ipv6` `ether` `eui64` `guid` | fixed size | same names |
+| `abs_time` `rel_time` | timestamp; size from `encoding:` (§3.4.5) | `absolute_time` / `relative_time` |
+
+- Fixed-size types reject the length keys; `string` and `bytes` need exactly one of them. `stringz` and `ubytes` are not types.
+- Generated code fills Lua's gaps itself: length-prefixed strings, 40/48/56-bit integers, and bitfields (one ProtoField per sub-Field with a mask, since Lua has no `add_bitmask`).
+- Not in v1, each addable in a minor release: `char`, `framenum`, `protocol`, `none`, `ipx`, `oid`, `rel_oid`, `systemid`.
+
+#### 3.4.5 `encoding:`
+
+| Type | Values | Default |
+|---|---|---|
+| `string` | `ascii` `utf8` `utf16` `ucs2` `latin1` | `utf8` |
+| `abs_time` | `secs` (4 bytes, Unix epoch), `secs_nsecs` (4 + 4), `ntp` (8), `msecs` / `usecs` / `nsecs` (8, Unix epoch) | `secs` |
+| `rel_time` | as `abs_time`, without `ntp` | `secs` |
+
+- `utf16` and `ucs2` follow the Field's `endian:` (§3.11), and their `terminator:` is a 2-byte zero.
+- A timestamp's size follows from its encoding, so `size:` on `abs_time`/`rel_time` is rejected.
+- `encoding:` on any other type is `incompatible-display`.
+- That every `ENC_TIME_*` value works through Lua's `add_packet_field` on 4.4 is unverified; the tshark corpus covers every value (§10.5).
+
+#### 3.4.6 `display:`
+
+| Type | `display:` values | Default |
+|---|---|---|
+| unsigned integers, and integer bitfield sub-Fields | `dec` `hex` `oct` `dec_hex` `hex_dec` | `dec` |
+| signed integers | `dec` | `dec` |
+| `bytes` | `plain` `dot` `dash` `colon` `space` (byte separator) | `plain` |
+| `abs_time` | `local` `utc` `doy_utc` | `local` |
+| every other type | none | — |
+
+Any value outside this matrix, and an `encoding:` or value-mapping key (§3.4.7) on a type that does not take it, is the error `incompatible-display`.
+
+#### 3.4.7 Value mappings and Enums
+
+| Key | Applies to | Meaning |
+|---|---|---|
+| `values:` | integer types, integer bitfield sub-Fields | An inline map from an integer or a `"low-high"` range string to a label, or the name of an Enum. |
+| `true:` / `false:` | `bool`, boolean bitfield sub-Fields | Labels for the two states; either may be given alone. |
+| `unit:` | integer and float types | A string, or `[singular, plural]`. |
+
+- Overlapping keys in one table are the error `overlapping-values`. A key outside the type's range is the warning `unreachable-value`.
+- `unit:` together with `values:` is the error `conflicting-mappings`.
+- The generator emits a Wireshark value string, or a range string when any key is a range.
+- A top-level `enums:` maps an **Enum** name to a values table, referenced as `values: <EnumName>`. Inline tables stay allowed. An unknown Enum is the error `unknown-enum`; an Enum never used is the warning `unused-enum`.
+
+```yaml
+enums:
+  MsgType:
+    1: Request
+    2: Response
+    "16-31": Vendor
+```
+
+#### 3.4.8 Tree text
+
+- `label:` is optional, non-empty and single line. It defaults to `name:` with `_` turned into a space and the first letter capitalised (`msg_type` → "Msg type"). Array elements show `<label> [i]`.
+- `description:` is optional and single line. It becomes the ProtoField's blurb.
+
+#### 3.4.9 Sharing a ProtoField
+
+Two Fields reaching one filter path (§5.2) share a ProtoField only when type, `display:`, value mappings, `label:` and `description:` all match; two references to the same Enum count as matching. Otherwise it is the error `conflicting-filter-name`.
 
 ### 3.5 Types
 
 *Language capabilities in v1, ADR 0009, ADR 0010.*
 
-- `types:` holds named, reusable structures. A Type can be used as a Field's type, as an array element and as a `switch` case.
+- `types:` is a map from Type name to `{ fields: [...], endian: … }`: `fields:` is required, `endian:` optional. A Type body is spelled like an inline structure Field without `name:`.
+- A Type can be used as a Field's `type:`, as an array element and as a `switch` case.
 - Type names are not part of filter names (§5.2): a Field `req_hdr` of Type `Header` with a Field `len` is `myproto.req_hdr.len`.
 - `endian:` can be set on a Type (§3.11).
 - Duplicate or unknown Type names, and recursive Types, are errors. A Type never used is the warning `unused-type`.
@@ -163,7 +286,7 @@ The two are mutually exclusive; `repeat:` leaves room for `repeat: { until: <exp
 
 ```yaml
 - name: flags
-  # type: a fixed-size integer (key spelling: §3.4)
+  type: uint8
   bits:
     - { name: version, width: 3 }
     - { padding: 1 }
@@ -174,6 +297,9 @@ The two are mutually exclusive; `repeat:` leaves room for `repeat: { until: <exp
 - `bits:` declares sub-Fields by bit width, most significant bit first. Wirdigen computes the masks.
 - Widths must add up to the container's size; gaps are named or `{ padding: n }` entries. A mismatch is an error.
 - Sub-Fields are usable in Expressions (`flags.ext`) and extend the container's filter name (`myproto.flags.ext`).
+- The container must be a fixed-size unsigned integer. It is shown as an unsigned integer (with its own `display:` and `values:`) whose subtree holds the sub-Fields. `hidden: true` on it hides the subtree, but the sub-Fields stay usable in Expressions and filters.
+- A width-1 sub-Field is boolean (Set / Not set, taking `true:`/`false:`) unless it carries `values:`, `unit:` or `display:`, which make it an unsigned integer. Wider sub-Fields are masked unsigned integers. There are no signed sub-Fields in v1.
+- Sub-Fields accept only `name`, `width`, `display`, `values`, `unit`, `true`, `false`, `hidden`, `expect`, `label` and `description`.
 
 ### 3.9 Conditionals
 
@@ -185,9 +311,10 @@ The two are mutually exclusive; `repeat:` leaves room for `repeat: { until: <exp
   - each case is a Type name or inline Fields;
   - overlapping cases (values or ranges) are an error;
   - with no matching case and no `default:`, the bytes are shown raw with an expert info note.
-- A message type is a `switch` case using a Type; its name comes from the switch Field's value string.
+- A message type is a `switch` case using a Type. When the `switch:` subject is a bare Field path, the message type's name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number.
+- A `switch` Field accepts only `name`, `label`, `description`, `if`, `hidden`, `switch`, `cases` and `default`, never `values:`.
 - Fields under `if:` or inside a case can be referenced only from inside the same conditional scope (§4.3). The way out is an inline structure carrying the `if:`.
-- `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField if type, display and value strings match; otherwise it is the error `conflicting-filter-name`.
+- `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField under the rule of §3.4.9; otherwise it is the error `conflicting-filter-name`.
 
 ### 3.10 Padding, hidden Fields, constraints and handoff
 
@@ -241,9 +368,9 @@ framing:
 
 - `info:` is a template with `{path}` references, for example `"{msg_type} id={id}"`.
 - References only: no Expressions or format specifiers. `{{` and `}}` escape braces.
-- A reference renders the value-string label if the Field has one (the number if unmatched), otherwise the Field's display form. Any Field type is allowed.
+- A reference renders the Field's `values:` (or `true:`/`false:`) label if it has one (the number if unmatched), otherwise the Field's display form. Any Field type is allowed.
 - Conditional Fields may be referenced; an absent one renders as an empty string. Unresolvable paths, array internals and forward references are errors.
-- Without `info:`, the Info column shows the value-string label of the outermost `switch` Field.
+- Without `info:`, the Info column shows the label of the outermost `switch` Field, as in §3.9.
 - The Protocol column always shows the short name (§3.3).
 
 ## 4. Expressions
@@ -285,7 +412,7 @@ Literals: decimal, `0x` hex (case-insensitive), `0b` binary, with `_` separators
 4. Inside a Type, references are resolved at each use site, and errors carry that site's position.
 5. Array elements can be referenced only from inside the element. No indexing and no `_index` in v1.
 6. Conditional Fields can be referenced only from inside the same conditional scope. Conditions are never proven equivalent.
-7. Only integer types, bitfield sub-Fields and `bool` can be referenced. Float, string, bytes, address and structure Fields are errors. There is no comparison against value-string labels.
+7. Only integer types, bitfield sub-Fields and `bool` can be referenced. Float, string, bytes, address and structure Fields are errors. There is no comparison against `values:` labels.
 
 ### 4.4 Values and runtime semantics
 
@@ -324,7 +451,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Two Fields reaching one path share a ProtoField when type, display and value strings match. Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
+- Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
 ### 5.3 Bad and short packets
@@ -371,10 +498,13 @@ Each stage reports **all** its errors, and the next stage runs only if the curre
 
 Errors:
 
-- incompatible type / base / display (matrix: §3.4, pending);
+- `invalid-field-name`, `invalid-type-name` (§3.4.2);
+- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); length keys on a fixed-size type, or none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
+- `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
+- `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - bitfield widths not adding up to the container;
 - forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;
-- names starting with `_`; duplicate sibling Field names; duplicate or unknown Type names; recursive Types;
+- duplicate sibling Field names; duplicate or unknown Type names; recursive Types;
 - overlapping `switch` cases;
 - mutually exclusive keys together (`size`/`prefix`/`terminator`, `count`/`repeat`);
 - `framing:` `length` breaking the header-only rule;
@@ -387,7 +517,8 @@ Errors:
 Warnings:
 
 - `tcp-without-framing`;
-- `unused-type`;
+- `unused-type`, `unused-enum`;
+- `unreachable-value`: a `values:` key outside the Field type's range;
 - a Field after a `repeat: to_end` array or a `size: "_remaining"` Field in the same structure;
 - an `expect:` that can never match;
 - `protocol-name-taken`.
@@ -607,7 +738,8 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
   - the 4.4 floor, from a `debian:trixie` container, run as a non-root user because tshark skips `-X lua_script` as root;
   - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04.
 - No source builds and no RC or nightly job. Lua 5.3 is covered only by the load check.
-- The harness sets `LC_ALL=C` and a temporary `WIRESHARK_CONFIG_DIR`. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
+- The harness sets `LC_ALL=C`, `TZ=UTC` and a temporary `WIRESHARK_CONFIG_DIR`.
+- The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5), since their behaviour through Lua's `add_packet_field` on 4.4 is not yet verified. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
 - The first implementation PR confirms these gotchas on a real runner.
 
 ### 10.6 Bad input
@@ -657,7 +789,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
   - The release book is served at `/`, built from the latest tag. `main` is served at `/dev/` with a "development version" banner. There is no per-version archive.
   - PR CI builds the book and checks snippets without deploying.
 - **README**: a short landing page (what Wirdigen is, install, a ~20-line quickstart, a link to the book). It is also `wirdigen-cli`'s crates.io page.
-- **Format reference**: hand-written, one chapter per construct (Fields and Types, sizes, arrays, bitfields, `if`/`switch`, Registration, Framing, Expressions, `info:`, Diagnostics), plus a one-page cheat sheet of the nine top-level keys in §3.2's order.
+- **Format reference**: hand-written, one chapter per construct (Fields and Types, sizes, arrays, bitfields, `if`/`switch`, Registration, Framing, Expressions, `info:`, Diagnostics), plus a one-page cheat sheet of the ten top-level keys in §3.2's order.
   - Every YAML snippet is a complete file that CI runs through `validate`. A snippet can be marked as expected to fail with a named Diagnostic.
   - Nothing is generated from the schema.
 - **Examples**: three invented protocols in `examples/`, each also a corpus case. None clashes with a built-in protocol.
@@ -763,6 +895,7 @@ Not part of v1. Each item can come later as an additive (minor) change unless no
 - **Registration**: heuristic dissectors (which need recognition constraints first) and arbitrary dissector tables (ethertype, `sctp.ppi`, `ip.proto`, …), under `registration:`.
 - **Language**: repeat-until-condition (`repeat: { until: … }`), `align:`, delimiter-based Framing, runtime endianness, telling snaplen truncation apart from malformed packets, value-driven / dissector-table handoff, checksum verification, computed Fields, per-Type `info:`, Expression function calls, strings, `?:` and array indexing.
 - **Format keys**: `short_name:`, `description:`.
+- **Built-in types**: `char`, `framenum`, `protocol`, `none`, `ipx`, `oid`, `rel_oid`, `systemid`; signed bitfield sub-Fields.
 - **CLI**: `--diff` for `--check`, a `github` message format, per-name `--deny`, finer exit codes behind an opt-in flag, `generate_into` in the library, and package-manager distribution.
 
 ## 15. Left to implementation
@@ -771,7 +904,7 @@ These are not open design questions, but the spec deliberately leaves them to th
 
 - **The full list of Diagnostic names.** The checks in §6.3 are fixed; most of their kebab-case names are chosen when implemented. Names become stable at 1.0.0, and the completeness tests (§10.3, §11) keep the list, the corpus and the book in sync.
 - **The YAML 1.2 parser crate** (`saphyr` / `serde-saphyr` were maintained as of 2026-11), as long as it reports positions and supports the strict subset.
-- **The tshark gotchas** (exit code on Lua load errors, install time) confirmed by the first tshark CI PR (§10.5).
+- **The tshark gotchas** (exit code on Lua load errors, install time) confirmed by the first tshark CI PR (§10.5), and the `ENC_TIME_*` timestamp encodings confirmed by the corpus (§3.4.5).
 - **Prelude chunk boundaries and helper names**, under the `wd_` prefix.
 
 ## 16. Decision index
@@ -793,8 +926,8 @@ These are not open design questions, but the spec deliberately leaves them to th
 | Testing | [Testing strategy](https://github.com/Cerclique/wirdigen/issues/26) | [0011](adr/0011-dissectors-tested-in-real-tshark.md) |
 | Library API | [Library API and crate layout](https://github.com/Cerclique/wirdigen/issues/31) | [0012](adr/0012-opaque-io-free-library-api.md) |
 | CLI | [CLI UX](https://github.com/Cerclique/wirdigen/issues/32) | [0013](adr/0013-cli-contract.md) |
-| Identity | [Protocol identity and top-level keys](https://github.com/Cerclique/wirdigen/issues/36) | [0014](adr/0014-protocol-identity-and-no-format-version.md) |
+| Identity | [Protocol identity and top-level keys](https://github.com/Cerclique/wirdigen/issues/36) | [0014](adr/0014-protocol-identity-and-no-format-version.md) (amended by 0015) |
 | Documentation | [Documentation set for v1](https://github.com/Cerclique/wirdigen/issues/37) | — |
-| Field declaration | [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41) | pending |
+| Field declaration | [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41) | [0015](adr/0015-own-field-vocabulary.md) |
 
 Research notes behind the first three rows live in [`docs/research/`](research/).
