@@ -10,7 +10,7 @@ A `name:` or `title:` equal to a protocol built into Wireshark would fail at loa
 
 A Protocol Description has no format-version key. Under ADR 0001 every 1.x description stays valid in every later 1.y, and a description using a key from a newer minor already fails on that unknown key with its line and column (ADR 0005). If a 2.0 ever needs to tell formats apart, it can require `wirdigen: 2` and read a file without the key as 1.x, so leaving the key out now closes no door.
 
-The top level has exactly nine keys, in any order: `name` and `fields` (required, the top-level layout, spelled like an inline structure), and `title`, `registration`, `framing`, `endian`, `info`, `types`, `allow`. Docs, examples and the generated JSON Schema list them in that order. There is no `description:` key; YAML comments document a file.
+The top level has exactly ten keys, in any order: `name` and `fields` (required, the top-level layout, spelled like an inline structure), and `title`, `registration`, `framing`, `endian`, `info`, `types`, `enums`, `allow`. (`enums` was added by ADR 0015; this ADR first listed nine.) Docs, examples and the generated JSON Schema list them in that order. There is no `description:` key; YAML comments document a file.
 
 ## Consequences
 

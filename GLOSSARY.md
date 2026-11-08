@@ -20,6 +20,10 @@ _Avoid_: Data chunk, data, attribute
 A named, reusable group of Fields, defined once in a Protocol Description and used wherever a layout is needed, including as one kind of message among several.
 _Avoid_: Struct, message, template
 
+**Enum**:
+A named table of labels for integer values and value ranges, defined once in a Protocol Description and shared by every Field whose values it names.
+_Avoid_: Value string, lookup table, dictionary
+
 **Framing**:
 How a Dissector finds where each message starts and ends in a TCP stream, so one message split across segments, or several in one segment, are dissected correctly.
 _Avoid_: Reassembly, segmentation, PDU splitting
