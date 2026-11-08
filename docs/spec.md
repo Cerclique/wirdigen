@@ -1,0 +1,800 @@
+# Wirdigen v1 specification
+
+> **Status: draft.** One part is not yet decided: how a single Field states its type, display and value mappings ([§3.4](#34-field-declaration-pending)), tracked in [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41). Everything else below is decided.
+
+This document describes Wirdigen v1: the Protocol Description format, the Dissectors it produces, the architecture, the library API, the CLI, the test strategy, the documentation and the release process. It is the destination of the [Wirdigen v1 spec](https://github.com/Cerclique/wirdigen/issues/8) map and the input for breaking v1 into implementation tickets.
+
+It decides nothing new. Every rule here comes from a closed ticket of that map or from an ADR in [`docs/adr/`](adr/), which holds the reasoning and the rejected options. Where the two seem to disagree, the ADR is right and this document has a bug. Terms in **bold capitals** (Protocol Description, Field, Type, …) are defined in [`GLOSSARY.md`](../GLOSSARY.md).
+
+## Contents
+
+1. [Scope](#1-scope)
+2. [Domain model](#2-domain-model)
+3. [Protocol Description format](#3-protocol-description-format)
+4. [Expressions](#4-expressions)
+5. [Dissector behaviour](#5-dissector-behaviour)
+6. [Validation and Diagnostics](#6-validation-and-diagnostics)
+7. [Architecture and generation](#7-architecture-and-generation)
+8. [Library API](#8-library-api)
+9. [CLI](#9-cli)
+10. [Testing](#10-testing)
+11. [Documentation](#11-documentation)
+12. [Toolchain, CI and release](#12-toolchain-ci-and-release)
+13. [Compatibility](#13-compatibility)
+14. [Out of scope and later](#14-out-of-scope-and-later)
+15. [Left to implementation](#15-left-to-implementation)
+16. [Decision index](#16-decision-index)
+
+## 1. Scope
+
+Wirdigen turns a **Protocol Description**, a YAML file a user writes, into a **Dissector**: one Lua file that Wireshark loads.
+
+v1 is a rewrite with no compatibility with 0.2/0.3: neither the format nor the API carries over, and there is no migration path. The `arise` branch (2024) and the `rework` branch (2023) are references to salvage ideas from, not code to continue.
+
+v1 delivers:
+
+- the `wirdigen` library crate (validation, generation, JSON Schema, Diagnostic rendering);
+- the `wirdigen-cli` crate, whose binary is `wirdigen`;
+- an mdBook user guide and format reference, docs.rs API docs and three example protocols.
+
+A WASM/npm surface comes after v1, as a third crate on top of the library (§14).
+
+## 2. Domain model
+
+| Term | Meaning |
+|---|---|
+| **Protocol Description** | The document a user writes to describe one protocol: its identity, its Registration, and the layout of its payload. |
+| **Registration** | How a Dissector attaches to traffic in Wireshark: the ports it claims by default, and its availability in Decode As. |
+| **Field** | One named element of the payload layout, with a built-in type or a Type, and display settings. |
+| **Type** | A named, reusable group of Fields, defined once and used wherever a layout is needed, including as one kind of message among several. |
+| **Framing** | How a Dissector finds where each message starts and ends in a TCP stream. |
+| **Expression** | A formula that computes a size, a count, a condition or a switch subject from Fields read earlier. |
+| **Diagnostic** | An error or a warning about a Protocol Description, with a stable name and a location. An error stops generation; a warning does not. |
+| **Dissector** | The Wireshark Lua plugin generated from a Protocol Description. |
+
+There is no first-class *message* concept: a protocol with several message kinds is a `switch` whose cases use Types (§3.9).
+
+The flow is: **Source** (description text plus a name) → `validate` → **ValidDescription** (or Diagnostics) → `generate` → Lua text. The CLI adds files around it.
+
+## 3. Protocol Description format
+
+### 3.1 File and syntax
+
+*ADR 0004, ADR 0005.*
+
+- The format is Wirdigen's own. It borrows concepts from Kaitai Struct, PDL and wsgd (sequential layout, size and count references, repetition, `if`/`switch`, enums, bitfields, constraints), but not their keywords or document shape.
+- There is one syntax: a **strict subset of YAML 1.2**, read by a YAML 1.2 parser that reports positions (so `no` and `on` stay strings):
+  - one Protocol Description per file, no multi-document streams;
+  - no custom tags, no merge keys (`<<:`), no anchors or aliases;
+  - unknown keys and duplicate keys are errors with line and column.
+- Expressions are YAML strings parsed by Wirdigen's own mini-language (§4).
+- By convention a file is named `<protocol>.wirdigen.yaml`. Nothing enforces it.
+- Keys that take only a constant accept a YAML integer. Any other numeric value is a YAML string holding an Expression. A YAML float or bool where an integer is required is an error.
+- Reuse of Fields goes through Types (§3.5), never YAML anchors.
+
+### 3.2 Top level
+
+*ADR 0014.*
+
+A Protocol Description has exactly nine top-level keys, accepted in any order. Docs, examples and the JSON Schema list them in this order:
+
+| Key | Required | Meaning |
+|---|---|---|
+| `name` | yes | Filter name of the protocol (§3.3). |
+| `title` | no | Full name at the tree root (§3.3). |
+| `registration` | no | Ports and Decode As (§3.12). Leaving it out means Decode As only. |
+| `framing` | no | TCP Framing (§3.13). |
+| `endian` | no | Default byte order, `big` (default) or `little` (§3.11). |
+| `info` | no | Info column template (§3.14). |
+| `fields` | yes | The top-level layout: a non-empty structure, spelled like an inline structure (§3.4). |
+| `types` | no | Named Types (§3.5). |
+| `allow` | no | Names of warnings to silence (§6.4). |
+
+There is no format-version key: a file without one is 1.x, and a description using a key from a newer minor already fails on that unknown key. A 2.0 can require `wirdigen: 2`. There is no `description:` key; YAML comments document a file. Ordering of top-level keys is never checked.
+
+The minimum description is `name:` plus `fields:`.
+
+### 3.3 Protocol identity
+
+*ADR 0014.*
+
+Wireshark needs three names per protocol. Wirdigen asks for one and derives the rest:
+
+| Wireshark name | Comes from | Rules |
+|---|---|---|
+| Filter name (`dns`) | `name:` | `[a-z][a-z0-9_-]*`, at most 32 characters. Uppercase is an error, never lowercased silently. No `.`, which would blur where the Field path starts. Error `invalid-protocol-name`. |
+| Short name (`DNS`, Protocol column) | uppercase of `name:` | Always derived. A `short_name:` override can come later as a minor release. |
+| Full name (tree root) | `title:` | Optional, non-empty, single line, defaults to the short name. Error `invalid-protocol-title`. |
+
+A `name:` or `title:` equal to a protocol built into Wireshark is the warning `protocol-name-taken`, checked against a `tshark -G protocols` snapshot from the latest supported stable Wireshark, embedded in the library and kept current by a CI job. It is a warning because built-ins vary by Wireshark version and build. Clashes between two Wirdigen Dissectors are not detected.
+
+Changing `name:` renames every filter of the protocol, so it breaks that protocol's users.
+
+### 3.4 Field declaration (pending)
+
+> **Pending: [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41).** That ticket settles the structure shape (presumably `fields:` as an ordered list of maps carrying `name:`), Field and Type name rules, the type key and built-in type names (mapping onto Wireshark's ProtoField types), display bases and their compatibility matrix, value / range / true-false / unit strings, the tree label and description, and string encoding. This section is filled in from its resolution.
+
+What is already decided about Fields:
+
+- A structure is an ordered sequence of Fields read one after another (sequential layout, no absolute offsets). The top-level `fields:`, a Type's body and a Field's inline `fields:` are all structures and are spelled the same way.
+- A Field has either a built-in type or a Type (§3.5), or an inline `fields:` structure.
+- Sibling Field names must be unique (error). Field and Type names may not start with `_`, which is reserved for built-ins (§4.5).
+- Every Field read can be used in later Expressions if it is numeric (§4.3); `hidden: true` reads a Field without showing it (§3.10).
+- The baseline the pending ticket must cover: the full ProtoField type set and value-string mappings. Known Lua gaps that generated code fills itself: length-prefixed strings (`UINT_STRING`), `STRINGZPAD`/`STRINGZTRUNC`, 40/48/56-bit integers, and bitmasks (one ProtoField per bit with a mask, since there is no `add_bitmask`). Signed integers accept only a decimal base, and string Fields use `base.NONE` with the encoding given when the Field is added.
+
+The Field-level keys of §3.6–§3.10 are final.
+
+### 3.5 Types
+
+*Language capabilities in v1, ADR 0009, ADR 0010.*
+
+- `types:` holds named, reusable structures. A Type can be used as a Field's type, as an array element and as a `switch` case.
+- Type names are not part of filter names (§5.2): a Field `req_hdr` of Type `Header` with a Field `len` is `myproto.req_hdr.len`.
+- `endian:` can be set on a Type (§3.11).
+- Duplicate or unknown Type names, and recursive Types, are errors. A Type never used is the warning `unused-type`.
+- Expressions inside a Type are resolved at each place the Type is used (§4.3), and errors point at that use site.
+- There is no per-Type `info:` in v1.
+
+### 3.6 Sizes
+
+*Language capabilities in v1, Expression mini-language.*
+
+A variable-length Field (string, bytes, …) states its length with exactly one of these mutually exclusive keys:
+
+| Key | Meaning |
+|---|---|
+| `size: <expr>` | Byte length from an Expression over earlier Fields, or a constant. |
+| `size: "_remaining"` | Up to the end of the innermost enclosing structure with a known size, or of the message. |
+| `prefix: <int type>` | Length read from an integer just before the value (`prefix: uint16`). |
+| `terminator: <byte>` | Ends at that byte (NUL-terminated strings). |
+
+A Field placed after a `size: "_remaining"` Field in the same structure is a warning.
+
+### 3.7 Arrays
+
+| Key | Meaning |
+|---|---|
+| `count: <expr>` | Fixed or computed number of elements. |
+| `repeat: to_end` | Repeat until the enclosing structure or message ends (TLV lists). |
+
+The two are mutually exclusive; `repeat:` leaves room for `repeat: { until: <expr> }` after v1. Each element is its own subtree item (`items[0]`, `items[1]`, …). Elements share filter names (§5.2). A Field after a `repeat: to_end` array in the same structure is a warning. An element that consumes zero bytes stops the array as malformed.
+
+### 3.8 Bitfields
+
+```yaml
+- name: flags
+  # type: a fixed-size integer (key spelling: §3.4)
+  bits:
+    - { name: version, width: 3 }
+    - { padding: 1 }
+    - { name: ext, width: 1 }
+    - { name: kind, width: 3 }
+```
+
+- `bits:` declares sub-Fields by bit width, most significant bit first. Wirdigen computes the masks.
+- Widths must add up to the container's size; gaps are named or `{ padding: n }` entries. A mismatch is an error.
+- Sub-Fields are usable in Expressions (`flags.ext`) and extend the container's filter name (`myproto.flags.ext`).
+
+### 3.9 Conditionals
+
+*Language capabilities in v1, Expression mini-language, ADR 0009.*
+
+- `if: <expr>` on a Field reads it only when the Expression is non-zero.
+- `switch: <expr>` with `cases:` and an optional `default:` picks a layout from a value:
+  - case keys are integers or `"low-high"` range strings;
+  - each case is a Type name or inline Fields;
+  - overlapping cases (values or ranges) are an error;
+  - with no matching case and no `default:`, the bytes are shown raw with an expert info note.
+- A message type is a `switch` case using a Type; its name comes from the switch Field's value string.
+- Fields under `if:` or inside a case can be referenced only from inside the same conditional scope (§4.3). The way out is an inline structure carrying the `if:`.
+- `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField if type, display and value strings match; otherwise it is the error `conflicting-filter-name`.
+
+### 3.10 Padding, hidden Fields, constraints and handoff
+
+| Key | Meaning |
+|---|---|
+| `{ padding: <n \| expr> }` | A standalone structure entry, shown as one "Padding" item, with no filter name. |
+| `hidden: true` | Reads the Field (usable in Expressions, filters and `info:`) without adding it to the tree. |
+| `expect: <value \| "low-high" \| list>` | A mismatch adds an expert info **warning** and dissection goes on. A list may mix values and ranges. An `expect:` that can never match is a validation warning. |
+| `dissector: <name>` | On a bytes Field: passes the bytes to an existing Wireshark Dissector by name (static handoff). |
+
+There is no `align:` in v1.
+
+### 3.11 Byte order
+
+`endian:` is `big` (default) or `little`. It is set at the top level and can be overridden on a Type or a Field. It is never encoded in type names.
+
+### 3.12 Registration
+
+*Registration mechanisms in v1.*
+
+```yaml
+registration:          # optional; leaving it out means Decode As only
+  ports:
+    udp: [5000, "6000-6010"]
+    tcp: [5000]
+```
+
+- Ports are declared per transport, UDP, TCP or both, each as a single number or a `"low-high"` range string.
+- Port 0, ports above 65535, inverted ranges, a port repeated within one transport and an empty transport list are errors.
+- Each declared transport gets a Wireshark range preference ("UDP port(s)" / "TCP port(s)") defaulting to the declared ports. When it changes (`prefs_changed`), the Dissector removes the old ports and adds the new ones. A transport with no declared ports gets no preference.
+- Every Dissector is offered in Decode As on both `udp.port` and `tcp.port` (`add_for_decode_as`), whatever it declares. No key controls this.
+- TCP Registration without `framing:` is the warning `tcp-without-framing`: each segment is then dissected as one message.
+- `ports:` sits under `registration:` so `heuristic:` and `tables:` can join it later.
+
+### 3.13 Framing
+
+*Language capabilities in v1, Expression mini-language.*
+
+```yaml
+framing:
+  header: 4              # constant
+  length: "length + 4"   # total PDU length, an Expression
+```
+
+- Applies under TCP Registration and TCP Decode As.
+- `header` is a constant. `length` may reference only top-level Fields (and their bitfield sub-Fields) lying entirely inside the first `header` bytes; `_offset` and `_remaining` are not allowed. Breaking this rule is an error.
+- The Dissector loops over the PDUs in a segment and asks for more data through `pinfo.desegment_offset` / `desegment_len` (only `DESEGMENT_ONE_MORE_SEGMENT` is available from Lua).
+- A computed length below `header`, or negative, is malformed (§5.3).
+
+### 3.14 Info column
+
+- `info:` is a template with `{path}` references, for example `"{msg_type} id={id}"`.
+- References only: no Expressions or format specifiers. `{{` and `}}` escape braces.
+- A reference renders the value-string label if the Field has one (the number if unmatched), otherwise the Field's display form. Any Field type is allowed.
+- Conditional Fields may be referenced; an absent one renders as an empty string. Unresolvable paths, array internals and forward references are errors.
+- Without `info:`, the Info column shows the value-string label of the outermost `switch` Field.
+- The Protocol column always shows the short name (§3.3).
+
+## 4. Expressions
+
+*ADR 0007, Expression mini-language.*
+
+### 4.1 Where they appear
+
+`size:`, `count:`, `if:`, `padding:`, the `framing:` `length`, and `switch:` subjects.
+
+### 4.2 Syntax
+
+A small C-like infix language: integer literals, Field paths, the built-ins `_offset` and `_remaining`, and parentheses. No function calls, assignment, strings or `?:` in v1; each can be added later.
+
+Operators from tightest to loosest binding (Rust/Python order, **not** C):
+
+| Level | Operators |
+|---|---|
+| unary | `!` `~` `-` |
+| multiplicative | `*` `/` `%` |
+| additive | `+` `-` |
+| shift | `<<` `>>` |
+| bitwise and | `&` |
+| bitwise xor | `^` |
+| bitwise or | `\|` |
+| comparison (non-associative) | `==` `!=` `<` `<=` `>` `>=` |
+| logical and | `&&` |
+| logical or | `\|\|` |
+
+So `flags & 0x80 == 0x80` means `(flags & 0x80) == 0x80`, and `a < b < c` is an error.
+
+Literals: decimal, `0x` hex (case-insensitive), `0b` binary, with `_` separators. A leading-zero literal such as `010` is an error. No character literals. `"low-high"` ranges are not an operator; they exist only in `switch` cases, `expect:` and `registration: ports:`.
+
+### 4.3 References
+
+1. A bare name resolves **nearest first**: earlier siblings, then the enclosing structure's earlier Fields, outward to the root. The nearest wins, without a shadowing warning.
+2. Dotted paths descend into structures already read and into bitfield sub-Fields (`hdr.len`, `flags.ext`). Hidden Fields can be referenced.
+3. Only Fields read **earlier** can be referenced. Forward references are errors.
+4. Inside a Type, references are resolved at each use site, and errors carry that site's position.
+5. Array elements can be referenced only from inside the element. No indexing and no `_index` in v1.
+6. Conditional Fields can be referenced only from inside the same conditional scope. Conditions are never proven equivalent.
+7. Only integer types, bitfield sub-Fields and `bool` can be referenced. Float, string, bytes, address and structure Fields are errors. There is no comparison against value-string labels.
+
+### 4.4 Values and runtime semantics
+
+- One value type: signed 64-bit integer (Lua 5.3/5.4 integers). A `uint64` above 2⁶³ reads as negative.
+- Truthiness is C's: comparisons and logic give 1 or 0, and any non-zero value is true.
+- `/` truncates toward zero and `%` takes the dividend's sign (C, not Lua floor division). `>>` is arithmetic. Overflow wraps.
+- Operators compile to prelude helper calls, never native Lua bitwise operators or `//`, so the file parses under Lua 5.2 (§5.4).
+- Division or modulo by zero, a negative size, count, padding or framing length, and a shift count outside 0..63 are a "Malformed" expert info error on that Field. The Dissector stops cleanly and never raises a Lua error.
+- An oversized size or count is a truncation (§5.3).
+
+### 4.5 Built-ins
+
+| Built-in | Value |
+|---|---|
+| `_offset` | Bytes from the start of the message: the packet, or the PDU under Framing. |
+| `_remaining` | Bytes left in the innermost enclosing structure with a known size, or else in the message. |
+
+New built-ins can only be added under the `_` prefix, which is why user names may not start with `_`.
+
+## 5. Dissector behaviour
+
+Everything in this section is observable in Wireshark and falls under semver (§13).
+
+### 5.1 Tree
+
+- The tree root shows the full name (§3.3). Each structure Field is a subtree, and each array element is its own subtree item (`items[0]`).
+- Padding is one "Padding" item. Hidden Fields are not shown. Unmatched `switch` bytes are shown raw with an expert info note.
+
+### 5.2 Filter names
+
+*ADR 0009.*
+
+- Every shown Field is filtered as `<protocol>.<path>`. The path is the chain of Field names from the top-level layout down through inline `fields:` and Type-typed Fields. Type names never appear.
+- Type reuse registers one set of ProtoFields per use site.
+- Array elements share their element's names (`myproto.items.id`).
+- Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
+- `switch` cases add no segment.
+- Padding has no filter name.
+- Two Fields reaching one path share a ProtoField when type, display and value strings match. Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
+- Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
+
+### 5.3 Bad and short packets
+
+- Generated code bounds-checks before every read.
+- On a short packet, the Dissector shows what it decoded, adds a "Malformed: truncated" expert info **error** on the Field that did not fit, and stops cleanly.
+- Runtime arithmetic faults (§4.4) are reported the same way, as "Malformed".
+- `expect:` mismatches are expert info **warnings** and dissection goes on.
+- **A generated Dissector never raises a Lua error on any input.**
+
+### 5.4 Versions and loading
+
+*ADR 0006.*
+
+- Lua only; no C plugin.
+- Supports Wireshark **≥ 4.4** (Lua 5.3/5.4), with rolling support and no ceiling: misbehaviour on a new upstream release is a bug. Raising the floor is a minor release, and only after upstream end of life.
+- At load, the Dissector checks `get_version()`. Below 4.4 it fails with a clear error naming the version it needs.
+- For that guard to run, the whole file must **parse under Lua 5.2**: no native bitwise operators, no `//`. Generated code uses the bundled `bit` library and `math.floor` through prelude helpers.
+
+### 5.5 Columns and preferences
+
+- The Protocol column shows the short name, and the Info column follows §3.14.
+- There is one port range preference per declared transport (§3.12).
+
+## 6. Validation and Diagnostics
+
+*ADR 0008, Validation of a Protocol Description.*
+
+### 6.1 Stages
+
+1. YAML parse.
+2. Strict deserialization (unknown and duplicate keys, wrong scalar kinds).
+3. Expression parsing.
+4. Semantic checks.
+
+Each stage reports **all** its errors, and the next stage runs only if the current one found none. Errors that only follow from an earlier one are suppressed: an unknown Type gives one error, not one per use. Validation is written entirely in Rust; the JSON Schema is never used to validate.
+
+### 6.2 Severity
+
+- **Error**: the description has no single meaning or contradicts itself. No Dissector is generated.
+- **Warning**: the meaning is clear but probably a mistake. Generation goes ahead.
+
+### 6.3 Checks
+
+Errors:
+
+- incompatible type / base / display (matrix: §3.4, pending);
+- bitfield widths not adding up to the container;
+- forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;
+- names starting with `_`; duplicate sibling Field names; duplicate or unknown Type names; recursive Types;
+- overlapping `switch` cases;
+- mutually exclusive keys together (`size`/`prefix`/`terminator`, `count`/`repeat`);
+- `framing:` `length` breaking the header-only rule;
+- a YAML float or bool where an integer is required; a leading-zero literal; a non-associative comparison chain;
+- invalid ports and port ranges (§3.12);
+- `invalid-protocol-name`, `invalid-protocol-title`;
+- `conflicting-filter-name`;
+- unknown or duplicate keys, and the YAML subset violations of §3.1.
+
+Warnings:
+
+- `tcp-without-framing`;
+- `unused-type`;
+- a Field after a `repeat: to_end` array or a `size: "_remaining"` Field in the same structure;
+- an `expect:` that can never match;
+- `protocol-name-taken`.
+
+### 6.4 Names, silencing and locations
+
+- Every Diagnostic has a stable kebab-case name, the same token used in `allow:`.
+- A description silences warnings by name with the top-level `allow: [...]`. The CLI can fail on warnings with `--deny-warnings` (§9.6). Errors cannot be silenced.
+- Every Diagnostic carries a precise span. Inside an Expression string it points at the token; for escaped or multi-line YAML strings, at the whole value. It is rendered as a rustc-style snippet.
+- Every rendered Diagnostic ends with a note linking to its entry in the book's Diagnostics index (§11).
+
+### 6.5 Stability
+
+Stable under semver:
+
+- which descriptions are accepted: rejecting one that was accepted is major, unless it fixes a documented bug;
+- Diagnostic names and severities: warning → error is major; error → warning, or a new warning, is minor;
+- the library's Diagnostic structure;
+- that the JSON Schema accepts every valid description.
+
+Not stable: message wording, notes, span precision, rendered layout and the schema's exact text. Because a minor release can add a warning, it can break a `--deny-warnings` build after an upgrade; the docs say so (§11).
+
+### 6.6 JSON Schema
+
+A JSON Schema (`.json`) for `*.wirdigen.yaml` is generated from the Rust model, with the model's doc comments as `description`s for editor hover. It is for editor completion only and ships through `json_schema()`, `wirdigen schema`, release assets and a SchemaStore entry.
+
+## 7. Architecture and generation
+
+*ADR 0002, ADR 0010, ADR 0012.*
+
+### 7.1 Crates
+
+There are two crates in one workspace, with one lockstep version:
+
+- `wirdigen`: the library. Parsing, validation, lowering, the emitter, the prelude, the schema and the renderer are all private modules of it.
+- `wirdigen-cli`: the CLI, binary `wirdigen`, installed with `cargo install wirdigen-cli`.
+
+Any later crate is named `wirdigen-<part>` (a WASM crate depends on `wirdigen`). A crate that a published crate depends on is published too and documented as an implementation detail.
+
+### 7.2 Pipeline
+
+```
+Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─► semantic checks ─► ValidDescription
+                                                                                          │
+                                                                        lower (private Dissector-shaped model)
+                                                                                          │
+                                                                        emit (indenting writer) + prelude chunks ─► String
+```
+
+- The model keeps source spans for every key and value, Expressions included.
+- **Lowering** builds a private model: the ProtoFields and value strings to register, one dissect function per Type, and for each a statement list (bounds-checked read, add to tree, evaluate an Expression into a local, branch, loop, hand off), with every Expression already compiled to helper calls.
+- **Emitting** prints the model through an indenting writer. Placeholder substitution and template engines are rejected.
+- **Generation cannot fail** on a validated description. Everything lowering relies on is checked by validation, so a lowering failure is a Wirdigen bug, never a Diagnostic.
+- The model and the emitter are not public API.
+
+### 7.3 Generated code
+
+- **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Locals exist only for Fields some Expression or `info:` template references. Outer scopes are reached through a context table.
+- **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, `bit`-based operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
+- **Names**: user names are always mangled (`f_<name>`, `dissect_<Type>`), and prelude names start with `wd_`, so a Field called `end` or `type` is safe.
+- **Format**: 4-space indent, fixed by the emitter (no external formatter). Comments name each Type (`-- Type: X`) and each Field's path, with no source line numbers.
+- **Header**: the Wirdigen version, the Source name's last `/`- or `\`-separated component, and "Requires Wireshark >= 4.4".
+- **Determinism**: the same description bytes and Wirdigen version give byte-identical Lua on every OS: no timestamps or paths, ordered maps, `\n` line endings, a trailing newline. The Lua text itself is not under semver (§13).
+
+## 8. Library API
+
+*ADR 0012.*
+
+```rust
+pub struct Source;                 // Source::new(name, text), owned
+pub fn validate(source: &Source) -> Result<ValidDescription, Diagnostics>;
+
+pub struct ValidDescription;       // opaque
+impl ValidDescription {
+    pub fn warnings(&self) -> &[Diagnostic];
+    pub fn generate(&self) -> String;   // infallible
+}
+
+pub fn json_schema() -> String;    // pretty, deterministic
+
+pub struct Diagnostics;            // newtype: every error and warning of the run, source order
+// impl std::error::Error (one-line summary); has_errors(); render(&Source, &RenderOptions) -> String
+
+pub struct Diagnostic;
+impl Diagnostic {
+    pub fn name(&self) -> &'static str;      // stable name, as in `allow:`
+    pub fn severity(&self) -> Severity;
+    pub fn span(&self) -> Range<usize>;      // byte offsets into the Source text
+    pub fn message(&self) -> &str;
+    pub fn notes(&self) -> /* each a message with an optional span */;
+    pub fn render(&self, source: &Source, options: &RenderOptions) -> String;
+}
+
+pub enum Severity { Error, Warning }         // exhaustive
+
+#[non_exhaustive] #[derive(Default)]
+pub struct RenderOptions { pub color: bool }
+```
+
+- **No I/O**: the library never touches files or a terminal. `Source`'s name is a label, never resolved. Diagnostics show it whole, and the Lua header keeps its last component.
+- **Model private**: there is no public description tree. Accessors on `ValidDescription` can be added in minor releases.
+- `Diagnostics` holds warnings already filtered by `allow:`, so `wirdigen::validate(&src)?.generate()` works.
+- Line and column are derived from spans, never stored.
+- The renderer is built on `annotate-snippets`. Its layout is not stable.
+- **No `Serialize`**: no `serde_json` or `schemars` type appears in the API. Each consumer (CLI, WASM) defines its own JSON.
+- Every public type is owned, has no lifetime parameters and is `Send + Sync + 'static`, checked by a compile-time test. All public structs have private fields; only `RenderOptions` is `#[non_exhaustive]`.
+- `#![deny(missing_docs)]`. A writer-based `generate_into` can come later if streaming matters.
+
+## 9. CLI
+
+*ADR 0013, CLI UX.*
+
+### 9.1 Commands
+
+| Command | Does |
+|---|---|
+| `wirdigen validate <inputs>…` | Validates, writes nothing. |
+| `wirdigen generate <inputs>…` | Validates and writes Dissectors. |
+| `wirdigen generate --check <inputs>…` | Writes nothing; fails if a Dissector on disk is missing or differs. |
+| `wirdigen schema [-o <file>]` | Prints the JSON Schema. |
+
+There is no `check` subcommand. `--version` is clap's default. Completions and man pages are generated at build time (`clap_complete`, `clap_mangen`) into the release archives, so there is no runtime subcommand for them. There is no config file and no `WIRDIGEN_*` environment variable.
+
+### 9.2 Inputs
+
+- One or more paths. `-` reads stdin, at most once, with the `Source` name `<stdin>`.
+- No directory walking or implicit search. No inputs is a usage error.
+- Any extension is accepted, with no warning off the `.wirdigen.yaml` convention. The `Source` name is the path as typed.
+
+### 9.3 Outputs and writing
+
+- By default the output goes next to the input, named from the file name: `foo.wirdigen.yaml` → `foo.lua`, otherwise the last extension is replaced. It is never named after the protocol's `name:`.
+- `-o <file|->` requires exactly one input. `--out-dir <dir>` takes any number. Stdin input goes to stdout unless `-o` is given.
+- Two inputs mapping to one output, or an output equal to its input, is a usage error raised before anything runs.
+- Writes are atomic (temp file in the same directory, then rename) and overwrite silently. Identical bytes are not rewritten, so the mtime is kept.
+- Each input succeeds or fails on its own: valid inputs are written even if another has errors. The exit code is the worst result.
+
+### 9.4 `--check`
+
+- Compares bytes with the path `generate` would write, respecting `-o` and `--out-dir`. A missing file counts as stale.
+- Prints one stderr line per stale file, without a diff in v1 (`--diff` can come later as a minor release).
+- `-o -` is rejected. Diagnostics and `--deny-warnings` still apply.
+
+### 9.5 Human output
+
+- Diagnostics go to stderr through the library renderer, under the `Source` name as typed. They come per input in argument order, and in source order within a file.
+- `--color auto|always|never`: `auto` means stderr is a TTY. `NO_COLOR` and `CLICOLOR_FORCE` apply below an explicit `--color`.
+- A summary line (`error: 2 errors, 1 warning in 1 of 3 files`) appears only when there were Diagnostics. Success is silent.
+- `-q` hides warnings and the summary. `-v` lists each file as written or unchanged.
+
+### 9.6 `--deny-warnings`
+
+- Applies to `validate` and `generate` (with or without `--check`), not to `schema`.
+- Warnings become errors for the run, so a warnings-only file is not written (status `failed`). They are rendered as errors with a note.
+- JSON keeps `"severity": "warning"` and adds `"denied": true`.
+- All or nothing: there is no `--deny <name>` and no CLI `--allow`. Silencing lives in the description (§6.4).
+
+### 9.7 JSON Lines
+
+`--message-format human|json`. With `json`, stdout carries one JSON object per line. It is incompatible with `-o -`. Each record has a `type`:
+
+| `type` | Fields |
+|---|---|
+| `diagnostic` | `file`, `name`, `severity`, `message`, `span {start, end, line, column, end_line, end_column}` (byte offsets, 1-based line and column), `notes [{message, span?}]`, `rendered` (uncoloured), and `denied: true` when promoted by `--deny-warnings` |
+| `file` | `input`, `output`, `status`: `written`, `unchanged`, `stale`, `failed` or `valid` |
+| `summary` | counts by severity, and the exit code |
+
+Adding fields or record types is minor; removing or renaming one is major. Consumers must ignore unknown fields. The CLI alone owns this shape. A `github` annotations format can come after v1 as an additive change.
+
+### 9.8 Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. |
+| `1` | Any failure: an error Diagnostic, a denied warning, a stale or missing file under `--check`, an unreadable input or unwritable output. |
+| `2` | Usage error (clap), raised before any input is processed. |
+
+A panic (`101`) is a bug, not part of the contract. A finer split can only come later behind an opt-in flag, never by renumbering.
+
+## 10. Testing
+
+*ADR 0011, Testing strategy, CLI UX.*
+
+### 10.1 Principles
+
+- Dissector behaviour is tested **only in real tshark**; there is no mock of the Wireshark Lua API.
+- Lua parse and load checks use **real** `lua5.2`, `lua5.3` and `lua5.4` interpreters (`mlua` embeds one version per build).
+- Golden files are regression aids, not compatibility promises (§13).
+
+### 10.2 Corpus
+
+`tests/cases/<case>/` holds:
+
+- `<case>.wirdigen.yaml`;
+- a golden `<case>.lua`, compared byte for byte;
+- `packets.txt`: text2pcap hex, each packet commented;
+- a golden `dissected.json` from `tshark -T json -J <proto>`, cut down to the Dissector's own layer.
+
+Both Wireshark versions must produce the same `dissected.json`; a per-version file is a documented exception. Goldens are plain files (no `insta`), rewritten with `WIRDIGEN_BLESS=1`, never in CI. The corpus is `eol=lf` via `.gitattributes`. Each case is its own test. The three book examples (§11) are corpus cases.
+
+### 10.3 Diagnostics corpus
+
+- `tests/diagnostics/<diagnostic-name>/<case>.wirdigen.yaml` plus `<case>.expected`, with one `severity name line:col-line:col` per line and no message text. The whole set must match, so cascades are caught.
+- A completeness test checks that every Diagnostic name has a directory, and vice versa.
+- Each warning has an `allowed` case with an empty `.expected`.
+- A few colour-off renderer goldens (internal) check the rendered layout.
+- Every valid description, warning cases included, must pass the generated JSON Schema (`jsonschema` as a dev-dependency).
+
+### 10.4 Lua checks (`WIRDIGEN_LUA=1`)
+
+- Every golden `.lua` and every prelude chunk parses under Lua 5.2 and compiles under 5.3 and 5.4.
+- Under 5.3 and 5.4, each chunk plus its declared dependencies runs its top level in a strict environment: the standard library, its dependencies' names and inert placeholders for Wireshark's globals. Any other global read is an error.
+
+### 10.5 tshark (`WIRDIGEN_TSHARK=1`)
+
+- Two versions:
+  - the 4.4 floor, from a `debian:trixie` container, run as a non-root user because tshark skips `-X lua_script` as root;
+  - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04.
+- No source builds and no RC or nightly job. Lua 5.3 is covered only by the load check.
+- The harness sets `LC_ALL=C` and a temporary `WIRESHARK_CONFIG_DIR`. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
+- The first implementation PR confirms these gotchas on a real runner.
+
+### 10.6 Bad input
+
+Backs the "never raises a Lua error" promise (§5.3):
+
+- From each valid packet, the harness derives every truncation, seeded mutations (bit flips, a length or count set to 0, max or huge, inserted or removed bytes, garbage) and a few random packets.
+- They go into one pcap and one tshark run per case. The test asserts no `_ws.lua.error`, no Lua stderr, and every packet attributed to the protocol.
+- TCP cases are also re-split at random segment boundaries.
+- PRs use a fixed seed. The weekly run uses a random seed with large counts and reports the seed and the smallest failing packet, which then becomes a `packets.txt` regression.
+
+### 10.7 Generation and validation
+
+These use proptest only, with no cargo-fuzz in v1:
+
+- arbitrary bytes and mutated YAML into `validate` never make it panic;
+- for random *valid* descriptions from a strategy over the v1 language: `validate` accepts them, `generate` doesn't panic, two generations are byte-identical, and the output passes the Lua checks;
+- weekly, end to end: random descriptions × random and truncated packets in tshark;
+- in-crate lowering unit tests cover scoping, locals and chunk selection;
+- cross-OS determinism comes from the golden `.lua` comparison on the 3-OS `test` job.
+
+Shrunk failures become corpus cases.
+
+### 10.8 CLI
+
+- `trycmd` cases in `tests/cli/`, blessed with `TRYCMD=overwrite`, reuse the `tests/cases/` and `tests/diagnostics/` corpus. They cover exit codes, `--deny-warnings`, `--check` fresh/stale/missing, `-o`/`--out-dir`/stdin, JSON Lines and partial failure.
+- A few `assert_cmd` tests cover the unchanged mtime and forced-TTY / `CLICOLOR_FORCE` colour.
+- They run on all 3 OSes. Dissector behaviour is not re-tested at the CLI level.
+
+### 10.9 CI jobs
+
+| Job | Runs on | Required |
+|---|---|---|
+| `test`: goldens, Diagnostics, renderer, schema, lowering, proptest, CLI | ubuntu / macos / windows | yes |
+| `lua` (`WIRDIGEN_LUA=1`) | ubuntu-24.04 with `lua5.2`/`5.3`/`5.4` | yes |
+| `tshark-4.4` (`WIRDIGEN_TSHARK=1`): `dissected.json` + fixed-seed bad packets | `debian:trixie` container, non-root | yes |
+| `tshark-stable` | ubuntu-24.04 + PPA | yes |
+| weekly: large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions | ubuntu | n/a; a failure opens or updates one issue with the seed |
+
+The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date.
+
+## 11. Documentation
+
+*Documentation set for v1.*
+
+- **Book**: an mdBook in `book/` on GitHub Pages is the user guide and format reference.
+  - The release book is served at `/`, built from the latest tag. `main` is served at `/dev/` with a "development version" banner. There is no per-version archive.
+  - PR CI builds the book and checks snippets without deploying.
+- **README**: a short landing page (what Wirdigen is, install, a ~20-line quickstart, a link to the book). It is also `wirdigen-cli`'s crates.io page.
+- **Format reference**: hand-written, one chapter per construct (Fields and Types, sizes, arrays, bitfields, `if`/`switch`, Registration, Framing, Expressions, `info:`, Diagnostics), plus a one-page cheat sheet of the nine top-level keys in §3.2's order.
+  - Every YAML snippet is a complete file that CI runs through `validate`. A snippet can be marked as expected to fail with a named Diagnostic.
+  - Nothing is generated from the schema.
+- **Examples**: three invented protocols in `examples/`, each also a corpus case. None clashes with a built-in protocol.
+  1. *UDP telemetry*: fixed Fields, an enum, a bitfield, `info:`, port Registration. This is the book's tutorial.
+  2. *TCP request/response*: length-based Framing, `switch` on message type, named Types, a length-prefixed string.
+  3. *Tagged records*: arrays until end, `if` Fields, padding and hidden Fields, `expect:` warnings, handoff to a built-in Dissector.
+
+  The old `example/example_dissector.json` is deleted.
+- **Installing a Dissector**: Wireshark's *Help → About → Folders → Personal Lua Plugins* and `tshark -G folders` are the authority; typical per-OS paths are shown only as examples. The chapter covers:
+  - trying a Dissector without installing it, with `-X lua_script:foo.lua`;
+  - reloading (Ctrl+Shift+L or restart);
+  - "Wireshark ≥ 4.4 (Lua 5.3/5.4)", and `ppa:wireshark-dev/stable` for stock Ubuntu 24.04;
+  - troubleshooting: the version-guard error, tshark exiting 0 on Lua errors, Lua skipped as root.
+
+  The CLI has no `install` command.
+- **CLI chapter**: output placement, `generate --check` in CI, exit codes and the `--deny-warnings` caveat (§6.5), linking to the changelog's "New warnings" group.
+  - It holds the normative **JSON Lines contract** (§9.7).
+  - Flag detail stays in `--help` and the man pages. The book includes `wirdigen --help` from its `trycmd` case, so CI catches a stale copy.
+- **Diagnostics index**: one page with an anchor per Diagnostic name: its severity, meaning, a CI-checked triggering snippet, and how to fix or `allow:` it. A test fails if a Diagnostic lacks an entry or vice versa.
+- **docs.rs**: crate docs with a runnable doctest (`Source` → `validate` → `generate`, plus rendering Diagnostics), short notes on semver scope and the I/O-free design, and a link to the book for the format.
+- **Changelog**: git-cliff after a hand-written first v1 entry ("rewrite, no compatibility with 0.3"). PRs that add a warning use the commit scope `diagnostics`, grouped under **"New warnings"**.
+- **`CONTRIBUTING.md`** at the repo root, short: test layers and their setup, adding a corpus case and re-blessing goldens, the PR title convention including the `diagnostics` scope, and pointers to `GLOSSARY.md` and `docs/adr/`. It is not part of the book.
+- **Repository docs**: `docs/SECURITY.md` (private vulnerability reporting on) and `docs/CODE_OF_CONDUCT.md`.
+- **Issue forms**: the bug report asks for the Wirdigen, Wireshark and OS versions and the Protocol Description.
+
+## 12. Toolchain, CI and release
+
+*Toolchain, CI and release policy, ADR 0001–0003.*
+
+### 12.1 Toolchain
+
+- Stable Rust only, pinned in `rust-toolchain.toml` and bumped by hand. A weekly job runs tests and clippy on beta.
+- Edition 2024. `rust-version` is declared and checked by an `msrv` job. It rises only when a dependency needs it, and raising it is a minor release.
+- `[workspace.lints]`: `unsafe_code = "forbid"`, `missing_docs = "warn"` (off for the CLI), `clippy::pedantic` at warn. `-D warnings` applies in clippy and `cargo doc`.
+- Local tooling: prek hooks (`.pre-commit-config.yaml`), a `Makefile` matching CI (`make lint`, `make test`, `make test-lua`, `make test-tshark`), `.editorconfig`, `rustfmt.toml` (120 columns, `use_small_heuristics = "Max"`) and `_typos.toml`.
+
+### 12.2 CI on every PR
+
+- `rust`: fmt, build, test, clippy and doc, all `--locked --all-targets`.
+- `test` on ubuntu, macos and windows (`fail-fast: false`).
+- `msrv`.
+- `deny` (advisories, licenses, bans, sources) plus `cargo machete`.
+- `typos`, `links` (lychee, offline), `workflows` (actionlint, zizmor) and `pr-title`.
+- A `cargo publish --dry-run --locked` packaging check.
+- The `lua`, `tshark-4.4` and `tshark-stable` jobs of §10.9.
+- The book build and snippet checks.
+
+`semver` (cargo-semver-checks, not required) is added once 1.0.0 is published. There is no coverage job.
+
+Workflow hygiene: actions pinned to commit SHAs, `permissions: contents: read`, `persist-credentials: false`, concurrency cancel, timeouts, Swatinem/rust-cache.
+
+Scheduled weekly: `cargo deny check advisories`, the beta job and the large test runs of §10.9. Dependabot runs weekly with one grouped PR each for cargo (`build(deps)`) and actions (`ci(deps)`) and a 7-day cooldown. `rust-audit.yml` and `rust-ci.yml` are deleted.
+
+### 12.3 Versioning
+
+- v1 ships as `1.0.0-alpha.N` → `-beta.N` → `-rc.N` → `1.0.0`. There is no further 0.x.
+- 0.2.x and 0.3.0 stay on crates.io, not yanked. The advisory issues #1 and #2 are closed when v1 lands on `main`.
+
+### 12.4 Release flow
+
+1. On a `release/vX.Y.Z` branch: bump the version, run `git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`, and open a PR titled `chore: release vX.Y.Z`.
+2. Tag the merge commit `vX.Y.Z` and push the tag.
+3. `release.yml`:
+   1. checks that the tag matches the manifest version and that `CHANGELOG.md` has a dated section;
+   2. runs `cargo publish --workspace` with crates.io Trusted Publishing (no build cache);
+   3. drafts a GitHub Release from the changelog section (`--prerelease` for `-alpha`/`-beta`/`-rc`);
+   4. builds and attaches CLI binaries, completions and man pages, and the JSON Schema;
+   5. publishes the Release.
+
+Publishing comes before the GitHub Release because it is the irreversible step and the one most likely to fail.
+
+Binaries are built by a hand-written matrix with `taiki-e/upload-rust-binary-action` for Linux x86_64/aarch64 (musl), macOS aarch64/x86_64 and Windows x86_64. They ship with SHA-256 checksums, `actions/attest-build-provenance` and cargo-binstall metadata. Package managers come after 1.0. Trusted Publishing on crates.io is a one-time manual setup.
+
+### 12.5 Repository
+
+- Squash-merge only, with conventional PR titles as commit messages. Branches are deleted after merge.
+- A `main` ruleset: no direct or force pushes, and the PR jobs above as required checks (`semver` and scheduled jobs excluded).
+- The `dev`, `arise` and `rework` branches stay as references until 1.0.0, then are deleted or tagged `archive/*`.
+
+## 13. Compatibility
+
+*ADR 0001.*
+
+From 1.0.0, a breaking change to any of these is a major release:
+
+1. **The Protocol Description format.** A description valid in 1.x stays valid and means the same in every later 1.y. This covers accepted descriptions, Diagnostic names and severities (§6.5), and the YAML subset: allowing a YAML feature later is minor, banning one is major.
+2. **The library's Rust API** (§8).
+3. **The CLI**: commands, flags, exit codes and the JSON Lines contract (§9).
+4. **Dissector behaviour in Wireshark**: Field names and display filter names, and the protocol tree layout.
+
+Not covered: the generated Lua text, rendered Diagnostic layout and wording, notes, span precision, and the JSON Schema's exact text. Two releases may generate different Lua from one description as long as the Dissector behaves the same.
+
+Dropping a Wireshark version (after upstream end of life) and raising `rust-version` are minor releases. `cargo-semver-checks` guards only the Rust API; the other three surfaces are guarded by tests and review.
+
+## 14. Out of scope and later
+
+Not part of v1. Each item can come later as an additive (minor) change unless noted.
+
+- **WASM / npm surface**: a `wirdigen-wasm` crate on the library API, owning its own JSON shapes, possibly for a web editor. Its own effort after v1.
+- **Other targets**: a C plugin or anything but Lua. It would need builds per Wireshark version and OS.
+- **Kaitai `.ksy` importer**.
+- **A JSON form of the description** for tools, or a second grammar front-end.
+- **Registration**: heuristic dissectors (which need recognition constraints first) and arbitrary dissector tables (ethertype, `sctp.ppi`, `ip.proto`, …), under `registration:`.
+- **Language**: repeat-until-condition (`repeat: { until: … }`), `align:`, delimiter-based Framing, runtime endianness, telling snaplen truncation apart from malformed packets, value-driven / dissector-table handoff, checksum verification, computed Fields, per-Type `info:`, Expression function calls, strings, `?:` and array indexing.
+- **Format keys**: `short_name:`, `description:`.
+- **CLI**: `--diff` for `--check`, a `github` message format, per-name `--deny`, finer exit codes behind an opt-in flag, `generate_into` in the library, and package-manager distribution.
+
+## 15. Left to implementation
+
+These are not open design questions, but the spec deliberately leaves them to the implementation tickets:
+
+- **The full list of Diagnostic names.** The checks in §6.3 are fixed; most of their kebab-case names are chosen when implemented. Names become stable at 1.0.0, and the completeness tests (§10.3, §11) keep the list, the corpus and the book in sync.
+- **The YAML 1.2 parser crate** (`saphyr` / `serde-saphyr` were maintained as of 2026-11), as long as it reports positions and supports the strict subset.
+- **The tshark gotchas** (exit code on Lua load errors, install time) confirmed by the first tshark CI PR (§10.5).
+- **Prelude chunk boundaries and helper names**, under the `wd_` prefix.
+
+## 16. Decision index
+
+| Area | Ticket | ADR |
+|---|---|---|
+| Prior art | [Prior art for declarative protocol descriptions](https://github.com/Cerclique/wirdigen/issues/9) | — |
+| Lua API facts | [Wireshark Lua API capabilities and versions](https://github.com/Cerclique/wirdigen/issues/10) | — |
+| tshark in CI | [Running Lua Dissectors headless in tshark](https://github.com/Cerclique/wirdigen/issues/11) | — |
+| Own format | [Own description format or adopt an existing one](https://github.com/Cerclique/wirdigen/issues/12) | [0004](adr/0004-own-protocol-description-format.md) |
+| Target versions | [Wireshark and Lua target versions](https://github.com/Cerclique/wirdigen/issues/13) | [0006](adr/0006-lua-dissectors-for-wireshark-4-4.md) |
+| Language | [Language capabilities in v1](https://github.com/Cerclique/wirdigen/issues/14) | — |
+| Registration | [Registration mechanisms in v1](https://github.com/Cerclique/wirdigen/issues/15) | — |
+| Syntax | [Protocol Description input syntax](https://github.com/Cerclique/wirdigen/issues/16) | [0005](adr/0005-yaml-description-syntax.md) |
+| Toolchain and release | [Toolchain, CI and release policy](https://github.com/Cerclique/wirdigen/issues/17) | [0001](adr/0001-semver-scope.md), [0002](adr/0002-crate-names.md), [0003](adr/0003-v1-via-pre-releases.md) |
+| Expressions | [Expression mini-language](https://github.com/Cerclique/wirdigen/issues/23) | [0007](adr/0007-expression-semantics.md) |
+| Validation | [Validation of a Protocol Description](https://github.com/Cerclique/wirdigen/issues/24) | [0008](adr/0008-diagnostics-and-generated-schema.md) |
+| Generation | [Generation technique](https://github.com/Cerclique/wirdigen/issues/25) | [0009](adr/0009-filter-names-follow-field-paths.md), [0010](adr/0010-generation-via-lowered-model-and-prelude.md) |
+| Testing | [Testing strategy](https://github.com/Cerclique/wirdigen/issues/26) | [0011](adr/0011-dissectors-tested-in-real-tshark.md) |
+| Library API | [Library API and crate layout](https://github.com/Cerclique/wirdigen/issues/31) | [0012](adr/0012-opaque-io-free-library-api.md) |
+| CLI | [CLI UX](https://github.com/Cerclique/wirdigen/issues/32) | [0013](adr/0013-cli-contract.md) |
+| Identity | [Protocol identity and top-level keys](https://github.com/Cerclique/wirdigen/issues/36) | [0014](adr/0014-protocol-identity-and-no-format-version.md) |
+| Documentation | [Documentation set for v1](https://github.com/Cerclique/wirdigen/issues/37) | — |
+| Field declaration | [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41) | pending |
+
+Research notes behind the first three rows live in [`docs/research/`](research/).
