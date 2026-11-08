@@ -29,7 +29,7 @@ It decides nothing new. Every rule here comes from a closed ticket of that map o
 
 Wirdigen turns a **Protocol Description**, a YAML file a user writes, into a **Dissector**: one Lua file that Wireshark loads.
 
-v1 is a rewrite with no compatibility with 0.2/0.3: neither the format nor the API carries over, and there is no migration path. The `arise` branch (2024) and the `rework` branch (2023) are references to salvage ideas from, not code to continue.
+v1 is a rewrite with no compatibility with 0.2/0.3: neither the format nor the API carries over, and there is no migration path. The `arise` branch (2024) and the `archive/rework` tag (the 2023 `rework` branch, holding the nesting / sequential-offset idea) are references to salvage ideas from, not code to continue.
 
 v1 delivers:
 
@@ -867,7 +867,7 @@ Binaries are built by a hand-written matrix with `taiki-e/upload-rust-binary-act
 
 - Squash-merge only, with conventional PR titles as commit messages. Branches are deleted after merge.
 - A `main` ruleset: no direct or force pushes, and the PR jobs above as required checks (`semver` and scheduled jobs excluded).
-- The `dev`, `arise` and `rework` branches stay as references until 1.0.0, then are deleted or tagged `archive/*`.
+- The `arise` branch stays as a reference until 1.0.0, then is deleted or tagged `archive/arise`. The old `dev` and `rework` branches were already archived as the tags `archive/dev` and `archive/rework` (2026-11-08), and every other branch was deleted, leaving `main` and `arise`.
 
 ## 13. Compatibility
 
