@@ -1,1 +1,5 @@
+[files]
+# Corpus cases that misspell keys on purpose.
+extend-exclude = ["crates/wirdigen/tests/diagnostics/unknown-key/misspelt-*"]
+
 [default.extend-words]

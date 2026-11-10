@@ -1,0 +1,4 @@
+name: Demo
+title: ""
+fields: [ {name: a} ]
+allow: [unknown-key]

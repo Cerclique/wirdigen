@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use saphyr_parser::{Event, Parser, ScalarStyle, Span};
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Name};
 
 /// A YAML node with its byte span in the source.
 #[derive(Debug)]
@@ -19,9 +19,26 @@ pub(crate) enum Value {
     Scalar {
         text: String,
         plain: bool,
+        /// Where `text` starts in the source, when the source spells it byte for byte (no
+        /// escapes, no folded lines, no block indicator).
+        value_start: Option<usize>,
     },
     Sequence(Vec<Node>),
     Mapping(Vec<(Node, Node)>),
+}
+
+impl Node {
+    /// The source span of `within`, a byte range of this scalar's value: the token itself in a
+    /// string spelled verbatim, otherwise the whole value (spec §6.4).
+    #[cfg_attr(not(test), expect(dead_code, reason = "first used by the Expression parser"))]
+    pub(crate) fn token_span(&self, within: Range<usize>) -> Range<usize> {
+        match &self.value {
+            Value::Scalar { text, value_start: Some(start), .. } if within.end <= text.len() => {
+                start + within.start..start + within.end
+            }
+            _ => self.span.clone(),
+        }
+    }
 }
 
 /// Parses the text into its single document, or `None` for an empty file.
@@ -30,6 +47,7 @@ pub(crate) enum Value {
 pub(crate) fn parse(text: &str) -> Result<Option<Node>, Vec<Diagnostic>> {
     let mut reader = Reader {
         events: Parser::new_from_str(text),
+        text,
         // Byte offset of every character index, plus the total length.
         offsets: text.char_indices().map(|(i, _)| i).chain([text.len()]).collect(),
         diagnostics: Vec::new(),
@@ -46,6 +64,7 @@ pub(crate) fn parse(text: &str) -> Result<Option<Node>, Vec<Diagnostic>> {
 
 struct Reader<'a> {
     events: Parser<'a, saphyr_parser::StrInput<'a>>,
+    text: &'a str,
     offsets: Vec<usize>,
     diagnostics: Vec<Diagnostic>,
 }
@@ -70,11 +89,11 @@ impl<'a> Reader<'a> {
             Some(Ok((event, span))) => Ok((event, self.range(span))),
             Some(Err(error)) => {
                 let at = self.byte(error.marker().index());
-                Err(Diagnostic::error("yaml-syntax", at..at, error.info().to_owned()))
+                Err(Diagnostic::new(Name::YamlSyntax, at..at, error.info().to_owned()))
             }
             None => {
                 let end = self.end_of_input();
-                Err(Diagnostic::error("yaml-syntax", end..end, "unexpected end of the YAML stream"))
+                Err(Diagnostic::new(Name::YamlSyntax, end..end, "unexpected end of the YAML stream"))
             }
         }
     }
@@ -96,8 +115,8 @@ impl<'a> Reader<'a> {
         };
         if let (Event::DocumentStart(_), span) = self.next()? {
             self.diagnostics.push(
-                Diagnostic::error(
-                    "multiple-documents",
+                Diagnostic::new(
+                    Name::MultipleDocuments,
                     span.clone(),
                     "a Protocol Description is a single YAML document",
                 )
@@ -111,16 +130,32 @@ impl<'a> Reader<'a> {
         match event {
             Event::Scalar(text, style, anchor, tag) => {
                 self.check_properties(anchor, tag.is_some(), &span);
-                Ok(Node { span, value: Value::Scalar { text: text.into_owned(), plain: style == ScalarStyle::Plain } })
+                // A block scalar's span runs to the next line; the value ends with its last
+                // non-blank character.
+                let span = if matches!(style, ScalarStyle::Literal | ScalarStyle::Folded) {
+                    let trimmed = self.text[span.clone()].trim_end().len();
+                    span.start..span.start + trimmed
+                } else {
+                    span
+                };
+                let quoted = matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);
+                let spelled = match style {
+                    ScalarStyle::Plain => Some(span.clone()),
+                    _ if quoted && span.len() >= 2 => Some(span.start + 1..span.end - 1),
+                    _ => None,
+                };
+                let value_start = spelled.filter(|s| self.text[s.clone()] == *text).map(|s| s.start);
+                let value = Value::Scalar { text: text.into_owned(), plain: style == ScalarStyle::Plain, value_start };
+                Ok(Node { span, value })
             }
             Event::Alias(_) => {
                 // Keep parsing with a placeholder so later violations are reported too.
-                self.diagnostics.push(Diagnostic::error(
-                    "yaml-alias",
+                self.diagnostics.push(Diagnostic::new(
+                    Name::YamlAlias,
                     span.clone(),
                     "aliases are not allowed; reuse Fields through Types",
                 ));
-                Ok(Node { span, value: Value::Scalar { text: String::new(), plain: true } })
+                Ok(Node { span, value: Value::Scalar { text: String::new(), plain: true, value_start: None } })
             }
             Event::SequenceStart(anchor, tag) => {
                 self.check_properties(anchor, tag.is_some(), &span);
@@ -149,10 +184,10 @@ impl<'a> Reader<'a> {
                         break;
                     }
                     let key = self.node(event, key_span)?;
-                    let is_merge_key = matches!(&key.value, Value::Scalar { text, plain: true } if text == "<<");
+                    let is_merge_key = matches!(&key.value, Value::Scalar { text, plain: true, .. } if text == "<<");
                     if is_merge_key {
-                        self.diagnostics.push(Diagnostic::error(
-                            "merge-key",
+                        self.diagnostics.push(Diagnostic::new(
+                            Name::MergeKey,
                             key.span.clone(),
                             "merge keys (`<<`) are not allowed; reuse Fields through Types",
                         ));
@@ -170,14 +205,43 @@ impl<'a> Reader<'a> {
 
     fn check_properties(&mut self, anchor: usize, tagged: bool, span: &Range<usize>) {
         if anchor != 0 {
-            self.diagnostics.push(Diagnostic::error(
-                "yaml-anchor",
+            self.diagnostics.push(Diagnostic::new(
+                Name::YamlAnchor,
                 span.clone(),
                 "anchors are not allowed; reuse Fields through Types",
             ));
         }
         if tagged {
-            self.diagnostics.push(Diagnostic::error("yaml-tag", span.clone(), "YAML tags are not allowed"));
+            self.diagnostics.push(Diagnostic::new(Name::YamlTag, span.clone(), "YAML tags are not allowed"));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The source text a token at `within` (byte offsets into the value) is reported at.
+    fn token(text: &str, within: Range<usize>) -> &str {
+        let root = parse(text).unwrap().unwrap();
+        let Value::Mapping(entries) = &root.value else { panic!("not a mapping") };
+        &text[entries[0].1.token_span(within)]
+    }
+
+    #[test]
+    fn tokens_in_verbatim_strings_get_their_own_span() {
+        assert_eq!(token("size: a + bc\n", 4..6), "bc");
+        assert_eq!(token("size: 'a + bc'\n", 4..6), "bc");
+        assert_eq!(token("size: \"a + bc\"\n", 0..1), "a");
+        assert_eq!(token("{size: a + bc}\n", 4..6), "bc");
+    }
+
+    #[test]
+    fn escaped_or_multi_line_strings_point_at_the_whole_value() {
+        assert_eq!(token("size: \"a +\\tbc\"\n", 4..6), "\"a +\\tbc\"");
+        assert_eq!(token("size: 'it''s'\n", 0..1), "'it''s'");
+        assert_eq!(token("size: a +\n  bc\n", 4..6), "a +\n  bc");
+        assert_eq!(token("size: |\n  a + bc\n", 4..6), "a + bc");
+        assert_eq!(token("size: >\n  a + bc\n", 4..6), "a + bc");
     }
 }

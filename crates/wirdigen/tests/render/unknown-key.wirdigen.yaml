@@ -1,0 +1,3 @@
+name: demo
+bogus: 1
+fields: [ {name: a} ]

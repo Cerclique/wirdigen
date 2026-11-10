@@ -15,4 +15,5 @@ keywords.workspace = true
 workspace = true
 
 [dependencies]
+annotate-snippets = "0.12"
 saphyr-parser = "0.3.3"

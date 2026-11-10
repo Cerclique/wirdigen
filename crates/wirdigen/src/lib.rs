@@ -15,6 +15,18 @@
 //! # let _ = lua;
 //! # Ok::<(), wirdigen::Diagnostics>(())
 //! ```
+//!
+//! Diagnostics render as rustc-style snippets of the source. A description silences warnings
+//! by name with a top-level `allow: [...]`; errors cannot be silenced.
+//!
+//! ```
+//! use wirdigen::{validate, RenderOptions, Source};
+//!
+//! let source = Source::new("demo.wirdigen.yaml", "name: Demo\nfields:\n  - { name: id, type: uint8 }\n");
+//! let diagnostics = validate(&source).unwrap_err();
+//! let text = diagnostics.render(&source, &RenderOptions::default());
+//! assert!(text.starts_with("error[invalid-protocol-name]"));
+//! ```
 
 #![deny(missing_docs)]
 
@@ -23,11 +35,13 @@ mod diagnostic;
 mod emit;
 mod lower;
 mod prelude;
+mod render;
 mod scalar;
 mod source;
 mod yaml;
 
 pub use diagnostic::{Diagnostic, Diagnostics, Note, Severity};
+pub use render::RenderOptions;
 pub use source::Source;
 
 /// A Protocol Description that passed every check.
@@ -67,7 +81,9 @@ impl ValidDescription {
 pub fn validate(source: &Source) -> Result<ValidDescription, Diagnostics> {
     let root = yaml::parse(source.text()).map_err(Diagnostics::new)?;
     let description = description::deserialize(root.as_ref()).map_err(Diagnostics::new)?;
-    let diagnostics = Diagnostics::new(description::check(&description));
+    let mut checked = description::check(&description);
+    checked.retain(|d| !description.allows(d));
+    let diagnostics = Diagnostics::new(checked);
     if diagnostics.has_errors() {
         return Err(diagnostics);
     }
