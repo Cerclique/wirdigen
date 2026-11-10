@@ -11,7 +11,7 @@
     * [Generator](#howtouse_generator)
 * [Dissector format](#dissector_format)
     * [Name](#dissector_name)
-    * [Endianess](#dissector_endianness)
+    * [Endianness](#dissector_endianness)
     * [Connection](#dissector_connection)
     * [Data](#dissector_data)
 * [Compatibility matrices](#compat_matrices)
@@ -37,7 +37,7 @@ The library is composed of two tools:
 
 `Validator` compare a JSON packet description with a predefined JSON schema to ensure data integrity for plugin generation.
 
-If the packet description is invalid, errors are automatically reported to the user through `stderr` with detailled location/description.
+If the packet description is invalid, errors are automatically reported to the user through `stderr` with detailed location/description.
 
 ``` rust
 use wirdigen::validator::Validator;
@@ -141,7 +141,7 @@ fn foo {
 ```
 
 **Note:**
-The method `set_output_directory` does not create non-existant directory from user input.
+The method `set_output_directory` does not create non-existent directory from user input.
 If the output directory is not reachable, the error will be propagated from the generation method when trying to create the final LUA file.
 
 # **Dissector format**
@@ -177,13 +177,13 @@ Each chunk contains the following attributes:
 - `name`: String (max size: 32).
 - `format`: String representing the data type of the chunk. Refer to format/base matrices below for available values.
 - `base`: String representing how the value should be displayed. Refer to format/base matrices below for available values. 
-- `offset`: Position offset, in byte, from the begining of the packet.
+- `offset`: Position offset, in byte, from the beginning of the packet.
 - `size`: Size, in byte, of the chunk inside the packet.
 - `valstr` (Optional) : Array of value/string object to identify specific values in the payload. See below for more information.
 
 **About `strval`:**
 
-This attribute can be used to identify and replace specific value by its string representation (max size: 32). For instance, when dealing with webpage status code, it can be usefull to view status code `404` as `"NOT FOUND"` or `200` as `"OK"` inside wireshark capture view.
+This attribute can be used to identify and replace specific value by its string representation (max size: 32). For instance, when dealing with webpage status code, it can be useful to view status code `404` as `"NOT FOUND"` or `200` as `"OK"` inside wireshark capture view.
 This example can be described as follow inside the dissector JSON file :
 
 ```json
@@ -237,7 +237,7 @@ _(*) = For the specified `format`, the `base` is ignored by Wireshark._
 
 ## **Specific** <a class="anchor" id="matrix_specific"></a>
 
-For these specific type of data, display is automatically handled by Wirehsark. Hense, `base` is ignored. I would recommend using `NONE` in these case.
+For these specific type of data, display is automatically handled by Wirehsark. Hence, `base` is ignored. I would recommend using `NONE` in these case.
 
 - none
 - ipv4
