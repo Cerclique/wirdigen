@@ -30,14 +30,14 @@ The `1.0.0-alpha.1` section of `CHANGELOG.md` is hand-written (ADR 0003). On its
 `release.yml` publishes with [crates.io Trusted Publishing](https://crates.io/docs/trusted-publishing): it exchanges the workflow's OIDC identity for a short-lived token, so no API token is stored in the repository. The maintainer sets this up once:
 
 1. **GitHub environment.** In the repository settings, create an environment named `release`. Optionally add yourself as a required reviewer, so a pushed tag waits for approval before publishing.
-2. **crates.io, per crate.** Trusted Publishing can only be configured on a crate that already exists, so each crate needs a first publish (or an existing release, as for `wirdigen` 0.x) before this step. Under each crate's *Settings → Trusted Publishing*, add a GitHub configuration:
+2. **First publish of a new crate.** Trusted Publishing can only be configured on a crate that already exists. `wirdigen` has 0.x releases, so skip this for it. `wirdigen-cli` has never been published: publish it once by hand with a scoped API token, `wirdigen` first because the CLI depends on it. Use a throwaway pre-release version that the workflow will not reuse, then revoke the token.
+3. **crates.io, per crate.** Under each crate's *Settings → Trusted Publishing*, add a GitHub configuration:
    - Repository owner: `Cerclique`
    - Repository name: `wirdigen`
    - Workflow filename: `release.yml`
    - Environment: `release`
 
    Do this for both `wirdigen` and `wirdigen-cli`.
-3. **First publish of a new crate.** If a crate has never been published, publish it once by hand with a scoped API token (`cargo publish -p <crate>`), then complete step 2 and revoke the token.
 4. Optionally, once Trusted Publishing works, tick *Require trusted publishing* on each crate to disable token publishing.
 
 Both crates are published in one `cargo publish --workspace` run, in dependency order. If it fails part-way, check crates.io for which crates were published before deciding how to proceed: a published version can never be re-published.
