@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - { name: kind, type: unit8, values: MsgType }
+enums:
+  MsgType: { 1: Request }

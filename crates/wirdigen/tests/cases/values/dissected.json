@@ -1,0 +1,36 @@
+[
+  {
+    "values.msg_type": "1",
+    "values.reply_type": "20",
+    "values.status": "0xffff",
+    "values.delta": "-5",
+    "values.drift": "-5",
+    "values.level8": "0",
+    "values.level16": "300",
+    "values.huge": "18446744073709551615",
+    "values.id48": "4660",
+    "values.enabled": "1",
+    "values.urgent": "0",
+    "values.length": "1",
+    "values.timeout": "-1",
+    "values.distance": "1",
+    "values.ratio": "50"
+  },
+  {
+    "values.msg_type": "7",
+    "values.reply_type": "2",
+    "values.status": "0x0001",
+    "values.delta": "0",
+    "values.drift": "11",
+    "values.level8": "5",
+    "values.level16": "0",
+    "values.huge": "0",
+    "values.id48": "1099511627776",
+    "values.enabled": "0",
+    "values.urgent": "1",
+    "values.length": "16",
+    "values.timeout": "1",
+    "values.distance": "2",
+    "values.ratio": "0"
+  }
+]

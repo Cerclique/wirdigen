@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - name: kind
+    type: uint8
+    values:
+      1: Request
+      1: Response

@@ -234,6 +234,7 @@ cases! {
     prefixes => "prefixes",
     timestamps => "timestamps",
     timestamps_le => "timestamps-le",
+    values => "values",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.

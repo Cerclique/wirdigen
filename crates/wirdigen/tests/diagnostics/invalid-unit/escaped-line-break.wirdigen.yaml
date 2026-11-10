@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: size, type: uint16, unit: ["kilo\nbyte", kilobytes] }

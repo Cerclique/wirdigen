@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use crate::lower::{Args, Decode, Dissector, Length, ProtoField, Stmt};
+use crate::lower::{Args, Decode, Dissector, Length, LuaTable, ProtoField, Stmt, Strings, TableRef};
 use crate::prelude;
 
 const INDENT: &str = "    ";
@@ -58,8 +58,12 @@ pub(crate) fn emit(model: &Dissector) -> String {
     let proto = lua_string(&model.filter_name);
     w.line(&format!("local wd_proto = Proto({proto}, {})", lua_string(&model.full_name)));
     w.line("");
+    for shared in &model.tables {
+        w.block(&format!("local {} = {{", shared.local), |w| table_entries(w, &shared.table), "}");
+        w.line("");
+    }
     for field in &model.proto_fields {
-        w.line(&proto_field(field));
+        proto_field(&mut w, model, field);
     }
     if !model.proto_fields.is_empty() {
         w.line("");
@@ -101,23 +105,77 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.out
 }
 
-fn proto_field(field: &ProtoField) -> String {
+/// Writes the declaration of a `ProtoField`. An inline value table spans several lines.
+fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
     let mut args = vec![lua_string(&field.abbrev), lua_string(&field.label)];
-    // Whether a value string and a mask come between the display and the blurb.
+    // Whether a value string and a mask come between the display and the blurb. `float` and
+    // `double` have no display: their unit table, if any, comes right after the label.
     let (display, mapping_slots) = match field.field_type.args {
         Args::Display(display) => (Some(display), true),
         Args::Base(display) => (Some(display), false),
         Args::Plain => (None, false),
     };
-    args.extend(display.map(str::to_owned));
+    let flag = match &field.strings {
+        Some(Strings::Table { range: true, .. }) => " + base.RANGE_STRING",
+        Some(Strings::Unit { .. }) if mapping_slots => " + base.UNIT_STRING",
+        _ => "",
+    };
+    args.extend(display.map(|display| format!("{display}{flag}")));
+    let inline = match &field.strings {
+        Some(Strings::Table { table: TableRef::Inline(table), .. }) => Some(table),
+        _ => None,
+    };
+    match &field.strings {
+        None | Some(Strings::Table { table: TableRef::Inline(_), .. }) => {}
+        Some(Strings::Table { table: TableRef::Shared(index), .. }) => args.push(model.tables[*index].local.clone()),
+        Some(Strings::Unit { singular, plural }) => {
+            let forms: Vec<String> =
+                [Some(singular), plural.as_ref()].into_iter().flatten().map(|s| lua_string(s)).collect();
+            args.push(format!("{{ {} }}", forms.join(", ")));
+        }
+        Some(Strings::TrueFalse { when_true, when_false }) => {
+            args.push(format!("{{ {}, {} }}", lua_string(when_true), lua_string(when_false)));
+        }
+    }
+    let mut tail = Vec::new();
     if let Some(description) = &field.description {
         if mapping_slots {
-            // No value string or mask yet: those slots before the blurb stay `nil`.
-            args.extend(["nil".to_owned(), "nil".to_owned()]);
+            // Slots before the blurb that nothing fills stay `nil`: the value string, the mask.
+            if field.strings.is_none() {
+                tail.push("nil".to_owned());
+            }
+            tail.push("nil".to_owned());
         }
-        args.push(lua_string(description));
+        tail.push(lua_string(description));
     }
-    format!("local {} = ProtoField.{}({})", field.local, field.field_type.constructor, args.join(", "))
+    let open = format!("local {} = ProtoField.{}({}", field.local, field.field_type.constructor, args.join(", "));
+    let close = if tail.is_empty() { String::new() } else { format!(", {}", tail.join(", ")) };
+    match inline {
+        Some(table) => w.block(&format!("{open}, {{"), |w| table_entries(w, table), &format!("}}{close})")),
+        None => w.line(&format!("{open}{close})")),
+    }
+}
+
+/// The entries of a value table, one per line.
+fn table_entries(w: &mut Writer, table: &LuaTable) {
+    match table {
+        LuaTable::Values(entries) => {
+            for (key, label) in entries {
+                w.line(&format!("[{}] = {},", lua_integer(*key), lua_string(label)));
+            }
+        }
+        LuaTable::Ranges(entries) => {
+            for (low, high, label) in entries {
+                w.line(&format!("{{ {}, {}, {} }},", lua_integer(*low), lua_integer(*high), lua_string(label)));
+            }
+        }
+    }
+}
+
+/// A Lua integer literal. `-9223372036854775808` would be the negation of a literal too large
+/// for an integer, which Lua reads as a float, so the minimum is written as an expression.
+fn lua_integer(value: i64) -> String {
+    if value == i64::MIN { "(-9223372036854775807 - 1)".to_owned() } else { value.to_string() }
 }
 
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {

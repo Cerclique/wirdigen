@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - name: length
+    type: uint16
+    values: { 0: Empty }
+    unit: [byte, bytes]

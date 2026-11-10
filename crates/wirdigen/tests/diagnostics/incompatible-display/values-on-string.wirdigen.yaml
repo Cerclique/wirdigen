@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: kind, type: string, size: 4, values: { 1: One } }

@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+enums:
+  1: { 1: Request }
+allow: [unused-enum]

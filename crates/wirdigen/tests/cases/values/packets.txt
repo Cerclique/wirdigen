@@ -1,0 +1,11 @@
+# msg_type=Request, reply_type=Vendor (20), status=Failed, delta=Behind (-5), drift=Small (-5),
+# level8=Off, level16=Overdrive, huge=All ones, id48=Low, enabled, not urgent, length=1 byte,
+# timeout=-1 ms, distance=1 metre, ratio=50 %.
+0000  01 14 ff ff fb ff ff ff fb 00 01 2c ff ff ff ff
+0010  ff ff ff ff 00 00 00 00 12 34 01 00 00 01 ff ff
+0020  3f 80 00 00 40 49 00 00 00 00 00 00
+# Unknown values: msg_type=7, drift=11, level8=5, id48 above the range; reply_type=Response,
+# status=Retry, delta=Even, disabled, urgent, length=16 bytes, timeout=1 ms, distance=2 metres.
+0000  07 02 00 01 00 00 00 00 0b 05 00 00 00 00 00 00
+0010  00 00 00 00 01 00 00 00 00 00 00 01 00 10 00 01
+0020  40 00 00 00 00 00 00 00 00 00 00 00

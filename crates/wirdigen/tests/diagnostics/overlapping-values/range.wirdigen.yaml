@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - name: kind
+    type: uint8
+    values:
+      "0-9": Low
+      5: Five

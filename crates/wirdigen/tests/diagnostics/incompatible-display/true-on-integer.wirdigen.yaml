@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: flag, type: uint8, true: Set, false: Clear }

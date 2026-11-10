@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: hops, type: uint8, unit: [] }

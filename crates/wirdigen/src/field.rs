@@ -3,13 +3,16 @@
 //! Stage 2 reads each entry's keys into a [`RawField`]; stage 4 turns the raw Fields into the
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
+use std::ops::RangeInclusive;
+
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
+use crate::mapping::{self, Enums, Mapping};
 use crate::scalar::{Kind, resolve_plain};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-const KEYS: [&str; 12] = [
+const KEYS: [&str; 16] = [
     "name",
     "type",
     "fields",
@@ -20,6 +23,10 @@ const KEYS: [&str; 12] = [
     "terminator",
     "encoding",
     "display",
+    "values",
+    "true",
+    "false",
+    "unit",
     "label",
     "description",
 ];
@@ -106,6 +113,18 @@ impl Builtin {
     fn unsigned_bytes(self) -> Option<usize> {
         match self {
             Self::Int { signed: false, bytes } => Some(bytes),
+            _ => None,
+        }
+    }
+
+    /// The values of an integer type, or `None` for any other type.
+    pub(crate) fn int_range(self) -> Option<RangeInclusive<i128>> {
+        match self {
+            Self::Int { signed: false, bytes } => Some(0..=(1_i128 << (8 * bytes)) - 1),
+            Self::Int { signed: true, bytes } => {
+                let half = 1_i128 << (8 * bytes - 1);
+                Some(-half..=half - 1)
+            }
             _ => None,
         }
     }
@@ -479,6 +498,7 @@ pub(crate) struct RawField {
     description: Option<Spanned<String>>,
     /// The length keys present, in documentation order.
     lengths: Vec<LengthKey>,
+    mappings: mapping::RawMappings,
 }
 
 /// A validated Field.
@@ -498,6 +518,8 @@ pub(crate) struct Field {
     pub(crate) label: Option<String>,
     /// The `ProtoField` blurb, when `description:` gives one.
     pub(crate) description: Option<String>,
+    /// The labels of values, states or the unit, when the Field has any (spec §3.4.7).
+    pub(crate) mapping: Option<Mapping>,
 }
 
 /// Stage 2: reads one entry of a structure, pushing its errors.
@@ -534,10 +556,11 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
             })
         })
         .collect();
+    let mappings = mapping::read(&keys, errors);
 
     match (name, ty) {
         (Some(name), Some(ty)) if errors.len() == before => {
-            Some(RawField { name, ty, endian, encoding, display, label, description, lengths })
+            Some(RawField { name, ty, endian, encoding, display, label, description, lengths, mappings })
         }
         _ => None,
     }
@@ -589,7 +612,12 @@ fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Opti
 ///
 /// Returns the Fields that passed. A wrong Field is left out, so the layout is complete only
 /// when no error was pushed: the caller decides on the run as a whole.
-pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<Diagnostic>) -> Vec<Field> {
+pub(crate) fn check(
+    fields: &[RawField],
+    endian: Endian,
+    enums: &mut Enums<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<Field> {
     let mut layout = Vec::new();
     for (index, field) in fields.iter().enumerate() {
         let name = &field.name;
@@ -632,13 +660,25 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
             (Some(ty), None) => Some(ty.displays().first().copied()),
             (None, _) => None,
         };
+        enums.mark_used(&field.mappings);
+        let mapping = ty.and_then(|ty| mapping::check(&field.mappings, &field.ty, ty, enums, diagnostics).ok());
         check_tree_text(field, diagnostics);
-        if let (Some(ty), Some(endian), Some(length), Some(encoding), Some(display)) =
-            (ty, endian, length, encoding, display)
+        if let (Some(ty), Some(endian), Some(length), Some(encoding), Some(display), Some(mapping)) =
+            (ty, endian, length, encoding, display, mapping)
         {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
             let (label, description) = (text(&field.label), text(&field.description));
-            layout.push(Field { name: name.value.clone(), ty, endian, length, encoding, display, label, description });
+            layout.push(Field {
+                name: name.value.clone(),
+                ty,
+                endian,
+                length,
+                encoding,
+                display,
+                label,
+                description,
+                mapping,
+            });
         }
     }
     layout

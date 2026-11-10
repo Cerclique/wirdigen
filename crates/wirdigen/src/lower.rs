@@ -3,8 +3,11 @@
 //! Everything lowering relies on is checked by validation, so it cannot fail: a surprise here is
 //! a Wirdigen bug and panics, it is never a Diagnostic.
 
+use std::collections::BTreeMap;
+
 use crate::description::Protocol;
 use crate::field::{self, Builtin, Display, Encoding, Endian, Field};
+use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
 
 /// The model the emitter prints.
@@ -18,6 +21,8 @@ pub(crate) struct Dissector {
     pub(crate) short_name: String,
     /// The tree root text.
     pub(crate) full_name: String,
+    /// The value tables of Enums, each declared once before the `ProtoField`s that use it.
+    pub(crate) tables: Vec<SharedTable>,
     /// The `ProtoField`s to register, each once.
     pub(crate) proto_fields: Vec<ProtoField>,
     /// The statements of the top-level layout.
@@ -38,6 +43,56 @@ pub(crate) struct ProtoField {
     /// The blurb, if any.
     pub(crate) description: Option<String>,
     pub(crate) field_type: FieldType,
+    /// What Wireshark shows in place of, or after, the value.
+    pub(crate) strings: Option<Strings>,
+}
+
+/// The labels of a `ProtoField`, in the argument a constructor calls its valuestring.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Strings {
+    /// A value string, or a range string (`base.RANGE_STRING`) when `range`.
+    Table { table: TableRef, range: bool },
+    /// A unit (`base.UNIT_STRING` on an integer), each form already starting with its space.
+    Unit { singular: String, plural: Option<String> },
+    /// The labels of a `bool`'s two states.
+    TrueFalse { when_true: String, when_false: String },
+}
+
+/// Where a value table is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TableRef {
+    /// In the `ProtoField`'s constructor call.
+    Inline(LuaTable),
+    /// In a local declared once: an index into [`Dissector::tables`].
+    Shared(usize),
+}
+
+/// A value table as Wireshark reads it: keys and bounds as the `ProtoField`'s unsigned integers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LuaTable {
+    /// `{ [key] = label }`.
+    Values(Vec<(i64, String)>),
+    /// `{ { low, high, label } }`.
+    Ranges(Vec<(i64, i64, String)>),
+}
+
+impl LuaTable {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Values(entries) => entries.is_empty(),
+            Self::Ranges(entries) => entries.is_empty(),
+        }
+    }
+}
+
+/// The table of an Enum for the `ProtoField`s of one width and signedness.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SharedTable {
+    /// The Lua local (`enum_MsgType`).
+    pub(crate) local: String,
+    /// The Enum it comes from.
+    enum_name: String,
+    pub(crate) table: LuaTable,
 }
 
 /// A Wireshark field type: how a `ProtoField` is declared.
@@ -114,6 +169,7 @@ pub(crate) enum Decode {
 pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     let filter_name = protocol.name.clone();
     let mut proto_fields = Vec::new();
+    let mut tables = Vec::new();
     let mut layout = Vec::new();
     let mut chunks = vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS];
     for field in &protocol.fields {
@@ -123,6 +179,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
             label: field.label.clone().unwrap_or_else(|| default_label(&field.name)),
             description: field.description.clone(),
             field_type: field_type(field),
+            strings: field.mapping.as_ref().and_then(|m| strings(m, field.ty, &protocol.enums, &mut tables)),
         });
         let length = length(field);
         if matches!(length, Length::Terminator { .. }) && !chunks.contains(&prelude::TERMINATED) {
@@ -142,6 +199,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         full_name: protocol.title.clone().unwrap_or_else(|| short_name.clone()),
         short_name,
         filter_name,
+        tables,
         proto_fields,
         layout,
         // The layout is never empty, so every Dissector reads something and checks bounds.
@@ -192,6 +250,86 @@ fn field_type(field: &Field) -> FieldType {
         // Unlike `absolute_time`, `relative_time` takes no display: its blurb is the third argument.
         Builtin::RelTime => FieldType::new("relative_time", Args::Plain),
     }
+}
+
+/// The labels of a Field of type `ty`. An Enum's table is shared by every Field it lowers to the
+/// same table for. A table left empty by the type (every key `unreachable-value`) gives no
+/// labels at all: an empty table would only make every value "Unknown".
+fn strings(
+    mapping: &Mapping,
+    ty: Builtin,
+    enums: &BTreeMap<String, Table>,
+    tables: &mut Vec<SharedTable>,
+) -> Option<Strings> {
+    Some(match mapping {
+        Mapping::Values(Values::Inline(table)) => {
+            let lua = lua_table(table, ty);
+            if lua.is_empty() {
+                return None;
+            }
+            Strings::Table { table: TableRef::Inline(lua), range: mapping::has_range(table) }
+        }
+        Mapping::Values(Values::Enum(name)) => {
+            let table = &enums[name];
+            let lua = lua_table(table, ty);
+            if lua.is_empty() {
+                return None;
+            }
+            let index = tables.iter().position(|t| t.enum_name == *name && t.table == lua).unwrap_or_else(|| {
+                // An Enum lowers to another table only when a Field's type cuts off some keys.
+                let variants = tables.iter().filter(|t| t.enum_name == *name).count();
+                let local =
+                    if variants == 0 { format!("enum_{name}") } else { format!("enum_{name}_{}", variants + 1) };
+                tables.push(SharedTable { local, enum_name: name.clone(), table: lua });
+                tables.len() - 1
+            });
+            Strings::Table { table: TableRef::Shared(index), range: mapping::has_range(table) }
+        }
+        Mapping::Bool { when_true, when_false } => Strings::TrueFalse {
+            when_true: when_true.clone().unwrap_or_else(|| "True".to_owned()),
+            when_false: when_false.clone().unwrap_or_else(|| "False".to_owned()),
+        },
+        // Wireshark prints a unit right after the value, so the space comes with the unit.
+        Mapping::Unit { singular, plural } => {
+            Strings::Unit { singular: format!(" {singular}"), plural: plural.as_ref().map(|p| format!(" {p}")) }
+        }
+    })
+}
+
+/// A validated table as Wireshark reads it for a `ProtoField` of integer type `ty`.
+///
+/// Wireshark converts each key and bound to an unsigned integer of the `ProtoField`'s width
+/// (32 or 64 bits), so:
+/// - keys outside the type are left out and ranges are cut to it: a wider key would be
+///   truncated onto a value the type does hold;
+/// - a key above `i64::MAX` is written as the negative Lua integer with the same 64 bits;
+/// - a range string compares values as unsigned integers, so a range crossing zero is split in
+///   two, and a negative bound of a 32-bit or narrower signed type is written as its 32-bit two's
+///   complement, which is what the value is compared as.
+fn lua_table(table: &[Entry], ty: Builtin) -> LuaTable {
+    let Builtin::Int { signed, bytes } = ty else { panic!("validation gives `values` only to integer types") };
+    let range = ty.int_range().expect("an integer type has a range");
+    let (min, max) = (*range.start(), *range.end());
+    let reachable = table.iter().filter_map(|e| {
+        let (low, high) = (e.key.low.max(min), e.key.high.min(max));
+        (low <= high).then(|| (low, high, e.label.clone()))
+    });
+    let wire = |value: i128| {
+        let value = if value > i128::from(i64::MAX) { value - (1 << 64) } else { value };
+        i64::try_from(value).expect("validation keeps keys within 64 bits")
+    };
+    if !mapping::has_range(table) {
+        return LuaTable::Values(reachable.map(|(value, _, label)| (wire(value), label)).collect());
+    }
+    let unsigned = |value: i128| wire(if signed && bytes <= 4 && value < 0 { value + (1 << 32) } else { value });
+    LuaTable::Ranges(
+        reachable
+            .flat_map(|(low, high, label)| {
+                let halves = if low < 0 && high >= 0 { vec![(low, -1), (0, high)] } else { vec![(low, high)] };
+                halves.into_iter().map(move |(l, h)| (unsigned(l), unsigned(h), label.clone()))
+            })
+            .collect(),
+    )
 }
 
 /// The Lua `base` value of a display.
@@ -293,6 +431,116 @@ mod tests {
         let root = yaml::parse(text).unwrap();
         let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
         lower(&protocol.unwrap_or_else(|| panic!("{diagnostics:?}")), source_name)
+    }
+
+    fn tables(d: &Dissector) -> Vec<LuaTable> {
+        d.proto_fields
+            .iter()
+            .map(|f| match &f.strings {
+                Some(Strings::Table { table: TableRef::Inline(t), .. }) => t.clone(),
+                Some(Strings::Table { table: TableRef::Shared(i), .. }) => d.tables[*i].table.clone(),
+                other => panic!("{} has no table: {other:?}", f.local),
+            })
+            .collect()
+    }
+
+    fn label(text: &str) -> String {
+        text.to_owned()
+    }
+
+    /// Wireshark truncates a key to the `ProtoField`'s width, so a key the type cannot hold would
+    /// land on another value: it is left out, and a range is cut to the type.
+    #[test]
+    fn keys_outside_the_type_are_left_out() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: uint8, values: {1: One, 257: Wide, -1: Neg}}\n  - {name: b, type: uint8, values: {\"250-300\": High, \"400-500\": Never}}\n",
+            "x",
+        );
+        assert_eq!(
+            tables(&d),
+            [LuaTable::Values(vec![(1, label("One"))]), LuaTable::Ranges(vec![(250, 255, label("High"))])]
+        );
+    }
+
+    /// Checked in tshark 4.4 and 4.6: a range string compares a value as an unsigned integer of
+    /// the `ProtoField`'s width (32 bits up to `int32`, 64 bits for `int64`).
+    #[test]
+    fn signed_ranges_follow_wiresharks_unsigned_comparison() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: int8, values: {\"-5--2\": Neg, \"-1-1\": Zero}}\n  - {name: b, type: int48, values: {\"-10-10\": Small}}\n  - {name: c, type: int16, values: {-1: MinusOne}}\n",
+            "x",
+        );
+        assert_eq!(
+            tables(&d),
+            [
+                LuaTable::Ranges(vec![
+                    (4_294_967_291, 4_294_967_294, label("Neg")),
+                    (4_294_967_295, 4_294_967_295, label("Zero")),
+                    (0, 1, label("Zero")),
+                ]),
+                LuaTable::Ranges(vec![(-10, -1, label("Small")), (0, 10, label("Small"))]),
+                LuaTable::Values(vec![(-1, label("MinusOne"))]),
+            ]
+        );
+    }
+
+    /// A table the type cuts to nothing gives no labels, rather than an empty table.
+    #[test]
+    fn a_table_with_no_reachable_key_gives_no_labels() {
+        let d = lowered(
+            "name: demo\nenums:\n  Big: {256: Wide}\nfields:\n  - {name: a, type: uint8, values: {256: Never}}\n  - {name: b, type: uint8, values: Big}\n",
+            "x",
+        );
+        assert_eq!(d.proto_fields.iter().map(|f| f.strings.clone()).collect::<Vec<_>>(), [None, None]);
+        assert!(d.tables.is_empty());
+    }
+
+    /// A `uint64` key above `i64::MAX` is written as the Lua integer with the same 64 bits.
+    #[test]
+    fn wide_unsigned_keys_keep_their_64_bits() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: uint64, values: {0xffffffffffffffff: Max, 0x8000000000000000: Half}}\n",
+            "x",
+        );
+        assert_eq!(tables(&d), [LuaTable::Values(vec![(-1, label("Max")), (i64::MIN, label("Half"))])]);
+    }
+
+    /// Two Fields naming one Enum have equal mappings (spec §3.4.9), and share its table while
+    /// their types keep the same keys.
+    #[test]
+    fn an_enum_is_shared_by_its_fields() {
+        let root = yaml::parse(
+            "name: demo\nenums:\n  Kind: {1: One, 300: Big}\nfields:\n  - {name: a, type: uint16, values: Kind}\n  - {name: b, type: uint16, values: Kind}\n  - {name: c, type: uint8, values: Kind}\n",
+        )
+        .unwrap();
+        let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
+        let protocol = protocol.unwrap_or_else(|| panic!("{diagnostics:?}"));
+        assert_eq!(protocol.fields[0].mapping, protocol.fields[1].mapping);
+        let d = lower(&protocol, "x");
+        let locals: Vec<&str> = d.tables.iter().map(|t| t.local.as_str()).collect();
+        assert_eq!(locals, ["enum_Kind", "enum_Kind_2"]);
+        let refs: Vec<Option<Strings>> = d.proto_fields.iter().map(|f| f.strings.clone()).collect();
+        let shared = |i| Some(Strings::Table { table: TableRef::Shared(i), range: false });
+        assert_eq!(refs, [shared(0), shared(0), shared(1)]);
+        assert_eq!(d.tables[1].table, LuaTable::Values(vec![(1, label("One"))]));
+    }
+
+    /// Units carry their leading space, and a missing state label keeps Wireshark's default.
+    #[test]
+    fn units_and_states_get_wiresharks_spelling() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: uint16, unit: [byte, bytes]}\n  - {name: b, type: float32, unit: m}\n  - {name: c, type: bool, false: Off}\n",
+            "x",
+        );
+        let strings: Vec<Option<Strings>> = d.proto_fields.iter().map(|f| f.strings.clone()).collect();
+        assert_eq!(
+            strings,
+            [
+                Some(Strings::Unit { singular: label(" byte"), plural: Some(label(" bytes")) }),
+                Some(Strings::Unit { singular: label(" m"), plural: None }),
+                Some(Strings::TrueFalse { when_true: label("True"), when_false: label("Off") }),
+            ]
+        );
     }
 
     #[test]

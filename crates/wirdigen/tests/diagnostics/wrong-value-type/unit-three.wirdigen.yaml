@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: length, type: uint16, unit: [byte, bytes, octets] }

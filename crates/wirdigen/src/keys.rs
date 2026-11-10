@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use crate::diagnostic::{Diagnostic, Name};
-use crate::scalar::{Kind, resolve_plain};
+use crate::scalar::{Kind, parse_int, resolve_plain};
 use crate::yaml::{Node, Value};
 
 /// A value with the span it came from.
@@ -65,15 +65,18 @@ pub(crate) fn read_keys<'a>(
             continue;
         };
         if let Some(first) = keys.key_of(name) {
-            errors.push(
-                Diagnostic::new(Name::DuplicateKey, key.span.clone(), format!("duplicate key `{name}`"))
-                    .with_note("first defined here", Some(first.span.clone())),
-            );
+            errors.push(duplicate_key(name, key, &first.span));
         } else {
             keys.found.push((name, key, value));
         }
     }
     keys
+}
+
+/// A mapping key written a second time, at `key`; `first` is the first one's span.
+pub(crate) fn duplicate_key(text: &str, key: &Node, first: &Range<usize>) -> Diagnostic {
+    Diagnostic::new(Name::DuplicateKey, key.span.clone(), format!("duplicate key `{text}`"))
+        .with_note("first defined here", Some(first.clone()))
 }
 
 /// Reads a string value. A scalar that resolves to another kind (`123`, `true`, an empty value)
@@ -90,7 +93,7 @@ pub(crate) fn expect_string(node: &Node, key: &str, invalid: Name) -> Result<Spa
 }
 
 /// The candidate `word` is most likely a misspelling of, if any is close enough.
-pub(crate) fn closest(word: &str, candidates: &[&'static str]) -> Option<&'static str> {
+pub(crate) fn closest<'c>(word: &str, candidates: &[&'c str]) -> Option<&'c str> {
     candidates
         .iter()
         .map(|c| (edit_distance(word, c), *c))
@@ -143,14 +146,7 @@ pub(crate) fn expect_integer(node: &Node, key: &str) -> Result<i64, Diagnostic> 
     if resolve_plain(text) != Kind::Int {
         return Err(wrong("must be an integer, not a float, a bool or text"));
     }
-    let (digits, radix) = if let Some(hex) = text.strip_prefix("0x") {
-        (hex, 16)
-    } else if let Some(oct) = text.strip_prefix("0o") {
-        (oct, 8)
-    } else {
-        (text.strip_prefix('+').unwrap_or(text), 10)
-    };
-    i64::from_str_radix(digits, radix).map_err(|_| wrong("is out of range"))
+    parse_int(text).and_then(|value| i64::try_from(value).ok()).ok_or_else(|| wrong("is out of range"))
 }
 
 #[cfg(test)]

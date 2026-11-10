@@ -222,12 +222,14 @@ Any value outside this matrix, and an `encoding:` or value-mapping key (§3.4.7)
 |---|---|---|
 | `values:` | integer types, integer bitfield sub-Fields | An inline map from an integer or a `"low-high"` range string to a label, or the name of an Enum. |
 | `true:` / `false:` | `bool`, boolean bitfield sub-Fields | Labels for the two states; either may be given alone. |
-| `unit:` | integer and float types | A string, or `[singular, plural]`. |
+| `unit:` | integer and float types | A string, or a `[singular, plural]` list of exactly two strings (a one-item list is `wrong-value-type`). Each form is a non-empty single line, else the error `invalid-unit`. |
 
 - Overlapping keys in one table are the error `overlapping-values`. A key outside the type's range is the warning `unreachable-value`.
 - `unit:` together with `values:` is the error `conflicting-mappings`.
 - The generator emits a Wireshark value string, or a range string when any key is a range.
 - A top-level `enums:` maps an **Enum** name to a values table, referenced as `values: <EnumName>`. Inline tables stay allowed. An unknown Enum is the error `unknown-enum`; an Enum never used is the warning `unused-enum`.
+- A key is a YAML integer, or a string `"low-high"` of two integers with `low <= high` (spaces around the bounds are allowed, so is the unquoted plain scalar `16-31`); anything else, a quoted integer included, is `wrong-value-type`, and a key written twice is `duplicate-key` (YAML keys: `16` and `"16"` differ). A range is `unreachable-value` only when none of its values fit the type, and an Enum's key is reported once, for the first Field that cannot reach it; a Field whose table the type cuts to nothing gets no labels. Labels, including `true:`/`false:`, follow `invalid-label` (§3.4.8). A Field naming an Enum, or misspelling its name, uses it even when the Field has other errors, so those never cascade into `unused-enum`.
+- Confirmed on 4.4.19 and 4.6.9 (#55): Wireshark converts each key and range bound to an unsigned integer of the ProtoField's width (32 or 64 bits) and compares range strings unsigned. Generated code therefore leaves out keys the type cannot hold and cuts ranges to it, writes a negative bound of a signed type up to 32 bits as its 32-bit two's complement, and splits a range crossing zero. An Enum is one Lua table per distinct cut. A unit is printed right after the value, so the generator adds the space. `-T json` shows only raw values, so the `values` corpus case checks that the tables load and dissect, not the label text.
 
 ```yaml
 enums:
@@ -504,7 +506,7 @@ Errors:
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
 - `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
 - `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
-- `invalid-label`, `invalid-description` (§3.4.8);
+- `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - bitfield widths not adding up to the container;
 - forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;

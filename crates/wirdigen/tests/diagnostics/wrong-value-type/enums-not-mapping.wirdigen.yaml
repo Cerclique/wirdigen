@@ -1,0 +1,4 @@
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+enums: [MsgType]

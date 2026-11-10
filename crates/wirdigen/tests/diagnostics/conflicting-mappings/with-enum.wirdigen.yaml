@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - { name: length, type: uint16, values: Special, unit: [byte, bytes] }
+enums:
+  Special: { 0: Empty }
