@@ -1,6 +1,6 @@
 //! Public API shape (ADR 0012).
 
-use wirdigen::{Diagnostic, Diagnostics, Note, Severity, Source, ValidDescription};
+use wirdigen::{Diagnostic, Diagnostics, Note, RenderOptions, Severity, Source, ValidDescription};
 
 fn assert_owned<T: Send + Sync + 'static>() {}
 
@@ -12,6 +12,7 @@ fn public_types_are_owned_send_and_sync() {
     assert_owned::<Diagnostic>();
     assert_owned::<Note>();
     assert_owned::<Severity>();
+    assert_owned::<RenderOptions>();
 }
 
 #[test]

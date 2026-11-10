@@ -1,0 +1,10 @@
+error[duplicate-key]: duplicate key `name`
+ --> note-with-span.wirdigen.yaml:3:1
+  |
+1 | name: demo
+  | ---- first defined here
+2 | fields: [ {name: a} ]
+3 | name: other
+  | ^^^^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#duplicate-key

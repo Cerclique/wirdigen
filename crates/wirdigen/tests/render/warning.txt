@@ -1,0 +1,7 @@
+warning[unknown-allow]: there is no warning named `bogus`
+ --> warning.wirdigen.yaml:3:9
+  |
+3 | allow: [bogus]
+  |         ^^^^^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unknown-allow

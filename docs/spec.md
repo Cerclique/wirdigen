@@ -521,7 +521,8 @@ Warnings:
 - `unreachable-value`: a `values:` key outside the Field type's range;
 - a Field after a `repeat: to_end` array or a `size: "_remaining"` Field in the same structure;
 - an `expect:` that can never match;
-- `protocol-name-taken`.
+- `protocol-name-taken`;
+- `unknown-allow`: an `allow:` entry that names no warning, either an unknown name or an error's (a warning so that a description allowing a warning from a newer minor still works).
 
 ### 6.4 Names, silencing and locations
 

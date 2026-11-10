@@ -1,0 +1,8 @@
+error[invalid-protocol-title]: a title must be a non-empty single line
+ --> multi-line-span.wirdigen.yaml:3:3
+  |
+3 | /   a
+4 | |   b
+  | |___^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-title

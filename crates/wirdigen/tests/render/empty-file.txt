@@ -1,0 +1,7 @@
+error[missing-key]: the description is empty: `name` and `fields` are required
+ --> empty-file.wirdigen.yaml:1:1
+  |
+1 |
+  | ^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#missing-key

@@ -1,0 +1,8 @@
+error[unknown-key]: unknown key `bogus`
+ --> unknown-key.wirdigen.yaml:2:1
+  |
+2 | bogus: 1
+  | ^^^^^
+  |
+  = note: the keys are: name, title, registration, framing, endian, info, fields, types, enums, allow
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unknown-key
