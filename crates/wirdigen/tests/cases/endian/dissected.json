@@ -1,0 +1,31 @@
+[
+  {
+    "endian.le16": "513",
+    "endian.be16": "258",
+    "endian.le_signed": "-2",
+    "endian.le40": "21542142465",
+    "endian.be40": "4328719365",
+    "endian.le_signed48": "-2",
+    "endian.le_float": "1.5",
+    "endian.le_double": "-2.25",
+    "endian.le_ipv4": "192.0.2.1",
+    "endian.be_ipv4": "192.0.2.1",
+    "endian.le_eui64": "00:11:22:33:44:55:66:77",
+    "endian.le_guid": "00112233-4455-6677-8899-aabbccddeeff",
+    "endian.ipv6_addr": "2001:db8::1",
+    "endian.mac_addr": "00:11:22:33:44:55",
+    "endian.flag": "1"
+  },
+  {
+    "endian.le16": "0",
+    "endian.be16": "0",
+    "endian.le_signed": "0",
+    "_ws.expert": {
+      "endian._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: le40",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

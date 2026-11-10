@@ -1,0 +1,32 @@
+[
+  {
+    "fixed-types.is_set": "1",
+    "fixed-types.ratio": "1.5",
+    "fixed-types.precise_ratio": "-2.25",
+    "fixed-types.ipv4_addr": "192.0.2.1",
+    "fixed-types.ipv6_addr": "2001:db8::1",
+    "fixed-types.mac_addr": "00:11:22:33:44:55",
+    "fixed-types.eui64_addr": "00:11:22:33:44:55:66:77",
+    "fixed-types.uuid": "00112233-4455-6677-8899-aabbccddeeff"
+  },
+  {
+    "fixed-types.is_set": "1",
+    "fixed-types.ratio": "0",
+    "fixed-types.precise_ratio": "0",
+    "fixed-types.ipv4_addr": "0.0.0.0",
+    "fixed-types.ipv6_addr": "::",
+    "fixed-types.mac_addr": "00:00:00:00:00:00",
+    "fixed-types.eui64_addr": "00:00:00:00:00:00:00:00",
+    "fixed-types.uuid": "00000000-0000-0000-0000-000000000000"
+  },
+  {
+    "fixed-types.is_set": "0",
+    "_ws.expert": {
+      "fixed-types._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: ratio",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]
