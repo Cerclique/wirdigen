@@ -99,6 +99,14 @@ const fn int(bytes: usize) -> Builtin {
 }
 
 impl Builtin {
+    /// The width of an unsigned integer type, the only types a `prefix:` takes.
+    fn unsigned_bytes(self) -> Option<usize> {
+        match self {
+            Self::Int { signed: false, bytes } => Some(bytes),
+            _ => None,
+        }
+    }
+
     fn from_name(name: &str) -> Option<Self> {
         BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
     }
@@ -213,7 +221,9 @@ impl Display {
 /// How a `string` is encoded (spec §3.4.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Encoding {
+    /// 7-bit ASCII.
     Ascii,
+    /// UTF-8, the default.
     #[default]
     Utf8,
     /// UTF-16, in the Field's byte order.
@@ -308,10 +318,12 @@ fn read_size(node: &Node) -> Result<RawLength, Diagnostic> {
     }
 }
 
+/// `prefix:` is a type name; whether it is an unsigned integer type is checked in stage 4.
 fn read_prefix(node: &Node) -> Result<RawLength, Diagnostic> {
     expect_string(node, "prefix", Name::InvalidPrefix).map(|prefix| RawLength::Prefix(prefix.value))
 }
 
+/// `terminator:` is an integer; whether it is a byte is checked in stage 4.
 fn read_terminator(node: &Node) -> Result<RawLength, Diagnostic> {
     expect_integer(node, "terminator").map(RawLength::Terminator)
 }
@@ -331,14 +343,11 @@ impl LengthKey {
             )
             .with_note("write the size as a constant integer", None)),
             RawLength::Prefix(name) => {
-                if let Some(Builtin::Int { signed: false, bytes }) = Builtin::from_name(name) {
+                if let Some(bytes) = Builtin::from_name(name).and_then(Builtin::unsigned_bytes) {
                     return Ok(Length::Prefix(bytes));
                 }
-                let unsigned: Vec<&str> = BUILTINS
-                    .iter()
-                    .filter(|(_, b)| matches!(b, Builtin::Int { signed: false, .. }))
-                    .map(|(n, _)| *n)
-                    .collect();
+                let unsigned: Vec<&str> =
+                    BUILTINS.iter().filter(|(_, b)| b.unsigned_bytes().is_some()).map(|(n, _)| *n).collect();
                 Err(Diagnostic::new(Name::InvalidPrefix, span, format!("`{name}` is not an unsigned integer type"))
                     .with_note(format!("`prefix` is one of: {}", unsigned.join(", ")), None))
             }

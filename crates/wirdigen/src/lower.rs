@@ -203,6 +203,9 @@ fn base(display: Display) -> &'static str {
     }
 }
 
+/// Where a Field's value ends, with the Lua call that reads a `prefix:` count in its width
+/// and byte order. A `prefix:` beyond 2^53 loses precision in `tonumber()`, but no packet is
+/// that long, so the bounds check still fails it.
 fn length(field: &Field) -> Length {
     match field.length {
         field::Length::Constant(size) => Length::Fixed(size),

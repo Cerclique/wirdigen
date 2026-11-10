@@ -51,4 +51,5 @@ cases! {
     tree_text => "tree-text",
     strings => "strings",
     bytes => "bytes",
+    prefixes => "prefixes",
 }

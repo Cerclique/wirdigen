@@ -9,3 +9,5 @@
 0000  61 62 63 64 05 61 6c
 # Truncated in path: the packet ends before its NUL.
 0000  61 62 63 64 00 00 00 2f 74
+# Ends right where path starts: fixed="abcd", empty user and note.
+0000  61 62 63 64 00 00 00

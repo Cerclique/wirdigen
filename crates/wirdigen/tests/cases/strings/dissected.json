@@ -40,5 +40,17 @@
       "_ws.expert.group": "117440512"
     },
     "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "strings.fixed": "abcd",
+    "strings.user": "",
+    "strings.note": "",
+    "_ws.expert": {
+      "strings._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: path",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
   }
 ]

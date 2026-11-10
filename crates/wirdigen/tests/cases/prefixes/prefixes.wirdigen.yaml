@@ -1,0 +1,9 @@
+# A length prefix of every width and both byte orders.
+name: prefixes
+fields:
+  - { name: p16, type: bytes, prefix: uint16 }
+  - { name: p24, type: bytes, prefix: uint24 }
+  - { name: p32_le, type: bytes, prefix: uint32, endian: little }
+  - { name: p40, type: bytes, prefix: uint40 }
+  - { name: p56_le, type: string, prefix: uint56, endian: little }
+  - { name: p64, type: string, prefix: uint64 }

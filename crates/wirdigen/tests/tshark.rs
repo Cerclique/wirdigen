@@ -231,6 +231,7 @@ cases! {
     tree_text => "tree-text",
     strings => "strings",
     bytes => "bytes",
+    prefixes => "prefixes",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.
