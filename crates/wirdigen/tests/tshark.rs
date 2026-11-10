@@ -232,6 +232,7 @@ cases! {
     strings => "strings",
     bytes => "bytes",
     prefixes => "prefixes",
+    timestamps => "timestamps",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.

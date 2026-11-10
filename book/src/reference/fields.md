@@ -36,7 +36,8 @@ letter is capitalised, so `msg_type` is shown as "Msg type". `label:` replaces i
 Built-in names describe the bytes on the wire. Every one in this table has a fixed size, so a
 Field of one of them takes no `size:`, `prefix:` or `terminator:`
 ([`unexpected-length`](../diagnostics.md#unexpected-length)). `string` and `bytes` are as long
-as one of those keys says (see [Strings and bytes](#strings-and-bytes)).
+as one of those keys says (see [Strings and bytes](#strings-and-bytes)), and the timestamps
+`abs_time` and `rel_time` as long as their encoding says (see [Timestamps](#timestamps)).
 
 | Type | Bytes | Value |
 |---|---|---|
@@ -52,10 +53,8 @@ as one of those keys says (see [Strings and bytes](#strings-and-bytes)).
 | `eui64` | 8 | EUI-64 identifier |
 | `guid` | 16 | GUID (UUID) |
 
-A `type:` naming none of them, nor `string` or `bytes`, is
-[`unknown-type`](../diagnostics.md#unknown-type). The timestamps `abs_time` and `rel_time` are
-part of the format but not read by this version yet
-([`not-supported-yet`](../diagnostics.md#not-supported-yet)).
+A `type:` naming none of these built-ins is
+[`unknown-type`](../diagnostics.md#unknown-type).
 
 ```yaml
 name: sensor
@@ -87,9 +86,10 @@ fields:
 
 Byte order applies to the multi-byte integers, `float32`, `float64`, `ipv4`, `eui64` and
 `guid`. A little-endian `guid` is the mixed-endian layout Windows uses, with its first three
-groups reversed. It also applies to a `prefix:` count and to `utf16` and `ucs2` text (see
-[Strings and bytes](#strings-and-bytes)). Single bytes, `ipv6`, `ether` and raw `bytes` have
-no byte order, so `endian:` does not change them.
+groups reversed. It also applies to a `prefix:` count, to `utf16` and `ucs2` text (see
+[Strings and bytes](#strings-and-bytes)) and to every timestamp encoding (see
+[Timestamps](#timestamps)). Single bytes, `ipv6`, `ether` and raw `bytes` have no byte order,
+so `endian:` does not change them.
 
 ## Strings and bytes {#strings-and-bytes}
 
@@ -125,8 +125,9 @@ The tree shows the value bytes only: the `prefix:` count and the terminator are 
 highlighted with the value. When the packet ends before the value does, or before a
 terminator is found, the Dissector reports "Malformed: truncated" on that Field and stops.
 
-`encoding:` says how a `string`'s bytes become text. It takes no other type
-([`incompatible-display`](../diagnostics.md#incompatible-display)).
+`encoding:` says how a `string`'s bytes become text. Besides `string`, only the timestamps take
+it (see [Timestamps](#timestamps)); on any other type it is
+[`incompatible-display`](../diagnostics.md#incompatible-display).
 
 | `encoding:` | Text | Default |
 |---|---|---|
@@ -147,6 +148,38 @@ fields:
   - { name: host, type: string, size: 16, encoding: ascii }
   - { name: owner, type: string, prefix: uint16, encoding: latin1 }
 ```
+
+## Timestamps {#timestamps}
+
+`abs_time` is a point in time and `rel_time` a duration. `encoding:` says how the bytes count
+time, and so how many bytes the Field reads: a timestamp takes no `size:`, `prefix:` or
+`terminator:` ([`unexpected-length`](../diagnostics.md#unexpected-length)).
+
+| `encoding:` | Bytes | `abs_time` | `rel_time` | Default |
+|---|---|---|---|---|
+| `secs` | 4 | seconds since 1970-01-01 UTC | seconds | yes |
+| `secs_nsecs` | 4 + 4 | seconds since 1970, then nanoseconds | seconds, then nanoseconds | |
+| `ntp` | 8 | NTP: seconds since 1900, then a 32-bit fraction of a second | not taken | |
+| `msecs` | 8 | milliseconds since 1970 | milliseconds | |
+| `usecs` | 8 | microseconds since 1970 | microseconds | |
+| `nsecs` | 8 | nanoseconds since 1970 | nanoseconds | |
+
+Every encoding follows the Field's [byte order](#byte-order). `ntp` on a `rel_time`, or a text
+encoding on a timestamp, is
+[`incompatible-display`](../diagnostics.md#incompatible-display).
+
+```yaml
+name: clock
+fields:
+  - { name: sent, type: abs_time }
+  - { name: received, type: abs_time, encoding: ntp, display: utc }
+  - { name: logged, type: abs_time, encoding: usecs, endian: little }
+  - { name: round_trip, type: rel_time, encoding: secs_nsecs }
+  - { name: timeout, type: rel_time, encoding: msecs }
+```
+
+An `abs_time` is shown in the time zone of whoever views the capture unless `display:` says
+otherwise (see [Display](#display)). A `rel_time` takes no `display:`.
 
 ## Display {#display}
 
@@ -173,8 +206,16 @@ bytes:
 | `colon` | | `01:02:03` |
 | `space` | | `01 02 03` |
 
-`string`, `bool`, `float32`, `float64` and the address types take no `display:`. Any other
-combination is [`incompatible-display`](../diagnostics.md#incompatible-display).
+For `abs_time`, `display:` picks the time zone:
+
+| `display:` | Default | Shows 2024-01-01 00:00:00 UTC as |
+|---|---|---|
+| `local` | yes | in the viewer's time zone, such as `Jan  1, 2024 01:00:00.000000000 CET` |
+| `utc` | | `Jan  1, 2024 00:00:00.000000000 UTC` |
+| `doy_utc` | | `2024/001:00:00:00.000000000 UTC`, with the day of the year |
+
+`string`, `bool`, `float32`, `float64`, `rel_time` and the address types take no `display:`.
+Any other combination is [`incompatible-display`](../diagnostics.md#incompatible-display).
 
 ```yaml
 name: demo

@@ -34,7 +34,7 @@ type ReadLength = fn(&Node) -> Result<RawLength, Diagnostic>;
 const LENGTH_KEYS: [(&str, ReadLength); 3] =
     [("size", read_size), ("prefix", read_prefix), ("terminator", read_terminator)];
 
-/// A built-in type (spec §3.4.4). The timestamps are not read yet.
+/// A built-in type (spec §3.4.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Builtin {
     /// An integer of 1 to 8 bytes.
@@ -55,10 +55,14 @@ pub(crate) enum Builtin {
     Ether,
     Eui64,
     Guid,
+    /// A point in time, as long as its encoding says.
+    AbsTime,
+    /// A duration, as long as its encoding says.
+    RelTime,
 }
 
-/// Every built-in this version reads, by name, in documentation order.
-const BUILTINS: [(&str, Builtin); 26] = [
+/// Every built-in, by name, in documentation order.
+const BUILTINS: [(&str, Builtin); 28] = [
     ("uint8", uint(1)),
     ("uint16", uint(2)),
     ("uint24", uint(3)),
@@ -85,10 +89,9 @@ const BUILTINS: [(&str, Builtin); 26] = [
     ("ether", Builtin::Ether),
     ("eui64", Builtin::Eui64),
     ("guid", Builtin::Guid),
+    ("abs_time", Builtin::AbsTime),
+    ("rel_time", Builtin::RelTime),
 ];
-
-/// Built-ins of the format that this version does not read yet.
-const NOT_YET: [&str; 2] = ["abs_time", "rel_time"];
 
 const fn uint(bytes: usize) -> Builtin {
     Builtin::Int { signed: false, bytes }
@@ -111,7 +114,8 @@ impl Builtin {
         BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
     }
 
-    /// The number of bytes read, or `None` for `string` and `bytes`, whose length key says.
+    /// The number of bytes read, or `None` when something else says: the length key of a
+    /// `string` or `bytes`, the [`Encoding::time_size`] of a timestamp.
     pub(crate) fn fixed_size(self) -> Option<usize> {
         match self {
             Self::Int { bytes, .. } => Some(bytes),
@@ -120,7 +124,7 @@ impl Builtin {
             Self::Ether => Some(6),
             Self::Float64 | Self::Eui64 => Some(8),
             Self::Ipv6 | Self::Guid => Some(16),
-            Self::String | Self::Bytes => None,
+            Self::String | Self::Bytes | Self::AbsTime | Self::RelTime => None,
         }
     }
 
@@ -131,10 +135,34 @@ impl Builtin {
             Self::Int { signed: false, .. } => &UNSIGNED_DISPLAYS,
             Self::Int { signed: true, .. } => &[Display::Dec],
             Self::Bytes => &BYTES_DISPLAYS,
+            Self::AbsTime => &[Display::Local, Display::Utc, Display::DoyUtc],
             Self::Bool
             | Self::Float32
             | Self::Float64
             | Self::String
+            | Self::Ipv4
+            | Self::Ipv6
+            | Self::Ether
+            | Self::Eui64
+            | Self::Guid
+            | Self::RelTime => &[],
+        }
+    }
+
+    /// The `encoding:` values this type takes, the default first (spec §3.4.5). Empty when the
+    /// type takes none.
+    pub(crate) fn encodings(self) -> &'static [Encoding] {
+        match self {
+            Self::String => &[Encoding::Utf8, Encoding::Ascii, Encoding::Utf16, Encoding::Ucs2, Encoding::Latin1],
+            Self::AbsTime => {
+                &[Encoding::Secs, Encoding::SecsNsecs, Encoding::Ntp, Encoding::Msecs, Encoding::Usecs, Encoding::Nsecs]
+            }
+            Self::RelTime => &[Encoding::Secs, Encoding::SecsNsecs, Encoding::Msecs, Encoding::Usecs, Encoding::Nsecs],
+            Self::Int { .. }
+            | Self::Bool
+            | Self::Float32
+            | Self::Float64
+            | Self::Bytes
             | Self::Ipv4
             | Self::Ipv6
             | Self::Ether
@@ -148,7 +176,9 @@ impl Builtin {
     pub(crate) fn has_byte_order(self) -> bool {
         match self {
             Self::Int { bytes, .. } => bytes > 1,
-            Self::Float32 | Self::Float64 | Self::Ipv4 | Self::Eui64 | Self::Guid => true,
+            Self::Float32 | Self::Float64 | Self::Ipv4 | Self::Eui64 | Self::Guid | Self::AbsTime | Self::RelTime => {
+                true
+            }
             Self::Bool | Self::String | Self::Bytes | Self::Ipv6 | Self::Ether => false,
         }
     }
@@ -172,6 +202,12 @@ pub(crate) enum Display {
     Colon,
     /// Bytes separated by a space.
     Space,
+    /// A point in time in the viewer's time zone.
+    Local,
+    /// A point in time in UTC.
+    Utc,
+    /// A point in time in UTC, with the day of the year in place of the month and day.
+    DoyUtc,
 }
 
 /// The `display:` values of an unsigned integer, the default first.
@@ -194,6 +230,9 @@ impl Display {
             Self::Dash => "dash",
             Self::Colon => "colon",
             Self::Space => "space",
+            Self::Local => "local",
+            Self::Utc => "utc",
+            Self::DoyUtc => "doy_utc",
         }
     }
 
@@ -218,13 +257,13 @@ impl Display {
     }
 }
 
-/// How a `string` is encoded (spec §3.4.5).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// How a value's bytes are read (spec §3.4.5): a `string`'s text encoding or a timestamp's
+/// layout. Which values a type takes is [`Builtin::encodings`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Encoding {
     /// 7-bit ASCII.
     Ascii,
-    /// UTF-8, the default.
-    #[default]
+    /// UTF-8.
     Utf8,
     /// UTF-16, in the Field's byte order.
     Utf16,
@@ -232,10 +271,19 @@ pub(crate) enum Encoding {
     Ucs2,
     /// ISO 8859-1.
     Latin1,
+    /// 4-byte seconds since the Unix epoch, or a 4-byte duration in seconds.
+    Secs,
+    /// 4-byte seconds then 4-byte nanoseconds.
+    SecsNsecs,
+    /// 8-byte NTP timestamp: seconds since 1900, then a 32-bit fraction of a second.
+    Ntp,
+    /// 8-byte milliseconds.
+    Msecs,
+    /// 8-byte microseconds.
+    Usecs,
+    /// 8-byte nanoseconds.
+    Nsecs,
 }
-
-/// Every encoding, in documentation order.
-const ENCODINGS: [Encoding; 5] = [Encoding::Ascii, Encoding::Utf8, Encoding::Utf16, Encoding::Ucs2, Encoding::Latin1];
 
 impl Encoding {
     /// The value as written in `encoding:`.
@@ -246,30 +294,52 @@ impl Encoding {
             Self::Utf16 => "utf16",
             Self::Ucs2 => "ucs2",
             Self::Latin1 => "latin1",
+            Self::Secs => "secs",
+            Self::SecsNsecs => "secs_nsecs",
+            Self::Ntp => "ntp",
+            Self::Msecs => "msecs",
+            Self::Usecs => "usecs",
+            Self::Nsecs => "nsecs",
         }
     }
 
-    /// The bytes of one code unit, which is also the width of a terminator: a `utf16` or `ucs2`
-    /// string ends at a 2-byte zero. Only multi-byte units follow the Field's byte order.
+    /// The bytes of one text code unit, which is also the width of a terminator: a `utf16` or
+    /// `ucs2` string ends at a 2-byte zero. 1 for a timestamp, which takes no terminator.
     pub(crate) const fn unit(self) -> usize {
         match self {
-            Self::Ascii | Self::Utf8 | Self::Latin1 => 1,
             Self::Utf16 | Self::Ucs2 => 2,
+            _ => 1,
         }
     }
 
-    /// Reads the `encoding:` value of a Field of type `builtin`, written `ty`. Only `string`
-    /// takes one; anything else is `incompatible-display`.
-    fn check(value: &Spanned<String>, ty: &Spanned<String>, builtin: Builtin) -> Result<Self, Diagnostic> {
-        let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
-        if builtin != Builtin::String {
-            return Err(
-                error(format!("`{}` takes no `encoding`", ty.value)).with_note("only `string` takes `encoding`", None)
-            );
+    /// The size of a timestamp in this encoding, or `None` for a text encoding.
+    pub(crate) const fn time_size(self) -> Option<usize> {
+        match self {
+            Self::Secs => Some(4),
+            Self::SecsNsecs | Self::Ntp | Self::Msecs | Self::Usecs | Self::Nsecs => Some(8),
+            Self::Ascii | Self::Utf8 | Self::Utf16 | Self::Ucs2 | Self::Latin1 => None,
         }
-        ENCODINGS.iter().copied().find(|e| e.as_str() == value.value).ok_or_else(|| {
-            let names: Vec<&str> = ENCODINGS.iter().map(|e| e.as_str()).collect();
-            error(format!("`{}` is not a string encoding", value.value))
+    }
+
+    /// Whether the Field's `endian:` applies: to multi-byte text code units and to timestamps.
+    pub(crate) const fn has_byte_order(self) -> bool {
+        self.unit() > 1 || self.time_size().is_some()
+    }
+
+    /// Reads the `encoding:` value of a Field of type `builtin`, written `ty`, reporting anything
+    /// outside the matrix as `incompatible-display`.
+    fn check(value: &Spanned<String>, ty: &Spanned<String>, builtin: Builtin) -> Result<Self, Diagnostic> {
+        let allowed = builtin.encodings();
+        if let Some(encoding) = allowed.iter().copied().find(|e| e.as_str() == value.value) {
+            return Ok(encoding);
+        }
+        let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
+        Err(if allowed.is_empty() {
+            error(format!("`{}` takes no `encoding`", ty.value))
+                .with_note("only `string`, `abs_time` and `rel_time` take `encoding`", None)
+        } else {
+            let names: Vec<&str> = allowed.iter().map(|e| e.as_str()).collect();
+            error(format!("`{}` is not an encoding of `{}`", value.value, ty.value))
                 .with_note(format!("`encoding` is one of: {}", names.join(", ")), None)
         })
     }
@@ -540,8 +610,8 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
         }
         let encoding = match (ty, &field.encoding) {
             (Some(ty), Some(value)) => record(Encoding::check(value, &field.ty, ty), diagnostics).map(Some),
-            (Some(Builtin::String), None) => Some(Some(Encoding::default())),
-            _ => Some(None),
+            (Some(ty), None) => Some(ty.encodings().first().copied()),
+            (None, _) => Some(None),
         };
         let length = ty.zip(encoding).and_then(|(ty, encoding)| check_length(field, ty, encoding, diagnostics));
         let endian = match &field.endian {
@@ -565,15 +635,16 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
     layout
 }
 
-/// The length of a Field of type `ty`: a fixed-size type's own, which takes no length key, or
-/// the one length key a `string` or `bytes` needs (spec §3.6).
+/// The length of a Field of type `ty` encoded as `encoding`: a fixed-size type's own or a
+/// timestamp's encoding's, which take no length key, or the one length key a `string` or
+/// `bytes` needs (spec §3.4.5, §3.6).
 fn check_length(
     field: &RawField,
     ty: Builtin,
     encoding: Option<Encoding>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Length> {
-    if let Some(size) = ty.fixed_size() {
+    if let Some(size) = ty.fixed_size().or_else(|| encoding.and_then(Encoding::time_size)) {
         for LengthKey { key, .. } in &field.lengths {
             diagnostics.push(
                 Diagnostic::new(
@@ -627,17 +698,9 @@ fn check_tree_text(field: &RawField, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Why a `type:` names no built-in this version reads: a built-in of the format that is not
-/// supported yet, or no type at all.
+/// Why a `type:` names no built-in: an unknown Type, or no type at all.
 fn unresolved_type(ty: &Spanned<String>) -> Diagnostic {
     let name = ty.value.as_str();
-    if NOT_YET.contains(&name) {
-        return Diagnostic::new(
-            Name::NotSupportedYet,
-            ty.span.clone(),
-            format!("`{name}` is not supported by this version of Wirdigen yet"),
-        );
-    }
     if name.starts_with(|c: char| c.is_ascii_uppercase()) {
         return Diagnostic::new(Name::UnknownType, ty.span.clone(), format!("there is no Type named `{name}`"));
     }

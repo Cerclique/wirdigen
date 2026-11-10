@@ -131,7 +131,12 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
             let add = |range: &str| match decode {
                 Decode::Big => format!("tree:add({local}, {range})"),
                 Decode::Little => format!("tree:add_le({local}, {range})"),
-                Decode::Encoded(encoding) => format!("tree:add_packet_field({local}, {range}, {encoding})"),
+                Decode::Encoded { encoding, endian: None } => {
+                    format!("tree:add_packet_field({local}, {range}, {encoding})")
+                }
+                Decode::Encoded { encoding, endian: Some(endian) } => {
+                    format!("tree:add_packet_field({local}, {range}, {encoding} + {endian})")
+                }
                 Decode::Lua(method) => format!("tree:add({local}, {range}, {range}:{method}())"),
             };
             w.line(&format!("-- Field: {path}"));

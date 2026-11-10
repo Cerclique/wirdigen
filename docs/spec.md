@@ -202,7 +202,7 @@ Built-in names describe the wire, not Wireshark's ftypes.
 - `utf16` and `ucs2` follow the Field's `endian:` (§3.11), and their `terminator:` is a 2-byte zero.
 - A timestamp's size follows from its encoding, so `size:` on `abs_time`/`rel_time` is rejected.
 - `encoding:` on any other type is `incompatible-display`.
-- That every `ENC_TIME_*` value works through Lua's `add_packet_field` on 4.4 is unverified; the tshark corpus covers every value (§10.5).
+- Every `ENC_TIME_*` value works through Lua's `add_packet_field` on 4.4.19 and 4.6.9, in both byte orders (#57); the `timestamps` corpus case covers each value (§10.5).
 
 #### 3.4.6 `display:`
 
@@ -747,6 +747,7 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
 - The harness sets `LC_ALL=C`, `TZ=UTC` and a temporary `WIRESHARK_CONFIG_DIR`.
 - The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5), since their behaviour through Lua's `add_packet_field` on 4.4 is not yet verified. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
 - Confirmed on 4.4.19 and 4.6.9 (#51): a Lua load error only prints to stderr and tshark still exits 0; as root, tshark warns on stderr and skips `-X lua_script`; every packet carries a harmless `_ws.lua.fake` item once a script is loaded; UDP never calls a Dissector for an empty payload. Installing tshark takes about 15 s from Debian and 45 s from the PPA.
+- Confirmed on 4.4.19 and 4.6.9 (#57): `-T json` prints an `FT_ABSOLUTE_TIME` value as its display text on 4.4 (`Jan  1, 2024 00:00:00.000000000 UTC`) but as ISO 8601 UTC on 4.6, whatever its `display:` (`2024-01-01T00:00:00.000000000Z`). The decoded instants agree, so the `timestamps` case carries the documented exception `dissected-4.6.json`; a new stable version may need its own file.
 
 ### 10.6 Bad input
 

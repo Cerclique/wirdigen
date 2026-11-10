@@ -103,8 +103,9 @@ pub(crate) enum Decode {
     Big,
     /// Wireshark, little-endian (`tree:add_le`).
     Little,
-    /// Wireshark, as text in this `ENC_*` encoding (`tree:add_packet_field`).
-    Encoded(&'static str),
+    /// Wireshark, with this `ENC_*` encoding and, when the encoding has one, this `ENC_*` byte
+    /// order (`tree:add_packet_field`).
+    Encoded { encoding: &'static str, endian: Option<&'static str> },
     /// The generated Lua, with this `TvbRange` method, and the value is added as is: Lua cannot
     /// declare 40, 48 or 56-bit `ProtoField`s, so they are shown as 64-bit ones.
     Lua(&'static str),
@@ -184,6 +185,12 @@ fn field_type(field: &Field) -> FieldType {
             let display = field.display.expect("validation gives `bytes` a display");
             FieldType::new("bytes", Args::Base(base(display)))
         }
+        Builtin::AbsTime => {
+            let display = field.display.expect("validation gives `abs_time` a display");
+            FieldType::new("absolute_time", Args::Base(base(display)))
+        }
+        // Unlike `absolute_time`, `relative_time` takes no display: its blurb is the third argument.
+        Builtin::RelTime => FieldType::new("relative_time", Args::Plain),
     }
 }
 
@@ -200,6 +207,9 @@ fn base(display: Display) -> &'static str {
         Display::Dash => "base.DASH",
         Display::Colon => "base.COLON",
         Display::Space => "base.SPACE",
+        Display::Local => "base.LOCAL",
+        Display::Utc => "base.UTC",
+        Display::DoyUtc => "base.DOY_UTC",
     }
 }
 
@@ -224,23 +234,30 @@ fn length(field: &Field) -> Length {
     }
 }
 
-/// The `ENC_*` value Wireshark decodes a string with. Only multi-byte code units have a byte
-/// order.
-fn encoding(encoding: Encoding, endian: Endian) -> &'static str {
-    match (encoding, endian) {
-        (Encoding::Ascii, _) => "ENC_ASCII",
-        (Encoding::Utf8, _) => "ENC_UTF_8",
-        (Encoding::Latin1, _) => "ENC_ISO_8859_1",
-        (Encoding::Utf16, Endian::Big) => "ENC_UTF_16 + ENC_BIG_ENDIAN",
-        (Encoding::Utf16, Endian::Little) => "ENC_UTF_16 + ENC_LITTLE_ENDIAN",
-        (Encoding::Ucs2, Endian::Big) => "ENC_UCS_2 + ENC_BIG_ENDIAN",
-        (Encoding::Ucs2, Endian::Little) => "ENC_UCS_2 + ENC_LITTLE_ENDIAN",
+/// The `ENC_*` value Wireshark decodes a string or a timestamp with, before any byte order.
+fn encoding(encoding: Encoding) -> &'static str {
+    match encoding {
+        Encoding::Ascii => "ENC_ASCII",
+        Encoding::Utf8 => "ENC_UTF_8",
+        Encoding::Latin1 => "ENC_ISO_8859_1",
+        Encoding::Utf16 => "ENC_UTF_16",
+        Encoding::Ucs2 => "ENC_UCS_2",
+        Encoding::Secs => "ENC_TIME_SECS",
+        Encoding::SecsNsecs => "ENC_TIME_SECS_NSECS",
+        Encoding::Ntp => "ENC_TIME_NTP",
+        Encoding::Msecs => "ENC_TIME_MSECS",
+        Encoding::Usecs => "ENC_TIME_USECS",
+        Encoding::Nsecs => "ENC_TIME_NSECS",
     }
 }
 
 fn decode(field: &Field) -> Decode {
-    if let Some(text) = field.encoding {
-        return Decode::Encoded(encoding(text, field.endian));
+    if let Some(value) = field.encoding {
+        let endian = value.has_byte_order().then_some(match field.endian {
+            Endian::Big => "ENC_BIG_ENDIAN",
+            Endian::Little => "ENC_LITTLE_ENDIAN",
+        });
+        return Decode::Encoded { encoding: encoding(value), endian };
     }
     let little = field.endian == Endian::Little && field.ty.has_byte_order();
     match field.ty {
@@ -344,5 +361,25 @@ mod tests {
         );
         let constructors: Vec<&str> = d.proto_fields.iter().map(|f| f.field_type.constructor).collect();
         assert_eq!(constructors, ["stringz", "string", "bytes"]);
+    }
+
+    #[test]
+    fn timestamps_size_and_byte_order_follow_their_encoding() {
+        let d = lowered(
+            "name: demo\nendian: little\nfields:\n  - {name: a, type: abs_time}\n  - {name: b, type: rel_time, encoding: nsecs, endian: big}\n  - {name: c, type: string, size: 2, encoding: latin1}\n",
+            "x",
+        );
+        let reads: Vec<(Length, Decode)> =
+            d.layout.iter().map(|Stmt::Read { length, decode, .. }| (*length, *decode)).collect();
+        assert_eq!(
+            reads,
+            [
+                (Length::Fixed(4), Decode::Encoded { encoding: "ENC_TIME_SECS", endian: Some("ENC_LITTLE_ENDIAN") }),
+                (Length::Fixed(8), Decode::Encoded { encoding: "ENC_TIME_NSECS", endian: Some("ENC_BIG_ENDIAN") }),
+                (Length::Fixed(2), Decode::Encoded { encoding: "ENC_ISO_8859_1", endian: None }),
+            ]
+        );
+        let constructors: Vec<&str> = d.proto_fields.iter().map(|f| f.field_type.constructor).collect();
+        assert_eq!(constructors, ["absolute_time", "relative_time", "string"]);
     }
 }

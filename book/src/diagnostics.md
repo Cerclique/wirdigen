@@ -297,7 +297,8 @@ fields: [ {name: id, type: unit8} ]
 **Severity**: error
 
 A Field of a fixed-size type has a length key (`size:`, `prefix:` or `terminator:`). Its size
-already follows from its type.
+already follows from its type, or for a timestamp (`abs_time`, `rel_time`) from its
+`encoding:`.
 
 ```yaml,diagnostic=unexpected-length
 name: demo
@@ -384,8 +385,10 @@ fields: [ {name: user, type: string, encoding: utf16, terminator: 10} ]
 
 A Field's `display:` or `encoding:` is not one its type takes. Unsigned integers take `dec`,
 `hex`, `oct`, `dec_hex` and `hex_dec`; signed integers are shown only as `dec`; `bytes` take
-`plain`, `dot`, `dash`, `colon` and `space`; `string`, `bool`, the floats and the address types
-take no `display:` at all. Only `string` takes `encoding:`.
+`plain`, `dot`, `dash`, `colon` and `space`; `abs_time` takes `local`, `utc` and `doy_utc`;
+`string`, `rel_time`, `bool`, the floats and the address types take no `display:` at all. Only
+`string`, `abs_time` and `rel_time` take `encoding:`, each its own values: `ntp` is an
+`abs_time` encoding only.
 
 ```yaml,diagnostic=incompatible-display
 name: demo
@@ -394,7 +397,8 @@ fields: [ {name: offset, type: int16, display: hex} ]
 
 **Fix**: pick a value from the table in [Fields](reference/fields.md#display), or remove
 `display:` to use the type's default. A signed value shown in hex needs an unsigned type. The
-encodings are listed in [Strings and bytes](reference/fields.md#strings-and-bytes).
+encodings are listed in [Strings and bytes](reference/fields.md#strings-and-bytes) and
+[Timestamps](reference/fields.md#timestamps).
 
 ## `invalid-label` {#invalid-label}
 
@@ -430,9 +434,8 @@ fields:
 **Severity**: error
 
 The description uses part of the format that this version of Wirdigen does not read yet: a
-Field made of inline `fields:` or a `switch:`, one of the built-in types `abs_time` and
-`rel_time`, or a `size:` given as an Expression (including `"_remaining"`) rather than a
-constant. A newer Wirdigen will accept it.
+Field made of inline `fields:` or a `switch:`, or a `size:` given as an Expression (including
+`"_remaining"`) rather than a constant. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo

@@ -52,4 +52,5 @@ cases! {
     strings => "strings",
     bytes => "bytes",
     prefixes => "prefixes",
+    timestamps => "timestamps",
 }
