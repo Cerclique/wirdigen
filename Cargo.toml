@@ -1,20 +1,23 @@
-[package]
-name = "wirdigen"
-version = "0.3.0"
+[workspace]
+resolver = "3"
+members = ["crates/wirdigen", "crates/wirdigen-cli"]
+
+[workspace.package]
+version = "1.0.0-alpha.0"
 authors = ["Aurélien VERNIZEAU <aurelien.vernizeau@gmail.com>"]
-edition = "2021"
-description = "LUA Wireshark dissector validator/generator from JSON"
-readme = "README.md"
+edition = "2024"
+rust-version = "1.85"
 homepage = "https://github.com/Cerclique/wirdigen/"
 repository = "https://github.com/Cerclique/wirdigen/"
 license-file = "LICENSE"
 keywords = ["wireshark", "dissector", "lua"]
 
-[dependencies]
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.79"
-anyhow = "1.0.56"
-thiserror = "1.0.30"
-jsonschema = "0.15.1"
-chrono = "0.4.19"
-regex = "1.5.5"
+[workspace.dependencies]
+wirdigen = { version = "=1.0.0-alpha.0", path = "crates/wirdigen" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }

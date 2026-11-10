@@ -1,5 +1,4 @@
-![RustCI](https://github.com/cerclique/wirdigen/actions/workflows/rust-ci.yml/badge.svg)
-![RustAudit](https://github.com/cerclique/wirdigen/actions/workflows/rust-audit.yml/badge.svg)
+![CI](https://github.com/cerclique/wirdigen/actions/workflows/ci.yml/badge.svg)
 
 ---
 
