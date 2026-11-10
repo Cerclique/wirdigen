@@ -3,7 +3,7 @@
 //! Stage 2 reads each entry's keys into a [`RawField`]; stage 4 turns the raw Fields into the
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
-use crate::description::{Spanned, closest, expect_string, read_keys, wrong_type};
+use crate::description::{Keys, Spanned, closest, expect_string, read_keys, wrong_type};
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::yaml::{Node, Value};
 
@@ -157,8 +157,26 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
     }
     let name = keys.get("name").and_then(|value| record(expect_string(value, "name", Name::InvalidFieldName), errors));
 
+    let ty = read_kind(node, &keys, errors);
+
+    let endian =
+        keys.get("endian").and_then(|value| record(expect_string(value, "endian", Name::InvalidEndian), errors));
+    let length_keys = LENGTH_KEYS
+        .iter()
+        .filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() }))
+        .collect();
+
+    match (name, ty) {
+        (Some(name), Some(ty)) if errors.len() == before => Some(RawField { name, ty, endian, length_keys }),
+        _ => None,
+    }
+}
+
+/// Reads what a Field is: its `type:` when that is its one kind key (spec §3.4.3). A missing,
+/// conflicting or not yet supported kind is pushed as an error.
+fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<Spanned<String>> {
     let kinds: Vec<(&str, &Node)> = KIND_KEYS.iter().filter_map(|k| keys.key_of(k).map(|key| (*k, key))).collect();
-    let ty = match kinds.as_slice() {
+    match kinds.as_slice() {
         [] => {
             if !KIND_KEYS.iter().any(|k| keys.misspelt(k)) {
                 errors.push(
@@ -193,18 +211,6 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
             }
             None
         }
-    };
-
-    let endian =
-        keys.get("endian").and_then(|value| record(expect_string(value, "endian", Name::InvalidEndian), errors));
-    let length_keys = LENGTH_KEYS
-        .iter()
-        .filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() }))
-        .collect();
-
-    match (name, ty) {
-        (Some(name), Some(ty)) if errors.len() == before => Some(RawField { name, ty, endian, length_keys }),
-        _ => None,
     }
 }
 
