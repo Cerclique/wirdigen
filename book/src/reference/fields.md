@@ -50,7 +50,10 @@ of one of them takes no `size:`, `prefix:` or `terminator:`
 | `eui64` | 8 | EUI-64 identifier |
 | `guid` | 16 | GUID (UUID) |
 
-A `type:` naming none of them is [`unknown-type`](../diagnostics.md#unknown-type).
+A `type:` naming none of them is [`unknown-type`](../diagnostics.md#unknown-type). The
+variable-length `string` and `bytes` and the timestamps `abs_time` and `rel_time` are part of
+the format but not read by this version yet
+([`not-supported-yet`](../diagnostics.md#not-supported-yet)).
 
 ```yaml
 name: sensor

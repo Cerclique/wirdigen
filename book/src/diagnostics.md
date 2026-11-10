@@ -281,8 +281,8 @@ fields:
 
 **Severity**: error
 
-A Field's `type:` names no built-in type this version of Wirdigen reads, and no Type. When the
-name is close to a built-in, the message suggests it.
+A Field's `type:` names no built-in type and no Type. When the name is close to a built-in, the
+message suggests it.
 
 ```yaml,diagnostic=unknown-type
 name: demo
@@ -310,8 +310,9 @@ fields: [ {name: id, type: uint32, size: 4} ]
 
 **Severity**: error
 
-The description uses part of the format that this version of Wirdigen does not read yet, such
-as a Field made of inline `fields:` or a `switch:`. A newer Wirdigen will accept it.
+The description uses part of the format that this version of Wirdigen does not read yet: a
+Field made of inline `fields:` or a `switch:`, or one of the built-in types `string`, `bytes`,
+`abs_time` and `rel_time`. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo

@@ -256,7 +256,7 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
                     );
                 }
             }
-            None => diagnostics.push(unknown_type(&field.ty)),
+            None => diagnostics.push(unresolved_type(&field.ty)),
         }
         let endian = match &field.endian {
             Some(value) => record(Endian::check(value), diagnostics),
@@ -269,11 +269,13 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
     layout
 }
 
-fn unknown_type(ty: &Spanned<String>) -> Diagnostic {
+/// Why a `type:` names no built-in this version reads: a built-in of the format that is not
+/// supported yet, or no type at all.
+fn unresolved_type(ty: &Spanned<String>) -> Diagnostic {
     let name = ty.value.as_str();
     if NOT_YET.contains(&name) {
         return Diagnostic::new(
-            Name::UnknownType,
+            Name::NotSupportedYet,
             ty.span.clone(),
             format!("`{name}` is not supported by this version of Wirdigen yet"),
         );
