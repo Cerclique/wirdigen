@@ -34,10 +34,22 @@ pub(crate) struct ProtoField {
     /// The filter name (`demo.length`).
     pub(crate) abbrev: String,
     pub(crate) label: String,
-    /// The `ProtoField.<ftype>` constructor.
-    pub(crate) ftype: &'static str,
-    /// The display argument (`base.DEC`), for the ftypes that take one.
+    pub(crate) field_type: FieldType,
+}
+
+/// A Wireshark field type: how a `ProtoField` is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FieldType {
+    /// The `ProtoField.<constructor>` function (`uint16`, `ipv4`).
+    pub(crate) constructor: &'static str,
+    /// The display argument (`base.DEC`), for the constructors that take one.
     pub(crate) display: Option<&'static str>,
+}
+
+impl FieldType {
+    const fn new(constructor: &'static str, display: Option<&'static str>) -> Self {
+        Self { constructor, display }
+    }
 }
 
 /// One step of a dissect function.
@@ -71,13 +83,11 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     let mut proto_fields = Vec::new();
     let mut layout = Vec::new();
     for field in &protocol.fields {
-        let (ftype, display) = ftype(field.ty);
         proto_fields.push(ProtoField {
             local: format!("f_{}", field.name),
             abbrev: format!("{filter_name}.{}", field.name),
             label: default_label(&field.name),
-            ftype,
-            display,
+            field_type: field_type(field.ty),
         });
         layout.push(Stmt::Read {
             field: proto_fields.len() - 1,
@@ -100,11 +110,11 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     }
 }
 
-/// The `ProtoField` constructor of a built-in, and its display argument (spec §3.4.4).
-fn ftype(ty: Builtin) -> (&'static str, Option<&'static str>) {
+/// The Wireshark field type a built-in is shown as (spec §3.4.4).
+fn field_type(ty: Builtin) -> FieldType {
     match ty {
         Builtin::Int { signed, bytes } => {
-            let ftype = match (signed, bytes) {
+            let constructor = match (signed, bytes) {
                 (false, 1) => "uint8",
                 (false, 2) => "uint16",
                 (false, 3) => "uint24",
@@ -116,16 +126,16 @@ fn ftype(ty: Builtin) -> (&'static str, Option<&'static str>) {
                 (true, 4) => "int32",
                 (true, _) => "int64",
             };
-            (ftype, Some("base.DEC"))
+            FieldType::new(constructor, Some("base.DEC"))
         }
-        Builtin::Bool => ("bool", Some("base.NONE")),
-        Builtin::Float32 => ("float", None),
-        Builtin::Float64 => ("double", None),
-        Builtin::Ipv4 => ("ipv4", None),
-        Builtin::Ipv6 => ("ipv6", None),
-        Builtin::Ether => ("ether", None),
-        Builtin::Eui64 => ("eui64", None),
-        Builtin::Guid => ("guid", None),
+        Builtin::Bool => FieldType::new("bool", Some("base.NONE")),
+        Builtin::Float32 => FieldType::new("float", None),
+        Builtin::Float64 => FieldType::new("double", None),
+        Builtin::Ipv4 => FieldType::new("ipv4", None),
+        Builtin::Ipv6 => FieldType::new("ipv6", None),
+        Builtin::Ether => FieldType::new("ether", None),
+        Builtin::Eui64 => FieldType::new("eui64", None),
+        Builtin::Guid => FieldType::new("guid", None),
     }
 }
 

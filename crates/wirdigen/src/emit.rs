@@ -102,11 +102,11 @@ pub(crate) fn emit(model: &Dissector) -> String {
 }
 
 fn proto_field(field: &ProtoField) -> String {
-    let display = field.display.map(|d| format!(", {d}")).unwrap_or_default();
+    let display = field.field_type.display.map(|d| format!(", {d}")).unwrap_or_default();
     format!(
         "local {} = ProtoField.{}({}, {}{display})",
         field.local,
-        field.ftype,
+        field.field_type.constructor,
         lua_string(&field.abbrev),
         lua_string(&field.label)
     )
