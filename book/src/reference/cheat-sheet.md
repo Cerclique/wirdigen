@@ -34,4 +34,5 @@ fields:
 allow: [unknown-allow]
 ```
 
-There is no format-version key and no `description:` key: YAML comments document a file.
+There is no format-version key and no top-level `description:` key: YAML comments document a
+file. (A Field's own `description:` is its help text in Wireshark.)

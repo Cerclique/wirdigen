@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - name: id
+    type: uint8
+    label: |
+      Message
+      identifier

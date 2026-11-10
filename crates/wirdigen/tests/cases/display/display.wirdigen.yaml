@@ -1,0 +1,11 @@
+# Every integer display.
+name: display
+fields:
+  - { name: plain, type: uint8 }
+  - { name: dec, type: uint8, display: dec }
+  - { name: hex, type: uint16, display: hex }
+  - { name: oct, type: uint8, display: oct }
+  - { name: dec_hex, type: uint32, display: dec_hex }
+  - { name: hex_dec, type: uint24, display: hex_dec }
+  - { name: wide_hex, type: uint48, display: hex }
+  - { name: signed, type: int16, display: dec }
