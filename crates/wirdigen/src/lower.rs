@@ -60,22 +60,22 @@ pub(crate) enum Stmt {
         /// Index into [`Dissector::proto_fields`].
         field: usize,
         size: usize,
-        how: Add,
+        decode: Decode,
         /// The Field's path, for the comment and the truncation report.
         path: String,
     },
 }
 
-/// How a read value reaches the tree.
+/// Who decodes the bytes of a read, and how.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Add {
-    /// `tree:add`: Wireshark decodes the bytes, big-endian.
+pub(crate) enum Decode {
+    /// Wireshark, big-endian (`tree:add`).
     Big,
-    /// `tree:add_le`: Wireshark decodes the bytes, little-endian.
+    /// Wireshark, little-endian (`tree:add_le`).
     Little,
-    /// The generated code decodes the bytes with this `TvbRange` method and adds the value:
-    /// Lua cannot declare 40, 48 or 56-bit `ProtoField`s, so they are shown as 64-bit ones.
-    Value(&'static str),
+    /// The generated Lua, with this `TvbRange` method, and the value is added as is: Lua cannot
+    /// declare 40, 48 or 56-bit `ProtoField`s, so they are shown as 64-bit ones.
+    Lua(&'static str),
 }
 
 pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
@@ -92,7 +92,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         layout.push(Stmt::Read {
             field: proto_fields.len() - 1,
             size: field.ty.size(),
-            how: add(field),
+            decode: decode(field),
             path: field.name.clone(),
         });
     }
@@ -139,17 +139,17 @@ fn field_type(ty: Builtin) -> FieldType {
     }
 }
 
-fn add(field: &Field) -> Add {
+fn decode(field: &Field) -> Decode {
     let little = field.endian == Endian::Little && field.ty.has_byte_order();
     match field.ty {
-        Builtin::Int { signed, bytes: 5..=7 } => Add::Value(match (signed, little) {
+        Builtin::Int { signed, bytes: 5..=7 } => Decode::Lua(match (signed, little) {
             (false, false) => "uint64",
             (false, true) => "le_uint64",
             (true, false) => "int64",
             (true, true) => "le_int64",
         }),
-        _ if little => Add::Little,
-        _ => Add::Big,
+        _ if little => Decode::Little,
+        _ => Decode::Big,
     }
 }
 
@@ -193,7 +193,10 @@ mod tests {
             "name: demo\nendian: little\nfields:\n  - {name: a, type: uint16}\n  - {name: b, type: uint16, endian: big}\n  - {name: c, type: uint8}\n  - {name: d, type: ether}\n  - {name: e, type: int48}\n  - {name: f, type: uint40, endian: big}\n",
             "x",
         );
-        let hows: Vec<Add> = d.layout.iter().map(|Stmt::Read { how, .. }| *how).collect();
-        assert_eq!(hows, [Add::Little, Add::Big, Add::Big, Add::Big, Add::Value("le_int64"), Add::Value("uint64")]);
+        let decodes: Vec<Decode> = d.layout.iter().map(|Stmt::Read { decode, .. }| *decode).collect();
+        assert_eq!(
+            decodes,
+            [Decode::Little, Decode::Big, Decode::Big, Decode::Big, Decode::Lua("le_int64"), Decode::Lua("uint64")]
+        );
     }
 }

@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use crate::lower::{Add, Dissector, ProtoField, Stmt};
+use crate::lower::{Decode, Dissector, ProtoField, Stmt};
 use crate::prelude;
 
 const INDENT: &str = "    ";
@@ -114,7 +114,7 @@ fn proto_field(field: &ProtoField) -> String {
 
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
     match stmt {
-        Stmt::Read { field, size, how, path } => {
+        Stmt::Read { field, size, decode, path } => {
             let local = &model.proto_fields[*field].local;
             w.line(&format!("-- Field: {path}"));
             w.block(
@@ -126,10 +126,10 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
                 "end",
             );
             let range = format!("tvb(offset, {size})");
-            w.line(&match how {
-                Add::Big => format!("tree:add({local}, {range})"),
-                Add::Little => format!("tree:add_le({local}, {range})"),
-                Add::Value(method) => format!("tree:add({local}, {range}, {range}:{method}())"),
+            w.line(&match decode {
+                Decode::Big => format!("tree:add({local}, {range})"),
+                Decode::Little => format!("tree:add_le({local}, {range})"),
+                Decode::Lua(method) => format!("tree:add({local}, {range}, {range}:{method}())"),
             });
             w.line(&format!("offset = offset + {size}"));
         }
