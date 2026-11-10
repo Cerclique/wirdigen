@@ -1,0 +1,11 @@
+# fixed="abcd", user="alice" (prefix 5), note="é!" (LE prefix 3, UTF-8), path="/tmp" + NUL, line="ok" + LF, wide="Hi" (UTF-16LE) + 00 00, wide_be="AB" (UCS-2BE), legacy="été" (ISO 8859-1).
+0000  61 62 63 64 05 61 6c 69 63 65 03 00 c3 a9 21 2f
+0010  74 6d 70 00 6f 6b 0a 48 00 69 00 00 00 00 41 00
+0020  42 e9 74 e9
+# Empty values: fixed="ab" NUL-padded, user and note of length 0, path and line at once terminated, wide="AĀ" (41 00 00 01, whose unaligned 00 00 is not the terminator), wide_be="AB", legacy="ABC".
+0000  61 62 00 00 00 00 00 00 0a 41 00 00 01 00 00 00
+0010  41 00 42 41 42 43
+# Truncated in user: its prefix says 5 bytes, 2 are left.
+0000  61 62 63 64 05 61 6c
+# Truncated in path: the packet ends before its NUL.
+0000  61 62 63 64 00 00 00 2f 74

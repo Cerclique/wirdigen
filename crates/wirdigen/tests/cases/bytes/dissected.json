@@ -1,0 +1,43 @@
+[
+  {
+    "bytes.raw": "01:02:03",
+    "bytes.dotted": "04.05.06",
+    "bytes.dashed": "07-08",
+    "bytes.colons": "09:0a:0b",
+    "bytes.spaced": "0c:0d",
+    "bytes.empty": ""
+  },
+  {
+    "bytes.raw": "01:02:03",
+    "bytes.dotted": "04.05.06",
+    "bytes.dashed": "",
+    "bytes.colons": "",
+    "bytes.spaced": "",
+    "bytes.empty": ""
+  },
+  {
+    "bytes.raw": "01:02:03",
+    "bytes.dotted": "04.05.06",
+    "bytes.dashed": "",
+    "_ws.expert": {
+      "bytes._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: colons",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "bytes.raw": "01:02:03",
+    "bytes.dotted": "04.05.06",
+    "bytes.dashed": "",
+    "bytes.colons": "",
+    "_ws.expert": {
+      "bytes._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: spaced",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

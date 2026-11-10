@@ -4,20 +4,37 @@
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
 use crate::diagnostic::{Diagnostic, Name, record};
-use crate::keys::{Keys, Spanned, closest, expect_string, is_single_line, read_keys, wrong_type};
+use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
+use crate::scalar::{Kind, resolve_plain};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-const KEYS: [&str; 11] =
-    ["name", "type", "fields", "switch", "endian", "size", "prefix", "terminator", "display", "label", "description"];
+const KEYS: [&str; 12] = [
+    "name",
+    "type",
+    "fields",
+    "switch",
+    "endian",
+    "size",
+    "prefix",
+    "terminator",
+    "encoding",
+    "display",
+    "label",
+    "description",
+];
 
 /// The keys that say what a Field is; exactly one is required (spec §3.4.3).
 const KIND_KEYS: [&str; 3] = ["type", "fields", "switch"];
 
-/// The keys that give a variable-length Field its length (spec §3.6).
-const LENGTH_KEYS: [&str; 3] = ["size", "prefix", "terminator"];
+/// How stage 2 reads the value of one length key.
+type ReadLength = fn(&Node) -> Result<RawLength, Diagnostic>;
 
-/// A built-in type (spec §3.4.4). Only the fixed-size ones so far.
+/// The keys that give a variable-length Field its length (spec §3.6), each with its reader.
+const LENGTH_KEYS: [(&str, ReadLength); 3] =
+    [("size", read_size), ("prefix", read_prefix), ("terminator", read_terminator)];
+
+/// A built-in type (spec §3.4.4). The timestamps are not read yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Builtin {
     /// An integer of 1 to 8 bytes.
@@ -29,6 +46,10 @@ pub(crate) enum Builtin {
     Bool,
     Float32,
     Float64,
+    /// Text, as long as its length key says.
+    String,
+    /// Raw bytes, as long as their length key says.
+    Bytes,
     Ipv4,
     Ipv6,
     Ether,
@@ -37,7 +58,7 @@ pub(crate) enum Builtin {
 }
 
 /// Every built-in this version reads, by name, in documentation order.
-const BUILTINS: [(&str, Builtin); 24] = [
+const BUILTINS: [(&str, Builtin); 26] = [
     ("uint8", uint(1)),
     ("uint16", uint(2)),
     ("uint24", uint(3)),
@@ -57,6 +78,8 @@ const BUILTINS: [(&str, Builtin); 24] = [
     ("bool", Builtin::Bool),
     ("float32", Builtin::Float32),
     ("float64", Builtin::Float64),
+    ("string", Builtin::String),
+    ("bytes", Builtin::Bytes),
     ("ipv4", Builtin::Ipv4),
     ("ipv6", Builtin::Ipv6),
     ("ether", Builtin::Ether),
@@ -65,7 +88,7 @@ const BUILTINS: [(&str, Builtin); 24] = [
 ];
 
 /// Built-ins of the format that this version does not read yet.
-const NOT_YET: [&str; 4] = ["string", "bytes", "abs_time", "rel_time"];
+const NOT_YET: [&str; 2] = ["abs_time", "rel_time"];
 
 const fn uint(bytes: usize) -> Builtin {
     Builtin::Int { signed: false, bytes }
@@ -80,15 +103,16 @@ impl Builtin {
         BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
     }
 
-    /// The number of bytes read.
-    pub(crate) fn size(self) -> usize {
+    /// The number of bytes read, or `None` for `string` and `bytes`, whose length key says.
+    pub(crate) fn fixed_size(self) -> Option<usize> {
         match self {
-            Self::Int { bytes, .. } => bytes,
-            Self::Bool => 1,
-            Self::Float32 | Self::Ipv4 => 4,
-            Self::Ether => 6,
-            Self::Float64 | Self::Eui64 => 8,
-            Self::Ipv6 | Self::Guid => 16,
+            Self::Int { bytes, .. } => Some(bytes),
+            Self::Bool => Some(1),
+            Self::Float32 | Self::Ipv4 => Some(4),
+            Self::Ether => Some(6),
+            Self::Float64 | Self::Eui64 => Some(8),
+            Self::Ipv6 | Self::Guid => Some(16),
+            Self::String | Self::Bytes => None,
         }
     }
 
@@ -98,9 +122,11 @@ impl Builtin {
         match self {
             Self::Int { signed: false, .. } => &UNSIGNED_DISPLAYS,
             Self::Int { signed: true, .. } => &[Display::Dec],
+            Self::Bytes => &BYTES_DISPLAYS,
             Self::Bool
             | Self::Float32
             | Self::Float64
+            | Self::String
             | Self::Ipv4
             | Self::Ipv6
             | Self::Ether
@@ -109,13 +135,13 @@ impl Builtin {
         }
     }
 
-    /// Whether `endian:` changes how the value is read. Single bytes, IPv6 addresses and
-    /// Ethernet addresses have no byte order.
+    /// Whether `endian:` changes how the value is read. Single bytes, raw bytes, IPv6 addresses
+    /// and Ethernet addresses have no byte order; a string's follows its [`Encoding`].
     pub(crate) fn has_byte_order(self) -> bool {
         match self {
             Self::Int { bytes, .. } => bytes > 1,
             Self::Float32 | Self::Float64 | Self::Ipv4 | Self::Eui64 | Self::Guid => true,
-            Self::Bool | Self::Ipv6 | Self::Ether => false,
+            Self::Bool | Self::String | Self::Bytes | Self::Ipv6 | Self::Ether => false,
         }
     }
 }
@@ -128,10 +154,23 @@ pub(crate) enum Display {
     Oct,
     DecHex,
     HexDec,
+    /// Bytes with no separator.
+    Plain,
+    /// Bytes separated by `.`.
+    Dot,
+    /// Bytes separated by `-`.
+    Dash,
+    /// Bytes separated by `:`.
+    Colon,
+    /// Bytes separated by a space.
+    Space,
 }
 
 /// The `display:` values of an unsigned integer, the default first.
 const UNSIGNED_DISPLAYS: [Display; 5] = [Display::Dec, Display::Hex, Display::Oct, Display::DecHex, Display::HexDec];
+
+/// The `display:` values of `bytes`, the default first.
+const BYTES_DISPLAYS: [Display; 5] = [Display::Plain, Display::Dot, Display::Dash, Display::Colon, Display::Space];
 
 impl Display {
     /// The value as written in `display:`.
@@ -142,6 +181,11 @@ impl Display {
             Self::Oct => "oct",
             Self::DecHex => "dec_hex",
             Self::HexDec => "hex_dec",
+            Self::Plain => "plain",
+            Self::Dot => "dot",
+            Self::Dash => "dash",
+            Self::Colon => "colon",
+            Self::Space => "space",
         }
     }
 
@@ -163,6 +207,153 @@ impl Display {
                     .with_note(format!("`display` is one of: {}", names.join(", ")), None)
             }
         })
+    }
+}
+
+/// How a `string` is encoded (spec §3.4.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Encoding {
+    Ascii,
+    #[default]
+    Utf8,
+    /// UTF-16, in the Field's byte order.
+    Utf16,
+    /// UCS-2, in the Field's byte order.
+    Ucs2,
+    /// ISO 8859-1.
+    Latin1,
+}
+
+/// Every encoding, in documentation order.
+const ENCODINGS: [Encoding; 5] = [Encoding::Ascii, Encoding::Utf8, Encoding::Utf16, Encoding::Ucs2, Encoding::Latin1];
+
+impl Encoding {
+    /// The value as written in `encoding:`.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ascii => "ascii",
+            Self::Utf8 => "utf8",
+            Self::Utf16 => "utf16",
+            Self::Ucs2 => "ucs2",
+            Self::Latin1 => "latin1",
+        }
+    }
+
+    /// The bytes of one code unit, which is also the width of a terminator: a `utf16` or `ucs2`
+    /// string ends at a 2-byte zero. Only multi-byte units follow the Field's byte order.
+    pub(crate) const fn unit(self) -> usize {
+        match self {
+            Self::Ascii | Self::Utf8 | Self::Latin1 => 1,
+            Self::Utf16 | Self::Ucs2 => 2,
+        }
+    }
+
+    /// Reads the `encoding:` value of a Field of type `builtin`, written `ty`. Only `string`
+    /// takes one; anything else is `incompatible-display`.
+    fn check(value: &Spanned<String>, ty: &Spanned<String>, builtin: Builtin) -> Result<Self, Diagnostic> {
+        let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
+        if builtin != Builtin::String {
+            return Err(
+                error(format!("`{}` takes no `encoding`", ty.value)).with_note("only `string` takes `encoding`", None)
+            );
+        }
+        ENCODINGS.iter().copied().find(|e| e.as_str() == value.value).ok_or_else(|| {
+            let names: Vec<&str> = ENCODINGS.iter().map(|e| e.as_str()).collect();
+            error(format!("`{}` is not a string encoding", value.value))
+                .with_note(format!("`encoding` is one of: {}", names.join(", ")), None)
+        })
+    }
+}
+
+/// How many bytes a validated Field reads (spec §3.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Length {
+    /// A constant number of bytes: a fixed-size type's, or a constant `size:`.
+    Constant(usize),
+    /// The number of bytes is an unsigned integer of this many bytes just before the value
+    /// (`prefix:`), in the Field's byte order.
+    Prefix(usize),
+    /// The value ends at this byte (`terminator:`), repeated over a string's code unit. The
+    /// terminator is read but is not part of the value.
+    Terminator(u8),
+}
+
+/// A length key's value as written, after stage 2.
+#[derive(Debug, Clone)]
+enum RawLength {
+    /// `size:` with a constant.
+    Size(i64),
+    /// `size:` with an Expression, which this version does not read yet.
+    SizeExpression,
+    /// `prefix:` with a type name.
+    Prefix(String),
+    /// `terminator:` with a constant.
+    Terminator(i64),
+}
+
+/// A length key of a Field, with its value.
+#[derive(Debug, Clone)]
+struct LengthKey {
+    key: Spanned<&'static str>,
+    value: Spanned<RawLength>,
+}
+
+/// `size:` is an integer, or an Expression written as a string.
+fn read_size(node: &Node) -> Result<RawLength, Diagnostic> {
+    match &node.value {
+        Value::Scalar { text, plain, .. } if !*plain || resolve_plain(text) == Kind::Str => {
+            Ok(RawLength::SizeExpression)
+        }
+        _ => expect_integer(node, "size").map(RawLength::Size),
+    }
+}
+
+fn read_prefix(node: &Node) -> Result<RawLength, Diagnostic> {
+    expect_string(node, "prefix", Name::InvalidPrefix).map(|prefix| RawLength::Prefix(prefix.value))
+}
+
+fn read_terminator(node: &Node) -> Result<RawLength, Diagnostic> {
+    expect_integer(node, "terminator").map(RawLength::Terminator)
+}
+
+impl LengthKey {
+    /// Stage 4: the length this key gives a `string` or `bytes` Field, encoded as `encoding`.
+    fn check(&self, encoding: Option<Encoding>) -> Result<Length, Diagnostic> {
+        let span = self.value.span.clone();
+        match &self.value.value {
+            RawLength::Size(size) => usize::try_from(*size).map(Length::Constant).map_err(|_| {
+                Diagnostic::new(Name::InvalidSize, span, format!("a size cannot be negative, found `{size}`"))
+            }),
+            RawLength::SizeExpression => Err(Diagnostic::new(
+                Name::NotSupportedYet,
+                span,
+                "`size` Expressions are not supported by this version of Wirdigen yet",
+            )
+            .with_note("write the size as a constant integer", None)),
+            RawLength::Prefix(name) => {
+                if let Some(Builtin::Int { signed: false, bytes }) = Builtin::from_name(name) {
+                    return Ok(Length::Prefix(bytes));
+                }
+                let unsigned: Vec<&str> = BUILTINS
+                    .iter()
+                    .filter(|(_, b)| matches!(b, Builtin::Int { signed: false, .. }))
+                    .map(|(n, _)| *n)
+                    .collect();
+                Err(Diagnostic::new(Name::InvalidPrefix, span, format!("`{name}` is not an unsigned integer type"))
+                    .with_note(format!("`prefix` is one of: {}", unsigned.join(", ")), None))
+            }
+            RawLength::Terminator(value) => match (u8::try_from(*value), encoding) {
+                (Ok(byte), Some(encoding)) if byte != 0 && encoding.unit() > 1 => Err(Diagnostic::new(
+                    Name::InvalidTerminator,
+                    span,
+                    format!("a `{}` string ends at a 2-byte zero", encoding.as_str()),
+                )
+                .with_note("write `terminator: 0`", None)),
+                (Ok(byte), _) => Ok(Length::Terminator(byte)),
+                (Err(_), _) => Err(Diagnostic::new(Name::InvalidTerminator, span, format!("`{value}` is not a byte"))
+                    .with_note("a terminator is a byte, from 0 to 255", None)),
+            },
+        }
     }
 }
 
@@ -194,11 +385,12 @@ pub(crate) struct RawField {
     name: Spanned<String>,
     ty: Spanned<String>,
     endian: Option<Spanned<String>>,
+    encoding: Option<Spanned<String>>,
     display: Option<Spanned<String>>,
     label: Option<Spanned<String>>,
     description: Option<Spanned<String>>,
-    /// The length keys present, by key span.
-    length_keys: Vec<Spanned<&'static str>>,
+    /// The length keys present, in documentation order.
+    lengths: Vec<LengthKey>,
 }
 
 /// A validated Field.
@@ -208,6 +400,10 @@ pub(crate) struct Field {
     pub(crate) ty: Builtin,
     /// The byte order in effect: the Field's own, else the top level's.
     pub(crate) endian: Endian,
+    /// How many bytes the Field reads.
+    pub(crate) length: Length,
+    /// The `encoding:` value, or the default; `None` for a type that takes none.
+    pub(crate) encoding: Option<Encoding>,
     /// The `display:` value, or the type's default; `None` for a type that takes none.
     pub(crate) display: Option<Display>,
     /// The tree text, when `label:` gives one (spec §3.4.8).
@@ -235,17 +431,25 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
     let mut string_value =
         |key: &str, invalid: Name| keys.get(key).and_then(|value| record(expect_string(value, key, invalid), errors));
     let endian = string_value("endian", Name::InvalidEndian);
+    let encoding = string_value("encoding", Name::IncompatibleDisplay);
     let display = string_value("display", Name::IncompatibleDisplay);
     let label = string_value("label", Name::InvalidLabel);
     let description = string_value("description", Name::InvalidDescription);
-    let length_keys = LENGTH_KEYS
+    let lengths = LENGTH_KEYS
         .iter()
-        .filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() }))
+        .filter_map(|(k, read)| {
+            let (key, value) = (keys.key_of(k)?, keys.get(k)?);
+            let raw = record(read(value), errors)?;
+            Some(LengthKey {
+                key: Spanned { value: *k, span: key.span.clone() },
+                value: Spanned { value: raw, span: value.span.clone() },
+            })
+        })
         .collect();
 
     match (name, ty) {
         (Some(name), Some(ty)) if errors.len() == before => {
-            Some(RawField { name, ty, endian, display, label, description, length_keys })
+            Some(RawField { name, ty, endian, encoding, display, label, description, lengths })
         }
         _ => None,
     }
@@ -322,21 +526,15 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
             );
         }
         let ty = Builtin::from_name(&field.ty.value);
-        match ty {
-            Some(_) => {
-                for key in &field.length_keys {
-                    diagnostics.push(
-                        Diagnostic::new(
-                            Name::UnexpectedLength,
-                            key.span.clone(),
-                            format!("`{}` has a fixed size and takes no `{}`", field.ty.value, key.value),
-                        )
-                        .with_note(format!("remove `{}`", key.value), None),
-                    );
-                }
-            }
-            None => diagnostics.push(unresolved_type(&field.ty)),
+        if ty.is_none() {
+            diagnostics.push(unresolved_type(&field.ty));
         }
+        let encoding = match (ty, &field.encoding) {
+            (Some(ty), Some(value)) => record(Encoding::check(value, &field.ty, ty), diagnostics).map(Some),
+            (Some(Builtin::String), None) => Some(Some(Encoding::default())),
+            _ => Some(None),
+        };
+        let length = ty.zip(encoding).and_then(|(ty, encoding)| check_length(field, ty, encoding, diagnostics));
         let endian = match &field.endian {
             Some(value) => record(Endian::check(value), diagnostics),
             None => Some(endian),
@@ -347,13 +545,59 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
             (None, _) => None,
         };
         check_tree_text(field, diagnostics);
-        if let (Some(ty), Some(endian), Some(display)) = (ty, endian, display) {
+        if let (Some(ty), Some(endian), Some(length), Some(encoding), Some(display)) =
+            (ty, endian, length, encoding, display)
+        {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
             let (label, description) = (text(&field.label), text(&field.description));
-            layout.push(Field { name: name.value.clone(), ty, endian, display, label, description });
+            layout.push(Field { name: name.value.clone(), ty, endian, length, encoding, display, label, description });
         }
     }
     layout
+}
+
+/// The length of a Field of type `ty`: a fixed-size type's own, which takes no length key, or
+/// the one length key a `string` or `bytes` needs (spec §3.6).
+fn check_length(
+    field: &RawField,
+    ty: Builtin,
+    encoding: Option<Encoding>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Length> {
+    if let Some(size) = ty.fixed_size() {
+        for LengthKey { key, .. } in &field.lengths {
+            diagnostics.push(
+                Diagnostic::new(
+                    Name::UnexpectedLength,
+                    key.span.clone(),
+                    format!("`{}` has a fixed size and takes no `{}`", field.ty.value, key.value),
+                )
+                .with_note(format!("remove `{}`", key.value), None),
+            );
+        }
+        return Some(Length::Constant(size));
+    }
+    let [length, rest @ ..] = field.lengths.as_slice() else {
+        diagnostics.push(
+            Diagnostic::new(Name::MissingLength, field.ty.span.clone(), format!("`{}` needs a length", field.ty.value))
+                .with_note("give exactly one of `size`, `prefix` or `terminator`", None),
+        );
+        return None;
+    };
+    if rest.is_empty() {
+        return record(length.check(encoding), diagnostics);
+    }
+    for other in rest {
+        diagnostics.push(
+            Diagnostic::new(
+                Name::ConflictingLength,
+                other.key.span.clone(),
+                format!("a Field cannot have both `{}` and `{}`", length.key.value, other.key.value),
+            )
+            .with_note(format!("`{}` is here", length.key.value), Some(length.key.span.clone())),
+        );
+    }
+    None
 }
 
 /// `label:` is non-empty and single line, `description:` single line (spec §3.4.8).

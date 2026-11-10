@@ -49,4 +49,6 @@ cases! {
     endian => "endian",
     display => "display",
     tree_text => "tree-text",
+    strings => "strings",
+    bytes => "bytes",
 }

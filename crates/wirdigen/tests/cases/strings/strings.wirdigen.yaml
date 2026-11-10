@@ -1,0 +1,16 @@
+# A string of every length key and encoding.
+name: strings
+fields:
+  - { name: fixed, type: string, size: 4 }
+  - { name: user, type: string, prefix: uint8 }
+  - { name: note, type: string, prefix: uint16, endian: little }
+  - { name: path, type: string, terminator: 0 }
+  - { name: line, type: string, terminator: 10, encoding: ascii }
+  - { name: wide, type: string, terminator: 0, encoding: utf16, endian: little }
+  - { name: wide_be, type: string, size: 4, encoding: ucs2 }
+  - name: legacy
+    type: string
+    size: 3
+    encoding: latin1
+    label: Legacy name
+    description: Shown as ISO 8859-1

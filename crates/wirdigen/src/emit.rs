@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use crate::lower::{Args, Decode, Dissector, ProtoField, Stmt};
+use crate::lower::{Args, Decode, Dissector, Length, ProtoField, Stmt};
 use crate::prelude;
 
 const INDENT: &str = "    ";
@@ -103,13 +103,15 @@ pub(crate) fn emit(model: &Dissector) -> String {
 
 fn proto_field(field: &ProtoField) -> String {
     let mut args = vec![lua_string(&field.abbrev), lua_string(&field.label)];
-    let display = match field.field_type.args {
-        Args::Display(display) => Some(display),
-        Args::Plain => None,
+    // Whether a value string and a mask come between the display and the blurb.
+    let (display, mapping_slots) = match field.field_type.args {
+        Args::Display(display) => (Some(display), true),
+        Args::Base(display) => (Some(display), false),
+        Args::Plain => (None, false),
     };
     args.extend(display.map(str::to_owned));
     if let Some(description) = &field.description {
-        if display.is_some() {
+        if mapping_slots {
             // No value string or mask yet: those slots before the blurb stay `nil`.
             args.extend(["nil".to_owned(), "nil".to_owned()]);
         }
@@ -120,24 +122,50 @@ fn proto_field(field: &ProtoField) -> String {
 
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
     match stmt {
-        Stmt::Read { field, size, decode, path } => {
+        Stmt::Read { field, length, decode, path } => {
             let local = &model.proto_fields[*field].local;
-            w.line(&format!("-- Field: {path}"));
-            w.block(
-                &format!("if not wd_fits(tvb, offset, {size}) then"),
-                |w| {
-                    w.line(&format!("wd_truncated(tree, wd_ei_truncated, {})", lua_string(path)));
-                    w.line("return offset");
-                },
-                "end",
-            );
-            let range = format!("tvb(offset, {size})");
-            w.line(&match decode {
+            let truncated = |w: &mut Writer| {
+                w.line(&format!("wd_truncated(tree, wd_ei_truncated, {})", lua_string(path)));
+                w.line("return offset");
+            };
+            let add = |range: &str| match decode {
                 Decode::Big => format!("tree:add({local}, {range})"),
                 Decode::Little => format!("tree:add_le({local}, {range})"),
+                Decode::Encoded(encoding) => format!("tree:add_packet_field({local}, {range}, {encoding})"),
                 Decode::Lua(method) => format!("tree:add({local}, {range}, {range}:{method}())"),
-            });
-            w.line(&format!("offset = offset + {size}"));
+            };
+            w.line(&format!("-- Field: {path}"));
+            // A variable length goes in a `len` local, scoped by `do` so locals never pile up
+            // against Lua's limit of 200 per function.
+            match length {
+                Length::Fixed(size) => {
+                    w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
+                    w.line(&add(&format!("tvb(offset, {size})")));
+                    w.line(&format!("offset = offset + {size}"));
+                }
+                Length::Prefix { size, read } => w.block(
+                    "do",
+                    |w| {
+                        w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
+                        w.line(&format!("local len = tvb(offset, {size}):{read}"));
+                        w.line(&format!("offset = offset + {size}"));
+                        w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
+                        w.line(&add("tvb(offset, len)"));
+                        w.line("offset = offset + len");
+                    },
+                    "end",
+                ),
+                Length::Terminator { terminator, width } => w.block(
+                    "do",
+                    |w| {
+                        w.line(&format!("local len = wd_terminated(tvb, offset, {terminator}, {width})"));
+                        w.block("if not len then", truncated, "end");
+                        w.line(&add("tvb(offset, len)"));
+                        w.line(&format!("offset = offset + len + {width}"));
+                    },
+                    "end",
+                ),
+            }
         }
     }
 }

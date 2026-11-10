@@ -268,8 +268,10 @@ A variable-length Field (string, bytes, …) states its length with exactly one 
 |---|---|
 | `size: <expr>` | Byte length from an Expression over earlier Fields, or a constant. |
 | `size: "_remaining"` | Up to the end of the innermost enclosing structure with a known size, or of the message. |
-| `prefix: <int type>` | Length read from an integer just before the value (`prefix: uint16`). |
-| `terminator: <byte>` | Ends at that byte (NUL-terminated strings). |
+| `prefix: <int type>` | Length read from an unsigned integer type (`uint8` … `uint64`) just before the value, in the Field's byte order (`prefix: uint16`). |
+| `terminator: <byte>` | Ends at that byte, 0 to 255 (NUL-terminated strings). The terminator is consumed but not part of the value. |
+
+None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
 
 A Field placed after a `size: "_remaining"` Field in the same structure is a warning.
 
@@ -500,7 +502,7 @@ Each stage reports **all** its errors, and the next stage runs only if the curre
 Errors:
 
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
-- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); length keys on a fixed-size type, or none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
+- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
 - `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
 - `invalid-label`, `invalid-description` (§3.4.8);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
@@ -508,7 +510,8 @@ Errors:
 - forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;
 - duplicate sibling Field names; duplicate or unknown Type names; recursive Types;
 - overlapping `switch` cases;
-- mutually exclusive keys together (`size`/`prefix`/`terminator`, `count`/`repeat`);
+- mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`);
+- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; a leading-zero literal; a non-associative comparison chain;
 - invalid ports and port ranges (§3.12);

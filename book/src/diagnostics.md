@@ -306,13 +306,86 @@ fields: [ {name: id, type: uint32, size: 4} ]
 
 **Fix**: remove the length key.
 
+## `missing-length` {#missing-length}
+
+**Severity**: error
+
+A `string` or `bytes` Field does not say how long it is. Its length comes from exactly one of
+`size:`, `prefix:` or `terminator:`.
+
+```yaml,diagnostic=missing-length
+name: demo
+fields: [ {name: user, type: string} ]
+```
+
+**Fix**: add the length key that matches the wire: `size: 16` for a constant length,
+`prefix: uint8` when a count comes just before the value, or `terminator: 0` for a
+NUL-terminated string. See [Strings and bytes](reference/fields.md#strings-and-bytes).
+
+## `conflicting-length` {#conflicting-length}
+
+**Severity**: error
+
+A Field has more than one of `size:`, `prefix:` and `terminator:`, so its length has no single
+meaning. A note points at the first of them.
+
+```yaml,diagnostic=conflicting-length
+name: demo
+fields: [ {name: user, type: string, size: 8, terminator: 0} ]
+```
+
+**Fix**: keep the one key that says where the value ends.
+
+## `invalid-size` {#invalid-size}
+
+**Severity**: error
+
+A `size:` is a negative number of bytes.
+
+```yaml,diagnostic=invalid-size
+name: demo
+fields: [ {name: data, type: bytes, size: -4} ]
+```
+
+**Fix**: write the length in bytes, zero or more.
+
+## `invalid-prefix` {#invalid-prefix}
+
+**Severity**: error
+
+A `prefix:` does not name an unsigned integer type. The prefix is the count of bytes read just
+before the value, so it is one of `uint8` to `uint64`.
+
+```yaml,diagnostic=invalid-prefix
+name: demo
+fields: [ {name: user, type: string, prefix: int16} ]
+```
+
+**Fix**: name the unsigned integer type of the count, here `uint16`.
+
+## `invalid-terminator` {#invalid-terminator}
+
+**Severity**: error
+
+A `terminator:` is not a byte from 0 to 255, or it is not 0 on a `utf16` or `ucs2` string,
+which always ends at a 2-byte zero.
+
+```yaml,diagnostic=invalid-terminator
+name: demo
+fields: [ {name: user, type: string, encoding: utf16, terminator: 10} ]
+```
+
+**Fix**: write the byte value of the terminator, such as `0` or `10` for a line feed. A
+`utf16` or `ucs2` string takes only `terminator: 0`.
+
 ## `incompatible-display` {#incompatible-display}
 
 **Severity**: error
 
-A Field's `display:` is not one its type takes. Unsigned integers take `dec`, `hex`, `oct`,
-`dec_hex` and `hex_dec`; signed integers are shown only as `dec`; `bool`, the floats and the
-address types take no `display:` at all.
+A Field's `display:` or `encoding:` is not one its type takes. Unsigned integers take `dec`,
+`hex`, `oct`, `dec_hex` and `hex_dec`; signed integers are shown only as `dec`; `bytes` take
+`plain`, `dot`, `dash`, `colon` and `space`; `string`, `bool`, the floats and the address types
+take no `display:` at all. Only `string` takes `encoding:`.
 
 ```yaml,diagnostic=incompatible-display
 name: demo
@@ -320,7 +393,8 @@ fields: [ {name: offset, type: int16, display: hex} ]
 ```
 
 **Fix**: pick a value from the table in [Fields](reference/fields.md#display), or remove
-`display:` to use the type's default. A signed value shown in hex needs an unsigned type.
+`display:` to use the type's default. A signed value shown in hex needs an unsigned type. The
+encodings are listed in [Strings and bytes](reference/fields.md#strings-and-bytes).
 
 ## `invalid-label` {#invalid-label}
 
@@ -356,8 +430,9 @@ fields:
 **Severity**: error
 
 The description uses part of the format that this version of Wirdigen does not read yet: a
-Field made of inline `fields:` or a `switch:`, or one of the built-in types `string`, `bytes`,
-`abs_time` and `rel_time`. A newer Wirdigen will accept it.
+Field made of inline `fields:` or a `switch:`, one of the built-in types `abs_time` and
+`rel_time`, or a `size:` given as an Expression (including `"_remaining"`) rather than a
+constant. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo

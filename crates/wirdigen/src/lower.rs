@@ -4,7 +4,7 @@
 //! a Wirdigen bug and panics, it is never a Diagnostic.
 
 use crate::description::Protocol;
-use crate::field::{Builtin, Display, Endian, Field};
+use crate::field::{self, Builtin, Display, Encoding, Endian, Field};
 use crate::prelude;
 
 /// The model the emitter prints.
@@ -55,6 +55,9 @@ pub(crate) enum Args {
     /// `(display, valuestring, mask, description)`, as integers and `bool` take them; the
     /// display (`base.DEC`) is always written.
     Display(&'static str),
+    /// `(display, description)`, as `string`, `stringz` and `bytes` take them; the display is
+    /// always written.
+    Base(&'static str),
     /// `(description)` only. `float` and `double` take a unit table first, but only when it is a
     /// table: without one their blurb is the third argument, not a `nil` unit then the blurb.
     Plain,
@@ -69,15 +72,28 @@ impl FieldType {
 /// One step of a dissect function.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Stmt {
-    /// A bounds-checked read of `size` bytes added to the tree.
+    /// A bounds-checked read added to the tree.
     Read {
         /// Index into [`Dissector::proto_fields`].
         field: usize,
-        size: usize,
+        length: Length,
         decode: Decode,
         /// The Field's path, for the comment and the truncation report.
         path: String,
     },
+}
+
+/// Where the value of a read ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Length {
+    /// After this many bytes.
+    Fixed(usize),
+    /// After as many bytes as the unsigned integer of `size` bytes just before the value says,
+    /// read with the `TvbRange` call `read` (`uint()`).
+    Prefix { size: usize, read: &'static str },
+    /// Before the first `width`-byte run of `terminator`, searched in steps of `width`. The
+    /// terminator is consumed but is not part of the value.
+    Terminator { terminator: u8, width: usize },
 }
 
 /// Who decodes the bytes of a read, and how.
@@ -87,6 +103,8 @@ pub(crate) enum Decode {
     Big,
     /// Wireshark, little-endian (`tree:add_le`).
     Little,
+    /// Wireshark, as text in this `ENC_*` encoding (`tree:add_packet_field`).
+    Encoded(&'static str),
     /// The generated Lua, with this `TvbRange` method, and the value is added as is: Lua cannot
     /// declare 40, 48 or 56-bit `ProtoField`s, so they are shown as 64-bit ones.
     Lua(&'static str),
@@ -96,6 +114,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     let filter_name = protocol.name.clone();
     let mut proto_fields = Vec::new();
     let mut layout = Vec::new();
+    let mut chunks = vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS];
     for field in &protocol.fields {
         proto_fields.push(ProtoField {
             local: format!("f_{}", field.name),
@@ -104,9 +123,13 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
             description: field.description.clone(),
             field_type: field_type(field),
         });
+        let length = length(field);
+        if matches!(length, Length::Terminator { .. }) && !chunks.contains(&prelude::TERMINATED) {
+            chunks.push(prelude::TERMINATED);
+        }
         layout.push(Stmt::Read {
             field: proto_fields.len() - 1,
-            size: field.ty.size(),
+            length,
             decode: decode(field),
             path: field.name.clone(),
         });
@@ -120,8 +143,8 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         filter_name,
         proto_fields,
         layout,
-        // The layout is never empty, so every Dissector reads something.
-        chunks: vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS],
+        // The layout is never empty, so every Dissector reads something and checks bounds.
+        chunks,
     }
 }
 
@@ -152,6 +175,15 @@ fn field_type(field: &Field) -> FieldType {
         Builtin::Ether => FieldType::new("ether", Args::Plain),
         Builtin::Eui64 => FieldType::new("eui64", Args::Plain),
         Builtin::Guid => FieldType::new("guid", Args::Plain),
+        // A `terminator: 0` string is what Wireshark calls a NUL-terminated string.
+        Builtin::String if field.length == field::Length::Terminator(0) => {
+            FieldType::new("stringz", Args::Base("base.NONE"))
+        }
+        Builtin::String => FieldType::new("string", Args::Base("base.NONE")),
+        Builtin::Bytes => {
+            let display = field.display.expect("validation gives `bytes` a display");
+            FieldType::new("bytes", Args::Base(base(display)))
+        }
     }
 }
 
@@ -163,10 +195,50 @@ fn base(display: Display) -> &'static str {
         Display::Oct => "base.OCT",
         Display::DecHex => "base.DEC_HEX",
         Display::HexDec => "base.HEX_DEC",
+        Display::Plain => "base.NONE",
+        Display::Dot => "base.DOT",
+        Display::Dash => "base.DASH",
+        Display::Colon => "base.COLON",
+        Display::Space => "base.SPACE",
+    }
+}
+
+fn length(field: &Field) -> Length {
+    match field.length {
+        field::Length::Constant(size) => Length::Fixed(size),
+        field::Length::Prefix(size) => {
+            let read = match (size, size > 1 && field.endian == Endian::Little) {
+                (1..=4, false) => "uint()",
+                (1..=4, true) => "le_uint()",
+                (_, false) => "uint64():tonumber()",
+                (_, true) => "le_uint64():tonumber()",
+            };
+            Length::Prefix { size, read }
+        }
+        field::Length::Terminator(terminator) => {
+            Length::Terminator { terminator, width: field.encoding.map_or(1, Encoding::unit) }
+        }
+    }
+}
+
+/// The `ENC_*` value Wireshark decodes a string with. Only multi-byte code units have a byte
+/// order.
+fn encoding(encoding: Encoding, endian: Endian) -> &'static str {
+    match (encoding, endian) {
+        (Encoding::Ascii, _) => "ENC_ASCII",
+        (Encoding::Utf8, _) => "ENC_UTF_8",
+        (Encoding::Latin1, _) => "ENC_ISO_8859_1",
+        (Encoding::Utf16, Endian::Big) => "ENC_UTF_16 + ENC_BIG_ENDIAN",
+        (Encoding::Utf16, Endian::Little) => "ENC_UTF_16 + ENC_LITTLE_ENDIAN",
+        (Encoding::Ucs2, Endian::Big) => "ENC_UCS_2 + ENC_BIG_ENDIAN",
+        (Encoding::Ucs2, Endian::Little) => "ENC_UCS_2 + ENC_LITTLE_ENDIAN",
     }
 }
 
 fn decode(field: &Field) -> Decode {
+    if let Some(text) = field.encoding {
+        return Decode::Encoded(encoding(text, field.endian));
+    }
     let little = field.endian == Endian::Little && field.ty.has_byte_order();
     match field.ty {
         Builtin::Int { signed, bytes: 5..=7 } => Decode::Lua(match (signed, little) {
@@ -225,5 +297,49 @@ mod tests {
             decodes,
             [Decode::Little, Decode::Big, Decode::Big, Decode::Big, Decode::Lua("le_int64"), Decode::Lua("uint64")]
         );
+    }
+
+    #[test]
+    fn prefixes_follow_their_width_and_byte_order() {
+        let d = lowered(
+            "name: demo\nendian: little\nfields:\n  - {name: a, type: string, prefix: uint8}\n  - {name: b, type: bytes, prefix: uint16}\n  - {name: c, type: bytes, prefix: uint16, endian: big}\n  - {name: d, type: string, prefix: uint64}\n",
+            "x",
+        );
+        let lengths: Vec<Length> = d.layout.iter().map(|Stmt::Read { length, .. }| *length).collect();
+        assert_eq!(
+            lengths,
+            [
+                Length::Prefix { size: 1, read: "uint()" },
+                Length::Prefix { size: 2, read: "le_uint()" },
+                Length::Prefix { size: 2, read: "uint()" },
+                Length::Prefix { size: 8, read: "le_uint64():tonumber()" },
+            ]
+        );
+    }
+
+    #[test]
+    fn terminators_bring_their_chunk_and_follow_the_code_unit() {
+        let d = lowered("name: demo\nfields: [ {name: a, type: string, size: 2} ]\n", "x");
+        assert!(!d.chunks.contains(&prelude::TERMINATED));
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: string, terminator: 0, encoding: ucs2}\n  - {name: b, type: bytes, terminator: 255}\n",
+            "x",
+        );
+        assert!(d.chunks.contains(&prelude::TERMINATED));
+        let lengths: Vec<Length> = d.layout.iter().map(|Stmt::Read { length, .. }| *length).collect();
+        assert_eq!(
+            lengths,
+            [Length::Terminator { terminator: 0, width: 2 }, Length::Terminator { terminator: 255, width: 1 }]
+        );
+    }
+
+    #[test]
+    fn only_a_nul_terminated_string_is_a_stringz() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: string, terminator: 0}\n  - {name: b, type: string, terminator: 10}\n  - {name: c, type: bytes, terminator: 0}\n",
+            "x",
+        );
+        let constructors: Vec<&str> = d.proto_fields.iter().map(|f| f.field_type.constructor).collect();
+        assert_eq!(constructors, ["stringz", "string", "bytes"]);
     }
 }

@@ -44,7 +44,8 @@ local WIRESHARK_GLOBALS = {
     "ByteArray", "Tvb", "TvbRange", "TreeItem", "Pinfo", "NSTime", "Int64", "UInt64",
     "base", "ftypes", "expert", "bit", "register_postdissector", "dissect_tcp_pdus",
     "set_plugin_info", "DESEGMENT_ONE_MORE_SEGMENT",
-    "ENC_BIG_ENDIAN", "ENC_LITTLE_ENDIAN", "ENC_NA", "ENC_ASCII", "ENC_UTF_8",
+    "ENC_BIG_ENDIAN", "ENC_LITTLE_ENDIAN", "ENC_NA", "ENC_ASCII", "ENC_UTF_8", "ENC_UTF_16",
+    "ENC_UCS_2", "ENC_ISO_8859_1",
 }
 for _, global in ipairs(WIRESHARK_GLOBALS) do env[global] = inert end
 -- The version guard runs at load and parses this, so it gets the supported floor.

@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: user, type: string, size: 4, prefix: uint8, terminator: 0 }

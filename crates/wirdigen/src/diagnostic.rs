@@ -64,6 +64,11 @@ names! {
     DuplicateFieldName => "duplicate-field-name", Error;
     UnknownType => "unknown-type", Error;
     UnexpectedLength => "unexpected-length", Error;
+    MissingLength => "missing-length", Error;
+    ConflictingLength => "conflicting-length", Error;
+    InvalidSize => "invalid-size", Error;
+    InvalidPrefix => "invalid-prefix", Error;
+    InvalidTerminator => "invalid-terminator", Error;
     IncompatibleDisplay => "incompatible-display", Error;
     InvalidLabel => "invalid-label", Error;
     InvalidDescription => "invalid-description", Error;
