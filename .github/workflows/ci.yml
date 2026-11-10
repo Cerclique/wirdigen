@@ -56,9 +56,13 @@ jobs:
       - name: Read rust-version
         id: msrv
         run: echo "version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].rust_version')" >> "$GITHUB_OUTPUT"
-      - run: rustup toolchain install "${{ steps.msrv.outputs.version }}" --profile minimal
+      - run: rustup toolchain install "$MSRV" --profile minimal
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo +${{ steps.msrv.outputs.version }} check --workspace --locked --all-targets
+      - run: cargo "+$MSRV" check --workspace --locked --all-targets
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
 
   deny:
     runs-on: ubuntu-latest
