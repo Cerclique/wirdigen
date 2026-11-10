@@ -1,6 +1,7 @@
-# The latest stable Wireshark (spec §10.5) and Lua 5.2, 5.3 and 5.4 (spec §10.4), as in the
-# `tshark-stable` and `lua` CI jobs, which both run on ubuntu-24.04.
-# Built and run by `make docker-test-tshark` and `make docker-test-lua`; see docker/README.md.
+# The latest stable Wireshark (spec §10.5) and Lua 5.2, 5.3 and 5.4 (spec §10.4), where the
+# `tshark-stable` and `lua` CI jobs run their tests.
+# Built and run by `make docker-test-tshark-stable` and `make docker-test-lua`; see
+# docker/README.md.
 FROM ubuntu:24.04
 
 RUN apt-get update \

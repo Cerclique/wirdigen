@@ -2,7 +2,8 @@ CARGO_FLAGS := --locked --all-targets
 export RUSTFLAGS := -D warnings
 export RUSTDOCFLAGS := -D warnings
 
-.PHONY: lint test test-lua test-tshark book docker-test-lua docker-test-tshark docker-bless-tshark
+.PHONY: lint test test-lua test-tshark book docker-test-lua docker-test-tshark \
+	docker-test-tshark-4.4 docker-test-tshark-stable docker-bless-tshark
 
 lint:
 	cargo fmt --all --check
@@ -28,8 +29,10 @@ book:
 
 # The Lua and tshark layers in the containers of docker/, for a machine without the tools.
 # Needs Docker; see docker/README.md. Builds go to target/docker/<image>.
+# DOCKER_PREBUILT=1 skips building the images and uses the wirdigen-<name> images already
+# loaded; CI sets it after building them with a layer cache across runs.
 docker-image-%:
-	docker build -q -t wirdigen-$* -f docker/$*/Dockerfile .
+	$(if $(DOCKER_PREBUILT),@echo "Using the prebuilt wirdigen-$* image",docker build -q -t wirdigen-$* -f docker/$*/Dockerfile .)
 
 # Runs $(2) in image $(1) as the calling user, with the repository mounted at /work.
 docker_run = mkdir -p target/docker/$(1) target/docker/cargo-home && \
@@ -40,9 +43,11 @@ docker_run = mkdir -p target/docker/$(1) target/docker/cargo-home && \
 docker-test-lua: docker-image-tshark-stable
 	$(call docker_run,tshark-stable,make test-lua)
 
-docker-test-tshark: docker-image-tshark-4.4 docker-image-tshark-stable
-	$(call docker_run,tshark-4.4,make test-tshark)
-	$(call docker_run,tshark-stable,make test-tshark)
+docker-test-tshark: docker-test-tshark-4.4 docker-test-tshark-stable
+
+docker-test-tshark-4.4 docker-test-tshark-stable: docker-test-tshark-%: docker-image-tshark-%
+	$(call docker_run,tshark-$*,tshark --version)
+	$(call docker_run,tshark-$*,make test-tshark)
 
 # Rewrites the dissected.json goldens from the 4.4 floor, then checks the latest stable agrees.
 docker-bless-tshark: docker-image-tshark-4.4 docker-image-tshark-stable
