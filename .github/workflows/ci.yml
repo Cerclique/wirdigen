@@ -62,7 +62,8 @@ jobs:
       - run: make test-lua
 
   # The Wireshark 4.4 floor (spec §10.5). tshark skips `-X lua_script` as root, so the tests run
-  # as an unprivileged user created inside the container.
+  # as an unprivileged user created inside the container. There is no rust-cache: the action
+  # caches root's home, not the user's, and the build takes seconds.
   tshark-4_4:
     name: tshark-4.4
     runs-on: ubuntu-24.04

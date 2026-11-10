@@ -90,7 +90,7 @@ impl Scratch {
             .enumerate()
             .map(|(index, packet)| {
                 let number = index + 1;
-                if let Some(error) = find_error(packet) {
+                if let Some(error) = first_error_key(packet) {
                     return Err(format!("packet {number} has `{error}`:\n{packet:#}"));
                 }
                 packet
@@ -128,12 +128,16 @@ fn path_str(path: &Path) -> &str {
 /// Not errors: `_ws.lua.fake`, on every packet once a Lua script is loaded, and a bare
 /// `_ws.malformed`, which Wireshark adds beside every expert info in the MALFORMED group (our
 /// truncation report). An exception escaping a dissector adds `_ws.malformed.expert`.
-fn find_error(value: &Value) -> Option<String> {
+fn first_error_key(value: &Value) -> Option<String> {
     match value {
         Value::Object(map) => map.iter().find_map(|(key, value)| {
-            if key == "_ws.lua.error" || key == "_ws.malformed.expert" { Some(key.clone()) } else { find_error(value) }
+            if key == "_ws.lua.error" || key == "_ws.malformed.expert" {
+                Some(key.clone())
+            } else {
+                first_error_key(value)
+            }
         }),
-        Value::Array(values) => values.iter().find_map(find_error),
+        Value::Array(values) => values.iter().find_map(first_error_key),
         _ => None,
     }
 }
@@ -292,13 +296,13 @@ mod harness {
     #[test]
     fn errors_are_found_at_any_depth() {
         let packet = serde_json::json!({ "_source": { "layers": { "uints": { "_ws.lua.error": "" } } } });
-        assert_eq!(find_error(&packet).as_deref(), Some("_ws.lua.error"));
+        assert_eq!(first_error_key(&packet).as_deref(), Some("_ws.lua.error"));
         let exception = serde_json::json!({ "_ws.malformed": { "_ws.malformed.expert": "" } });
-        assert_eq!(find_error(&exception).as_deref(), Some("_ws.malformed.expert"));
+        assert_eq!(first_error_key(&exception).as_deref(), Some("_ws.malformed.expert"));
         let fine = serde_json::json!({
             "_ws.lua.fake": "",
             "uints": { "uints.small": "1", "_ws.malformed": "Malformed Packet" }
         });
-        assert_eq!(find_error(&fine), None);
+        assert_eq!(first_error_key(&fine), None);
     }
 }

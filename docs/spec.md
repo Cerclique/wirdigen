@@ -717,7 +717,7 @@ A panic (`101`) is a bug, not part of the contract. A finer split can only come 
 - `<case>.wirdigen.yaml`;
 - a golden `<case>.lua`, compared byte for byte;
 - `packets.txt`: text2pcap hex, each packet commented;
-- a golden `dissected.json` from `tshark -T json -J <proto>`, cut down to the Dissector's own layer.
+- a golden `dissected.json`: tshark's `-T json --no-duplicate-keys` output cut down to the Dissector's own layer, the same layer `-J <proto>` keeps. The harness cuts it itself rather than passing `-J`, which could hide a top-level `_ws.lua.error`.
 
 Both Wireshark versions must produce the same `dissected.json`; a per-version file is a documented exception. Goldens are plain files (no `insta`), rewritten with `WIRDIGEN_BLESS=1`, never in CI. The corpus is `eol=lf` via `.gitattributes`. Each case is its own test. The three book examples (§11) are corpus cases.
 
