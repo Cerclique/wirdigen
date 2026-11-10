@@ -47,49 +47,71 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test --workspace --locked --all-targets
 
+  # The lua, tshark-4.4 and tshark-stable jobs run their tests in the images of docker/, through
+  # the same make targets as local runs (docker/README.md). Each job builds its image with the
+  # layers cached across runs, so the target skips its own `docker build` (DOCKER_PREBUILT=1).
+  # The containers build Rust into target/docker/, which rust-cache does not cover (it caches
+  # the host's target/), so that is cached with actions/cache instead. zizmor reads
+  # build-push-action as a publisher and flags those caches; it only loads the image locally.
+  #
+  # The Lua checks (spec §10.4), in the tshark-stable image.
   lua:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Lua 5.2, 5.3 and 5.4
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends lua5.2 lua5.3 lua5.4
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: make test-lua
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # A new cache scope each week, so the image picks up new releases from the stable PPA.
+      - name: Week of the year
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Build the tshark-stable image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/tshark-stable/Dockerfile
+          tags: wirdigen-tshark-stable
+          load: true
+          cache-from: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }}
+          cache-to: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }},mode=max
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: |
+            target/docker/cargo-home
+            target/docker/tshark-stable
+          key: docker-${{ github.job }}-${{ hashFiles('docker/tshark-stable/Dockerfile', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: docker-${{ github.job }}-
+      - run: make docker-test-lua DOCKER_PREBUILT=1
 
-  # The Wireshark 4.4 floor (spec §10.5). tshark skips `-X lua_script` as root, so the tests run
-  # as an unprivileged user created inside the container. There is no rust-cache: the action
-  # caches root's home, not the user's, and the build takes seconds.
+  # The Wireshark 4.4 floor (spec §10.5). The target prints `tshark --version` from the image.
   tshark-4_4:
     name: tshark-4.4
     runs-on: ubuntu-24.04
-    container: debian:trixie
     timeout-minutes: 30
     steps:
-      - name: Install tshark and a C toolchain
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            tshark ca-certificates curl git gcc libc6-dev make
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Add an unprivileged user
-        run: |
-          useradd --create-home tester
-          chown -R tester: "$GITHUB_WORKSPACE"
-      - name: Install Rust
-        run: |
-          runuser -l tester -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain none"
-          runuser -l tester -c "cd '$GITHUB_WORKSPACE' && . ~/.cargo/env && rustup toolchain install"
-      - name: tshark version
-        run: tshark --version
-      - run: runuser -l tester -c "cd '$GITHUB_WORKSPACE' && . ~/.cargo/env && make test-tshark"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the tshark-4.4 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/tshark-4.4/Dockerfile
+          tags: wirdigen-tshark-4.4
+          load: true
+          cache-from: type=gha,scope=tshark-4.4
+          cache-to: type=gha,scope=tshark-4.4,mode=max
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: |
+            target/docker/cargo-home
+            target/docker/tshark-4.4
+          key: docker-${{ github.job }}-${{ hashFiles('docker/tshark-4.4/Dockerfile', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: docker-${{ github.job }}-
+      - run: make docker-test-tshark-4.4 DOCKER_PREBUILT=1
 
   # The latest stable Wireshark, following upstream releases through the PPA (spec §10.5).
   tshark-stable:
@@ -99,15 +121,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install the latest stable tshark
-        run: |
-          sudo add-apt-repository -y ppa:wireshark-dev/stable
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark
-      - name: tshark version
-        run: tshark --version
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: make test-tshark
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # A new cache scope each week, so the image picks up new releases from the stable PPA.
+      - name: Week of the year
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Build the tshark-stable image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/tshark-stable/Dockerfile
+          tags: wirdigen-tshark-stable
+          load: true
+          cache-from: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }}
+          cache-to: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }},mode=max
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: |
+            target/docker/cargo-home
+            target/docker/tshark-stable
+          key: docker-${{ github.job }}-${{ hashFiles('docker/tshark-stable/Dockerfile', 'rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: docker-${{ github.job }}-
+      - run: make docker-test-tshark-stable DOCKER_PREBUILT=1
 
   # Builds the book without deploying it (book.yml deploys). Its YAML snippets and the
   # Diagnostics index are checked by the `book` unit tests in the `rust` and `test` jobs.

@@ -1,5 +1,5 @@
-# The Wireshark 4.4 floor (spec §10.5), as in the `tshark-4.4` CI job.
-# Built and run by `make docker-test-tshark`; see docker/README.md.
+# The Wireshark 4.4 floor (spec §10.5), where the `tshark-4.4` CI job runs its tests.
+# Built and run by `make docker-test-tshark-4.4`; see docker/README.md.
 FROM debian:trixie
 
 RUN apt-get update \
