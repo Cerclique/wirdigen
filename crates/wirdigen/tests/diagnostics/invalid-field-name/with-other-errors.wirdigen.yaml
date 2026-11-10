@@ -1,0 +1,4 @@
+name: Demo
+endian: middle
+fields:
+  - { name: Id, type: uint8 }

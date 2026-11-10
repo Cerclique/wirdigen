@@ -31,7 +31,7 @@ A Protocol Description is a single YAML document, but the file holds several, se
 
 ```yaml,diagnostic=multiple-documents
 name: a
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ---
 name: b
 ```
@@ -49,7 +49,7 @@ refers to, which is the error [`yaml-anchor`](#yaml-anchor).
 ```yaml,diagnostic=yaml-alias,diagnostic=yaml-anchor
 x: &a demo
 name: *a
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ```
 
 **Fix**: write the value out, or move repeated Fields into a Type.
@@ -63,7 +63,7 @@ reads, because a description reuses Fields through Types.
 
 ```yaml,diagnostic=yaml-anchor
 name: &n demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ```
 
 **Fix**: remove the anchor, and move repeated Fields into a Type.
@@ -76,7 +76,7 @@ The file uses a YAML tag (`!foo`, `!!str`). Tags are not part of the YAML subset
 
 ```yaml,diagnostic=yaml-tag
 name: !foo demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ```
 
 **Fix**: remove the tag. To keep a value as text, quote it.
@@ -90,7 +90,7 @@ reads, because a description reuses Fields through Types.
 
 ```yaml,diagnostic=merge-key
 name: demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 <<: {}
 ```
 
@@ -120,7 +120,7 @@ be a mapping.
 
 ```yaml,diagnostic=wrong-value-type
 name: demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 allow: unknown-allow
 ```
 
@@ -137,7 +137,7 @@ key.
 ```yaml,diagnostic=unknown-key
 name: demo
 bogus: 1
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ```
 
 **Fix**: correct the spelling, or remove the key. Use a YAML comment to document a description.
@@ -152,7 +152,7 @@ points at the first occurrence.
 ```yaml,diagnostic=duplicate-key
 name: demo
 name: other
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ```
 
 **Fix**: keep one of the two.
@@ -180,7 +180,7 @@ is refused because it would blur where the Field path starts in filters such as 
 
 ```yaml,diagnostic=invalid-protocol-name
 name: Demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ```
 
 **Fix**: choose a name that follows the rules, here `demo`. The uppercase form is derived for
@@ -196,10 +196,115 @@ the protocol tree.
 ```yaml,diagnostic=invalid-protocol-title
 name: demo
 title: ""
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 ```
 
 **Fix**: write a single-line title, or leave `title:` out to use the uppercase `name:`.
+
+## `invalid-endian` {#invalid-endian}
+
+**Severity**: error
+
+An `endian:` value, at the top level or on a Field, is not a byte order. Byte order is `big` or
+`little`, never encoded in a type name.
+
+```yaml,diagnostic=invalid-endian
+name: demo
+endian: network
+fields: [ {name: id, type: uint16} ]
+```
+
+**Fix**: write `big` or `little`, or leave `endian:` out for big-endian.
+
+## `missing-field-kind` {#missing-field-kind}
+
+**Severity**: error
+
+A Field says nothing about what it is. A Field needs exactly one of `type:` (a built-in type
+or a Type), `fields:` (an inline structure) or `switch:` (a choice of layout).
+
+```yaml,diagnostic=missing-field-kind
+name: demo
+fields: [ {name: id} ]
+```
+
+**Fix**: add the Field's `type:`, here `{name: id, type: uint8}`.
+
+## `conflicting-field-kind` {#conflicting-field-kind}
+
+**Severity**: error
+
+A Field has more than one of `type:`, `fields:` and `switch:`, so it has no single meaning.
+A note points at the first of them.
+
+```yaml,diagnostic=conflicting-field-kind
+name: demo
+fields:
+  - { name: id, type: uint8, fields: [ {name: low, type: uint8} ] }
+```
+
+**Fix**: keep one. To group Fields under a name, use `fields:` alone.
+
+## `invalid-field-name` {#invalid-field-name}
+
+**Severity**: error
+
+A Field's `name:` is not a lowercase letter followed by lowercase letters, digits or `_`.
+Names appear bare in filters and Expressions, so `-` and `.` are refused, and a leading `_` is
+kept for Wirdigen's built-ins.
+
+```yaml,diagnostic=invalid-field-name
+name: demo
+fields: [ {name: msgType, type: uint8} ]
+```
+
+**Fix**: rename the Field, here `msg_type`. Its tree label is derived from the name
+("Msg type").
+
+## `duplicate-field-name` {#duplicate-field-name}
+
+**Severity**: error
+
+Two Fields of the same structure share a name, so their filter name and any reference to them
+would be ambiguous. A note points at the first one.
+
+```yaml,diagnostic=duplicate-field-name
+name: demo
+fields:
+  - { name: id, type: uint8 }
+  - { name: id, type: uint16 }
+```
+
+**Fix**: rename one of them.
+
+## `unknown-type` {#unknown-type}
+
+**Severity**: error
+
+A Field's `type:` names no built-in type this version of Wirdigen reads, and no Type. When the
+name is close to a built-in, the message suggests it.
+
+```yaml,diagnostic=unknown-type
+name: demo
+fields: [ {name: id, type: unit8} ]
+```
+
+**Fix**: correct the spelling, here `uint8`. The built-in types are listed in
+[Fields](reference/fields.md#built-in-types).
+
+## `unexpected-length` {#unexpected-length}
+
+**Severity**: error
+
+A Field of a fixed-size type has a length key (`size:`, `prefix:` or `terminator:`). Its size
+already follows from its type.
+
+```yaml,diagnostic=unexpected-length
+name: demo
+fields: [ {name: id, type: uint32, size: 4} ]
+```
+
+**Fix**: remove the length key.
 
 ## `unknown-allow` {#unknown-allow}
 
@@ -211,7 +316,7 @@ warning added by a newer Wirdigen still works with an older one.
 
 ```yaml,diagnostic=unknown-allow
 name: demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 allow: [bogus]
 ```
 
@@ -220,6 +325,6 @@ allow this warning too:
 
 ```yaml
 name: demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 allow: [unknown-allow, bogus]
 ```

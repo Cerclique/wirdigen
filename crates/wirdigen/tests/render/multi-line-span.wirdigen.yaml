@@ -2,4 +2,4 @@ name: demo
 title: |
   a
   b
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]

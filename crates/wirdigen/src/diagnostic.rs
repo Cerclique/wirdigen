@@ -57,6 +57,13 @@ names! {
     EmptyFields => "empty-fields", Error;
     InvalidProtocolName => "invalid-protocol-name", Error;
     InvalidProtocolTitle => "invalid-protocol-title", Error;
+    InvalidEndian => "invalid-endian", Error;
+    MissingFieldKind => "missing-field-kind", Error;
+    ConflictingFieldKind => "conflicting-field-kind", Error;
+    InvalidFieldName => "invalid-field-name", Error;
+    DuplicateFieldName => "duplicate-field-name", Error;
+    UnknownType => "unknown-type", Error;
+    UnexpectedLength => "unexpected-length", Error;
     UnknownAllow => "unknown-allow", Warning;
 }
 

@@ -35,6 +35,7 @@ mod book;
 mod description;
 mod diagnostic;
 mod emit;
+mod field;
 mod lower;
 #[cfg(test)]
 mod lua_check;
@@ -54,7 +55,7 @@ pub use source::Source;
 #[derive(Debug, Clone)]
 pub struct ValidDescription {
     source_name: String,
-    description: description::Description,
+    protocol: description::Protocol,
     warnings: Vec<Diagnostic>,
 }
 
@@ -70,7 +71,7 @@ impl ValidDescription {
     /// The same description and Wirdigen version always give the same bytes.
     #[must_use]
     pub fn generate(&self) -> String {
-        emit::emit(&lower::lower(&self.description, &self.source_name))
+        emit::emit(&lower::lower(&self.protocol, &self.source_name))
     }
 }
 
@@ -85,11 +86,13 @@ impl ValidDescription {
 pub fn validate(source: &Source) -> Result<ValidDescription, Diagnostics> {
     let root = yaml::parse(source.text()).map_err(Diagnostics::new)?;
     let description = description::deserialize(root.as_ref()).map_err(Diagnostics::new)?;
-    let mut checked = description::check(&description);
+    let (protocol, mut checked) = description::check(&description);
     checked.retain(|d| !description.allows(d));
     let diagnostics = Diagnostics::new(checked);
-    if diagnostics.has_errors() {
-        return Err(diagnostics);
+    match protocol {
+        Some(protocol) => {
+            Ok(ValidDescription { source_name: source.name().to_owned(), protocol, warnings: diagnostics.into_vec() })
+        }
+        None => Err(diagnostics),
     }
-    Ok(ValidDescription { source_name: source.name().to_owned(), description, warnings: diagnostics.into_vec() })
 }

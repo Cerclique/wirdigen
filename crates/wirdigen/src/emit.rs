@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use crate::lower::{Dissector, ProtoField, Stmt};
+use crate::lower::{Add, Dissector, ProtoField, Stmt};
 use crate::prelude;
 
 const INDENT: &str = "    ";
@@ -102,8 +102,9 @@ pub(crate) fn emit(model: &Dissector) -> String {
 }
 
 fn proto_field(field: &ProtoField) -> String {
+    let display = field.display.map(|d| format!(", {d}")).unwrap_or_default();
     format!(
-        "local {} = ProtoField.{}({}, {}, base.DEC)",
+        "local {} = ProtoField.{}({}, {}{display})",
         field.local,
         field.ftype,
         lua_string(&field.abbrev),
@@ -113,7 +114,7 @@ fn proto_field(field: &ProtoField) -> String {
 
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
     match stmt {
-        Stmt::ReadUint { field, size, path } => {
+        Stmt::Read { field, size, how, path } => {
             let local = &model.proto_fields[*field].local;
             w.line(&format!("-- Field: {path}"));
             w.block(
@@ -124,7 +125,12 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
                 },
                 "end",
             );
-            w.line(&format!("tree:add({local}, tvb(offset, {size}))"));
+            let range = format!("tvb(offset, {size})");
+            w.line(&match how {
+                Add::Big => format!("tree:add({local}, {range})"),
+                Add::Little => format!("tree:add_le({local}, {range})"),
+                Add::Value(method) => format!("tree:add({local}, {range}, {range}:{method}())"),
+            });
             w.line(&format!("offset = offset + {size}"));
         }
     }

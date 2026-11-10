@@ -1,0 +1,4 @@
+name: demo
+endian: 1
+fields:
+  - { name: id, type: uint16 }

@@ -1,0 +1,19 @@
+# Little-endian at the top level, overridden by some Fields.
+name: endian
+endian: little
+fields:
+  - { name: le16, type: uint16 }
+  - { name: be16, type: uint16, endian: big }
+  - { name: le_signed, type: int32 }
+  - { name: le40, type: uint40 }
+  - { name: be40, type: uint40, endian: big }
+  - { name: le_signed48, type: int48 }
+  - { name: le_float, type: float32 }
+  - { name: le_double, type: float64 }
+  - { name: le_ipv4, type: ipv4 }
+  - { name: be_ipv4, type: ipv4, endian: big }
+  - { name: le_eui64, type: eui64 }
+  - { name: le_guid, type: guid }
+  - { name: ipv6_addr, type: ipv6 }
+  - { name: mac_addr, type: ether }
+  - { name: flag, type: bool }

@@ -3,7 +3,8 @@
 //! Everything lowering relies on is checked by validation, so it cannot fail: a surprise here is
 //! a Wirdigen bug and panics, it is never a Diagnostic.
 
-use crate::description::{Builtin, Description};
+use crate::description::Protocol;
+use crate::field::{self, Builtin, Endian, Field};
 use crate::prelude;
 
 /// The model the emitter prints.
@@ -35,57 +36,110 @@ pub(crate) struct ProtoField {
     pub(crate) label: String,
     /// The `ProtoField.<ftype>` constructor.
     pub(crate) ftype: &'static str,
+    /// The display argument (`base.DEC`), for the ftypes that take one.
+    pub(crate) display: Option<&'static str>,
 }
 
 /// One step of a dissect function.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Stmt {
-    /// A bounds-checked read of `size` big-endian bytes added to the tree.
-    ReadUint {
+    /// A bounds-checked read of `size` bytes added to the tree.
+    Read {
         /// Index into [`Dissector::proto_fields`].
         field: usize,
         size: usize,
+        how: Add,
         /// The Field's path, for the comment and the truncation report.
         path: String,
     },
 }
 
-pub(crate) fn lower(description: &Description, source_name: &str) -> Dissector {
-    let filter_name = description.name.value.clone();
-    let mut proto_fields: Vec<ProtoField> = Vec::new();
+/// How a read value reaches the tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Add {
+    /// `tree:add`: Wireshark decodes the bytes, big-endian.
+    Big,
+    /// `tree:add_le`: Wireshark decodes the bytes, little-endian.
+    Little,
+    /// The generated code decodes the bytes with this `TvbRange` method and adds the value:
+    /// Lua cannot declare 40, 48 or 56-bit `ProtoField`s, so they are shown as 64-bit ones.
+    Value(&'static str),
+}
+
+pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
+    let filter_name = protocol.name.clone();
+    let mut proto_fields = Vec::new();
     let mut layout = Vec::new();
-    for field in &description.fields {
-        let (ftype, size) = match field.ty {
-            Builtin::Uint8 => ("uint8", 1),
-            Builtin::Uint16 => ("uint16", 2),
-            Builtin::Uint32 => ("uint32", 4),
-        };
-        let abbrev = format!("{filter_name}.{}", field.name);
-        let index = proto_fields.iter().position(|f| f.abbrev == abbrev).unwrap_or_else(|| {
-            proto_fields.push(ProtoField {
-                local: format!("f_{}", field.name),
-                abbrev,
-                label: field.name.clone(),
-                ftype,
-            });
-            proto_fields.len() - 1
+    for field in &protocol.fields {
+        let (ftype, display) = ftype(field.ty);
+        proto_fields.push(ProtoField {
+            local: format!("f_{}", field.name),
+            abbrev: format!("{filter_name}.{}", field.name),
+            label: field::default_label(&field.name),
+            ftype,
+            display,
         });
-        layout.push(Stmt::ReadUint { field: index, size, path: field.name.clone() });
+        layout.push(Stmt::Read {
+            field: proto_fields.len() - 1,
+            size: field.ty.size(),
+            how: add(field),
+            path: field.name.clone(),
+        });
     }
 
-    let mut chunks = vec![prelude::VERSION, prelude::MALFORMED];
-    if !layout.is_empty() {
-        chunks.push(prelude::BOUNDS);
-    }
     let short_name = filter_name.to_ascii_uppercase();
     Dissector {
         source_name: source_name.rsplit(['/', '\\']).next().unwrap_or(source_name).to_owned(),
-        full_name: description.title.as_ref().map_or_else(|| short_name.clone(), |t| t.value.clone()),
+        full_name: protocol.title.clone().unwrap_or_else(|| short_name.clone()),
         short_name,
         filter_name,
         proto_fields,
         layout,
-        chunks,
+        // The layout is never empty, so every Dissector reads something.
+        chunks: vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS],
+    }
+}
+
+/// The `ProtoField` constructor of a built-in, and its display argument (spec §3.4.4).
+fn ftype(ty: Builtin) -> (&'static str, Option<&'static str>) {
+    match ty {
+        Builtin::Int { signed, bytes } => {
+            let ftype = match (signed, bytes) {
+                (false, 1) => "uint8",
+                (false, 2) => "uint16",
+                (false, 3) => "uint24",
+                (false, 4) => "uint32",
+                (false, _) => "uint64",
+                (true, 1) => "int8",
+                (true, 2) => "int16",
+                (true, 3) => "int24",
+                (true, 4) => "int32",
+                (true, _) => "int64",
+            };
+            (ftype, Some("base.DEC"))
+        }
+        Builtin::Bool => ("bool", Some("base.NONE")),
+        Builtin::Float32 => ("float", None),
+        Builtin::Float64 => ("double", None),
+        Builtin::Ipv4 => ("ipv4", None),
+        Builtin::Ipv6 => ("ipv6", None),
+        Builtin::Ether => ("ether", None),
+        Builtin::Eui64 => ("eui64", None),
+        Builtin::Guid => ("guid", None),
+    }
+}
+
+fn add(field: &Field) -> Add {
+    let little = field.endian == Endian::Little && field.ty.has_byte_order();
+    match field.ty {
+        Builtin::Int { signed, bytes: 5..=7 } => Add::Value(match (signed, little) {
+            (false, false) => "uint64",
+            (false, true) => "le_uint64",
+            (true, false) => "int64",
+            (true, true) => "le_int64",
+        }),
+        _ if little => Add::Little,
+        _ => Add::Big,
     }
 }
 
@@ -96,7 +150,8 @@ mod tests {
 
     fn lowered(text: &str, source_name: &str) -> Dissector {
         let root = yaml::parse(text).unwrap();
-        lower(&description::deserialize(root.as_ref()).unwrap(), source_name)
+        let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
+        lower(&protocol.unwrap_or_else(|| panic!("{diagnostics:?}")), source_name)
     }
 
     #[test]
@@ -109,25 +164,12 @@ mod tests {
     }
 
     #[test]
-    fn fields_become_reads_and_one_proto_field_each() {
+    fn byte_order_applies_only_where_bytes_have_an_order() {
         let d = lowered(
-            "name: demo\nfields: [ {name: a, type: uint8}, {name: b, type: uint32}, {name: a, type: uint8} ]\n",
+            "name: demo\nendian: little\nfields:\n  - {name: a, type: uint16}\n  - {name: b, type: uint16, endian: big}\n  - {name: c, type: uint8}\n  - {name: d, type: ether}\n  - {name: e, type: int48}\n  - {name: f, type: uint40, endian: big}\n",
             "x",
         );
-        assert_eq!(d.proto_fields.len(), 2);
-        assert_eq!(d.proto_fields[1].abbrev, "demo.b");
-        assert_eq!(d.proto_fields[1].local, "f_b");
-        assert_eq!(d.proto_fields[1].ftype, "uint32");
-        let sizes: Vec<_> = d.layout.iter().map(|Stmt::ReadUint { field, size, .. }| (*field, *size)).collect();
-        assert_eq!(sizes, [(0, 1), (1, 4), (0, 1)]);
-    }
-
-    #[test]
-    fn bounds_chunk_is_selected_only_when_something_is_read() {
-        let with = lowered("name: demo\nfields: [ {name: a, type: uint8} ]\n", "x");
-        assert!(with.chunks.contains(&prelude::BOUNDS));
-        let without = lowered("name: demo\nfields: [ {name: a} ]\n", "x");
-        assert!(!without.chunks.contains(&prelude::BOUNDS));
-        assert!(without.chunks.contains(&prelude::VERSION) && without.chunks.contains(&prelude::MALFORMED));
+        let hows: Vec<Add> = d.layout.iter().map(|Stmt::Read { how, .. }| *how).collect();
+        assert_eq!(hows, [Add::Little, Add::Big, Add::Big, Add::Big, Add::Value("le_int64"), Add::Value("uint64")]);
     }
 }

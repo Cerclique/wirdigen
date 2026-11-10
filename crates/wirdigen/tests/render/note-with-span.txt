@@ -3,7 +3,7 @@ error[duplicate-key]: duplicate key `name`
   |
 1 | name: demo
   | ---- first defined here
-2 | fields: [ {name: a} ]
+2 | fields: [ {name: a, type: uint8} ]
 3 | name: other
   | ^^^^
   |
