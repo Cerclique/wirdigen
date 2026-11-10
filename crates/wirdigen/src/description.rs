@@ -125,14 +125,15 @@ pub(crate) fn check(description: &Description) -> Vec<Diagnostic> {
             ),
         );
     }
-    if let Some(title) = &description.title
-        && (title.value.trim().is_empty() || title.value.contains(['\n', '\r', '\u{85}', '\u{2028}', '\u{2029}']))
-    {
-        diagnostics.push(Diagnostic::error(
-            "invalid-protocol-title",
-            title.span.clone(),
-            "a title must be a non-empty single line",
-        ));
+    if let Some(title) = &description.title {
+        let line_breaks = ['\n', '\r', '\u{85}', '\u{2028}', '\u{2029}'];
+        if title.value.trim().is_empty() || title.value.contains(line_breaks) {
+            diagnostics.push(Diagnostic::error(
+                "invalid-protocol-title",
+                title.span.clone(),
+                "a title must be a non-empty single line",
+            ));
+        }
     }
     diagnostics
 }

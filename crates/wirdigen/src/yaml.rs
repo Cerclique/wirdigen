@@ -149,9 +149,8 @@ impl<'a> Reader<'a> {
                         break;
                     }
                     let key = self.node(event, key_span)?;
-                    if let Value::Scalar { text, plain: true } = &key.value
-                        && text == "<<"
-                    {
+                    let is_merge_key = matches!(&key.value, Value::Scalar { text, plain: true } if text == "<<");
+                    if is_merge_key {
                         self.diagnostics.push(Diagnostic::error(
                             "merge-key",
                             key.span.clone(),
