@@ -2,7 +2,7 @@ CARGO_FLAGS := --locked --all-targets
 export RUSTFLAGS := -D warnings
 export RUSTDOCFLAGS := -D warnings
 
-.PHONY: lint test test-lua
+.PHONY: lint test test-lua test-tshark
 
 lint:
 	cargo fmt --all --check
@@ -16,3 +16,8 @@ test:
 # Needs lua5.2, lua5.3 and lua5.4 on PATH (spec §10.4); fails when one is missing.
 test-lua:
 	WIRDIGEN_LUA=1 cargo test -p wirdigen --locked --lib lua_check::
+
+# Needs tshark and text2pcap (Wireshark >= 4.4) on PATH, run as a non-root user since tshark
+# skips -X lua_script as root (spec §10.5); fails when one is missing.
+test-tshark:
+	WIRDIGEN_TSHARK=1 cargo test -p wirdigen --locked --test tshark

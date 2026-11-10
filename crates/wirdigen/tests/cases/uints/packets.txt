@@ -1,0 +1,10 @@
+# Every Field: small=1, medium=0x0203 (515), large=0x04050607 (67438087), big-endian.
+0000  01 02 03 04 05 06 07
+# Every Field at its maximum: small=255, medium=65535, large=4294967295.
+0000  ff ff ff ff ff ff ff
+# Truncated in medium: small=1, then one byte where medium needs two.
+0000  01 02
+# Truncated in large: small=0, medium=0, then three bytes where large needs four.
+0000  00 00 00 00 00 00
+# A trailing byte after the last Field: small=0, medium=0, large=0, then 0xaa.
+0000  00 00 00 00 00 00 00 aa

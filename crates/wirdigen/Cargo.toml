@@ -17,3 +17,6 @@ workspace = true
 [dependencies]
 annotate-snippets = "0.12"
 saphyr-parser = "0.3.3"
+
+[dev-dependencies]
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
