@@ -1,0 +1,30 @@
+repos:
+  - repo: local
+    hooks:
+      - id: fmt
+        name: cargo fmt
+        entry: cargo fmt --all --check
+        language: system
+        pass_filenames: false
+        types: [rust]
+      - id: clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --locked --all-targets -- -D warnings
+        language: system
+        pass_filenames: false
+        types: [rust]
+      - id: machete
+        name: cargo machete
+        entry: cargo machete
+        language: system
+        pass_filenames: false
+        files: ^(Cargo\.(toml|lock)|crates/.*)$
+      - id: typos
+        name: typos
+        entry: typos
+        language: system
+      - id: actionlint
+        name: actionlint
+        entry: actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
