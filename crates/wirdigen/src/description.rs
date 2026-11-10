@@ -2,8 +2,7 @@
 
 use std::ops::Range;
 
-use crate::Severity;
-use crate::diagnostic::{Diagnostic, Name};
+use crate::diagnostic::{Diagnostic, Name, Severity};
 use crate::scalar::{Kind, resolve_plain};
 use crate::yaml::{Node, Value};
 
@@ -316,6 +315,17 @@ mod tests {
     fn int(text: &str) -> Result<i64, String> {
         let node = yaml::parse(text).unwrap().unwrap();
         expect_integer(&node, "k").map_err(|d| d.name().to_owned())
+    }
+
+    #[test]
+    fn misspellings_suggest_the_closest_key() {
+        assert_eq!(edit_distance("enmu", "enum"), 1, "a transposition costs 1");
+        assert_eq!(edit_distance("Name", "name"), 0, "case is ignored");
+        assert_eq!(edit_distance("kitten", "sitting"), 3);
+        assert_eq!(closest("fieldss", &KEYS), Some("fields"));
+        assert_eq!(closest("tilte", &KEYS), Some("title"));
+        assert_eq!(closest("bogus", &KEYS), None);
+        assert_eq!(closest("x", &KEYS), None);
     }
 
     #[test]
