@@ -11,7 +11,7 @@
 # Format reference
 
 - [Cheat sheet](reference/cheat-sheet.md)
-- [Fields and Types]()
+- [Fields and Types](reference/fields.md)
 - [Sizes]()
 - [Arrays]()
 - [Bitfields]()

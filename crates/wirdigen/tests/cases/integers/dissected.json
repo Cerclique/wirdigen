@@ -1,0 +1,69 @@
+[
+  {
+    "integers.u8": "1",
+    "integers.u16": "258",
+    "integers.u24": "66051",
+    "integers.u32": "16909060",
+    "integers.u40": "4328719365",
+    "integers.u48": "1108152157446",
+    "integers.u56": "283686952306183",
+    "integers.u64": "72623859790382856",
+    "integers.i8": "-1",
+    "integers.i16": "-1",
+    "integers.i24": "-1",
+    "integers.i32": "-1",
+    "integers.i40": "-1",
+    "integers.i48": "-1",
+    "integers.i56": "-1",
+    "integers.i64": "-1"
+  },
+  {
+    "integers.u8": "255",
+    "integers.u16": "65535",
+    "integers.u24": "16777215",
+    "integers.u32": "4294967295",
+    "integers.u40": "1099511627775",
+    "integers.u48": "281474976710655",
+    "integers.u56": "72057594037927935",
+    "integers.u64": "18446744073709551615",
+    "integers.i8": "-128",
+    "integers.i16": "-32768",
+    "integers.i24": "-8388608",
+    "integers.i32": "-2147483648",
+    "integers.i40": "-549755813888",
+    "integers.i48": "-140737488355328",
+    "integers.i56": "-36028797018963968",
+    "integers.i64": "-9223372036854775808"
+  },
+  {
+    "integers.u8": "0",
+    "integers.u16": "0",
+    "integers.u24": "0",
+    "integers.u32": "0",
+    "integers.u40": "0",
+    "integers.u48": "0",
+    "integers.u56": "0",
+    "integers.u64": "0",
+    "integers.i8": "127",
+    "integers.i16": "32767",
+    "integers.i24": "8388607",
+    "integers.i32": "2147483647",
+    "integers.i40": "549755813887",
+    "integers.i48": "140737488355327",
+    "integers.i56": "36028797018963967",
+    "integers.i64": "9223372036854775807"
+  },
+  {
+    "integers.u8": "0",
+    "integers.u16": "0",
+    "integers.u24": "0",
+    "integers.u32": "0",
+    "_ws.expert": {
+      "integers._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: u40",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

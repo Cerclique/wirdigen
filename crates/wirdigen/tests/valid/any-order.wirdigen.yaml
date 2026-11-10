@@ -1,4 +1,4 @@
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 registration: {}
 name: "on"
 title: On title

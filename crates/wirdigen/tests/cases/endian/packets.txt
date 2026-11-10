@@ -1,0 +1,9 @@
+# le16=0x0201 (513), be16=0x0102 (258), le_signed=-2 (fe ff ff ff), le40=0x0504030201, be40=0x0102030405, le_signed48=-2 (fe ff ff ff ff ff), le_float=1.5, le_double=-2.25, le_ipv4=192.0.2.1 (01 02 00 c0), be_ipv4=192.0.2.1, le_eui64=00:11:22:33:44:55:66:77 (bytes reversed), le_guid=00112233-4455-6677-8899-aabbccddeeff (first three groups reversed), ipv6_addr=2001:db8::1, mac_addr=00:11:22:33:44:55, flag=true.
+0000  01 02 01 02 fe ff ff ff 01 02 03 04 05 01 02 03
+0010  04 05 fe ff ff ff ff ff 00 00 c0 3f 00 00 00 00
+0020  00 00 02 c0 01 02 00 c0 c0 00 02 01 77 66 55 44
+0030  33 22 11 00 33 22 11 00 55 44 77 66 88 99 aa bb
+0040  cc dd ee ff 20 01 0d b8 00 00 00 00 00 00 00 00
+0050  00 00 00 01 00 11 22 33 44 55 01
+# Truncated in le40: le16, be16 and le_signed are zero, then 4 of its 5 bytes.
+0000  00 00 00 00 00 00 00 00 01 02 03 04

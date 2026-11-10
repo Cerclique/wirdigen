@@ -57,6 +57,14 @@ names! {
     EmptyFields => "empty-fields", Error;
     InvalidProtocolName => "invalid-protocol-name", Error;
     InvalidProtocolTitle => "invalid-protocol-title", Error;
+    InvalidEndian => "invalid-endian", Error;
+    MissingFieldKind => "missing-field-kind", Error;
+    ConflictingFieldKind => "conflicting-field-kind", Error;
+    InvalidFieldName => "invalid-field-name", Error;
+    DuplicateFieldName => "duplicate-field-name", Error;
+    UnknownType => "unknown-type", Error;
+    UnexpectedLength => "unexpected-length", Error;
+    NotSupportedYet => "not-supported-yet", Error;
     UnknownAllow => "unknown-allow", Warning;
 }
 
@@ -95,6 +103,12 @@ pub struct Diagnostic {
     span: Range<usize>,
     message: String,
     notes: Vec<Note>,
+}
+
+/// The value of `result`, or `None` after pushing its Diagnostic to `diagnostics`, so a check
+/// can go on and report every mistake.
+pub(crate) fn record<T>(result: Result<T, Diagnostic>, diagnostics: &mut Vec<Diagnostic>) -> Option<T> {
+    result.map_err(|d| diagnostics.push(d)).ok()
 }
 
 impl Diagnostic {

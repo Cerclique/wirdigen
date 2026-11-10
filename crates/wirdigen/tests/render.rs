@@ -44,7 +44,7 @@ fn goldens() {
 
 #[test]
 fn every_rendered_diagnostic_ends_with_its_book_link() {
-    let source = Source::new("x.wirdigen.yaml", "name: Demo\nbogus: 1\nfields: [ {name: a} ]\n");
+    let source = Source::new("x.wirdigen.yaml", "name: Demo\nbogus: 1\nfields: [ {name: a, type: uint8} ]\n");
     let diagnostics = wirdigen::validate(&source).unwrap_err();
     for d in &diagnostics {
         let rendered = d.render(&source, &RenderOptions::default());
@@ -56,7 +56,7 @@ fn every_rendered_diagnostic_ends_with_its_book_link() {
 
 #[test]
 fn colour_is_opt_in() {
-    let source = Source::new("x", "name: Demo\nfields: [ {name: a} ]\n");
+    let source = Source::new("x", "name: Demo\nfields: [ {name: a, type: uint8} ]\n");
     let diagnostics = wirdigen::validate(&source).unwrap_err();
     assert!(!diagnostics.render(&source, &RenderOptions::default()).contains('\x1b'));
     let mut options = RenderOptions::default();

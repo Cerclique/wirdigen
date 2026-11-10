@@ -1,3 +1,3 @@
 name: Demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
 allow: [bogus, unknown-allow]

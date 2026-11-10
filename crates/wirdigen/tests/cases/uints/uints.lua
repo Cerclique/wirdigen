@@ -33,9 +33,9 @@ end
 
 local wd_proto = Proto("uints", "UINTS")
 
-local f_small = ProtoField.uint8("uints.small", "small", base.DEC)
-local f_medium = ProtoField.uint16("uints.medium", "medium", base.DEC)
-local f_large = ProtoField.uint32("uints.large", "large", base.DEC)
+local f_small = ProtoField.uint8("uints.small", "Small", base.DEC)
+local f_medium = ProtoField.uint16("uints.medium", "Medium", base.DEC)
+local f_large = ProtoField.uint32("uints.large", "Large", base.DEC)
 
 wd_proto.fields = {
     f_small,

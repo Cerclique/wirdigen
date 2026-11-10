@@ -33,8 +33,8 @@ end
 
 local wd_proto = Proto("keywords", "Lua \"keywords\" as Field names")
 
-local f_end = ProtoField.uint8("keywords.end", "end", base.DEC)
-local f_type = ProtoField.uint16("keywords.type", "type", base.DEC)
+local f_end = ProtoField.uint8("keywords.end", "End", base.DEC)
+local f_type = ProtoField.uint16("keywords.type", "Type", base.DEC)
 
 wd_proto.fields = {
     f_end,

@@ -1,2 +1,2 @@
 bogus: demo
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]
