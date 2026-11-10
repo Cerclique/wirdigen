@@ -1,0 +1,27 @@
+[package]
+name = "wirdigen-cli"
+description = "Command-line interface for wirdigen"
+readme = "../../README.md"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license-file = "../../LICENSE"
+keywords.workspace = true
+
+[[bin]]
+name = "wirdigen"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+wirdigen.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "allow"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
