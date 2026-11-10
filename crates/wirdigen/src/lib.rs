@@ -34,6 +34,8 @@ mod description;
 mod diagnostic;
 mod emit;
 mod lower;
+#[cfg(test)]
+mod lua_check;
 mod prelude;
 mod render;
 mod scalar;
