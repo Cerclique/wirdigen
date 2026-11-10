@@ -172,14 +172,13 @@ impl Builtin {
     }
 
     /// Whether `endian:` changes how the value is read. Single bytes, raw bytes, IPv6 addresses
-    /// and Ethernet addresses have no byte order; a string's follows its [`Encoding`].
+    /// and Ethernet addresses have no byte order; a string's or a timestamp's follows its
+    /// [`Encoding`] instead.
     pub(crate) fn has_byte_order(self) -> bool {
         match self {
             Self::Int { bytes, .. } => bytes > 1,
-            Self::Float32 | Self::Float64 | Self::Ipv4 | Self::Eui64 | Self::Guid | Self::AbsTime | Self::RelTime => {
-                true
-            }
-            Self::Bool | Self::String | Self::Bytes | Self::Ipv6 | Self::Ether => false,
+            Self::Float32 | Self::Float64 | Self::Ipv4 | Self::Eui64 | Self::Guid => true,
+            Self::Bool | Self::String | Self::Bytes | Self::Ipv6 | Self::Ether | Self::AbsTime | Self::RelTime => false,
         }
     }
 }
@@ -308,7 +307,15 @@ impl Encoding {
     pub(crate) const fn unit(self) -> usize {
         match self {
             Self::Utf16 | Self::Ucs2 => 2,
-            _ => 1,
+            Self::Ascii
+            | Self::Utf8
+            | Self::Latin1
+            | Self::Secs
+            | Self::SecsNsecs
+            | Self::Ntp
+            | Self::Msecs
+            | Self::Usecs
+            | Self::Nsecs => 1,
         }
     }
 
@@ -335,8 +342,10 @@ impl Encoding {
         }
         let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
         Err(if allowed.is_empty() {
+            let takers: Vec<String> =
+                BUILTINS.iter().filter(|(_, b)| !b.encodings().is_empty()).map(|(n, _)| format!("`{n}`")).collect();
             error(format!("`{}` takes no `encoding`", ty.value))
-                .with_note("only `string`, `abs_time` and `rel_time` take `encoding`", None)
+                .with_note(format!("only {} take `encoding`", takers.join(", ")), None)
         } else {
             let names: Vec<&str> = allowed.iter().map(|e| e.as_str()).collect();
             error(format!("`{}` is not an encoding of `{}`", value.value, ty.value))

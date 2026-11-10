@@ -1,0 +1,17 @@
+# Every timestamp encoding, little-endian.
+# tshark 4.6 prints absolute times in -T json as ISO 8601 whatever their display:, hence
+# dissected-4.6.json next to dissected.json (spec §10.5).
+name: timestamps-le
+endian: little
+fields:
+  - { name: abs_secs, type: abs_time }
+  - { name: abs_secs_nsecs, type: abs_time, encoding: secs_nsecs }
+  - { name: abs_ntp, type: abs_time, encoding: ntp }
+  - { name: abs_msecs, type: abs_time, encoding: msecs }
+  - { name: abs_usecs, type: abs_time, encoding: usecs }
+  - { name: abs_nsecs, type: abs_time, encoding: nsecs }
+  - { name: rel_secs, type: rel_time }
+  - { name: rel_secs_nsecs, type: rel_time, encoding: secs_nsecs }
+  - { name: rel_msecs, type: rel_time, encoding: msecs }
+  - { name: rel_usecs, type: rel_time, encoding: usecs }
+  - { name: rel_nsecs, type: rel_time, encoding: nsecs }

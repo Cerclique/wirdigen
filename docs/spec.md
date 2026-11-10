@@ -745,7 +745,7 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
   - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04.
 - No source builds and no RC or nightly job. Lua 5.3 is covered only by the load check.
 - The harness sets `LC_ALL=C`, `TZ=UTC` and a temporary `WIRESHARK_CONFIG_DIR`.
-- The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5), since their behaviour through Lua's `add_packet_field` on 4.4 is not yet verified. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
+- The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5) in both byte orders. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
 - Confirmed on 4.4.19 and 4.6.9 (#51): a Lua load error only prints to stderr and tshark still exits 0; as root, tshark warns on stderr and skips `-X lua_script`; every packet carries a harmless `_ws.lua.fake` item once a script is loaded; UDP never calls a Dissector for an empty payload. Installing tshark takes about 15 s from Debian and 45 s from the PPA.
 - Confirmed on 4.4.19 and 4.6.9 (#57): `-T json` prints an `FT_ABSOLUTE_TIME` value as its display text on 4.4 (`Jan  1, 2024 00:00:00.000000000 UTC`) but as ISO 8601 UTC on 4.6, whatever its `display:` (`2024-01-01T00:00:00.000000000Z`). The decoded instants agree, so the `timestamps` case carries the documented exception `dissected-4.6.json`; a new stable version may need its own file.
 

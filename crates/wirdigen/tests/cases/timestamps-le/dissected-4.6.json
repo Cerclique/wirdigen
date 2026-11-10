@@ -1,0 +1,15 @@
+[
+  {
+    "timestamps-le.abs_secs": "2024-01-01T00:00:00.000000000Z",
+    "timestamps-le.abs_secs_nsecs": "2024-01-01T00:00:00.500000000Z",
+    "timestamps-le.abs_ntp": "2024-01-01T00:00:00.500000000Z",
+    "timestamps-le.abs_msecs": "2024-01-01T00:00:00.123000000Z",
+    "timestamps-le.abs_usecs": "2024-01-01T00:00:00.123456000Z",
+    "timestamps-le.abs_nsecs": "2024-01-01T00:00:00.123456789Z",
+    "timestamps-le.rel_secs": "90.000000000",
+    "timestamps-le.rel_secs_nsecs": "1.250000000",
+    "timestamps-le.rel_msecs": "1.500000000",
+    "timestamps-le.rel_usecs": "1.500000000",
+    "timestamps-le.rel_nsecs": "1.500000000"
+  }
+]

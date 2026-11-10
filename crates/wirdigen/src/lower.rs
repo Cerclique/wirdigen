@@ -235,7 +235,7 @@ fn length(field: &Field) -> Length {
 }
 
 /// The `ENC_*` value Wireshark decodes a string or a timestamp with, before any byte order.
-fn encoding(encoding: Encoding) -> &'static str {
+fn enc_value(encoding: Encoding) -> &'static str {
     match encoding {
         Encoding::Ascii => "ENC_ASCII",
         Encoding::Utf8 => "ENC_UTF_8",
@@ -251,13 +251,18 @@ fn encoding(encoding: Encoding) -> &'static str {
     }
 }
 
+/// The `ENC_*` value of a byte order.
+fn enc_endian(endian: Endian) -> &'static str {
+    match endian {
+        Endian::Big => "ENC_BIG_ENDIAN",
+        Endian::Little => "ENC_LITTLE_ENDIAN",
+    }
+}
+
 fn decode(field: &Field) -> Decode {
-    if let Some(value) = field.encoding {
-        let endian = value.has_byte_order().then_some(match field.endian {
-            Endian::Big => "ENC_BIG_ENDIAN",
-            Endian::Little => "ENC_LITTLE_ENDIAN",
-        });
-        return Decode::Encoded { encoding: encoding(value), endian };
+    if let Some(enc) = field.encoding {
+        let endian = enc.has_byte_order().then(|| enc_endian(field.endian));
+        return Decode::Encoded { encoding: enc_value(enc), endian };
     }
     let little = field.endian == Endian::Little && field.ty.has_byte_order();
     match field.ty {
