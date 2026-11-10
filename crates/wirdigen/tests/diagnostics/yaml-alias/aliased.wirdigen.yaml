@@ -1,0 +1,3 @@
+x: &a demo
+name: *a
+fields: [ {name: a} ]

@@ -903,7 +903,7 @@ Not part of v1. Each item can come later as an additive (minor) change unless no
 These are not open design questions, but the spec deliberately leaves them to the implementation tickets:
 
 - **The full list of Diagnostic names.** The checks in §6.3 are fixed; most of their kebab-case names are chosen when implemented. Names become stable at 1.0.0, and the completeness tests (§10.3, §11) keep the list, the corpus and the book in sync.
-- **The YAML 1.2 parser crate** (`saphyr` / `serde-saphyr` were maintained as of 2026-11), as long as it reports positions and supports the strict subset.
+- **The YAML 1.2 parser crate**: `saphyr-parser` (its event API, not serde), chosen in #47. It reports positions for every event, so Wirdigen builds its own span-carrying tree and enforces the strict subset and unknown/duplicate keys itself.
 - **The tshark gotchas** (exit code on Lua load errors, install time) confirmed by the first tshark CI PR (§10.5), and the `ENC_TIME_*` timestamp encodings confirmed by the corpus (§3.4.5).
 - **Prelude chunk boundaries and helper names**, under the `wd_` prefix.
 
