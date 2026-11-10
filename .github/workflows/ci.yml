@@ -182,7 +182,9 @@ jobs:
           persist-credentials: false
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --offline --no-progress '**/*.md'
+          # SUMMARY.md lists unwritten chapters as empty draft links, which lychee rejects; the
+          # `book` job checks its links instead (`create-missing = false` fails on a missing file).
+          args: --offline --no-progress --exclude-path 'book/src/SUMMARY\.md' '**/*.md'
           fail: true
 
   workflows:
