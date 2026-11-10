@@ -1,0 +1,4 @@
+name: a
+fields: [ {name: a} ]
+---
+name: b

@@ -1,0 +1,3 @@
+name: demo
+title: "a\u2028b"
+fields: [ {name: a} ]

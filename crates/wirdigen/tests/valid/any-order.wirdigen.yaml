@@ -1,0 +1,10 @@
+fields: [ {name: a} ]
+registration: {}
+name: "on"
+title: On title
+framing: {}
+endian: big
+info: x
+types: {}
+enums: {}
+allow: []
