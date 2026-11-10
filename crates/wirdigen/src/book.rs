@@ -2,7 +2,7 @@
 //!
 //! Every ` ```yaml ` block of the book is a complete Protocol Description run through
 //! [`validate`](crate::validate). A plain block must produce no Diagnostic at all; a block marked
-//! ` ```yaml,diagnostic=<name> ` must produce exactly the named Diagnostics (the attribute can
+//! ` ```yaml,diagnostic=<name> ` must produce exactly the named Diagnostics (the marker can
 //! repeat for cascades such as `yaml-alias`, which needs an anchor too).
 
 use std::collections::BTreeSet;
@@ -17,12 +17,18 @@ struct Snippet {
     /// `<file>:<line>` of the opening fence, for messages.
     location: String,
     text: String,
-    /// The Diagnostic names the block is marked as producing.
-    expected: BTreeSet<String>,
+    /// The tokens of the Diagnostic names the block is marked as producing.
+    expected: BTreeSet<&'static str>,
 }
 
 fn book_src() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../book/src")
+}
+
+/// A page of the book, by its path under `book/src`.
+fn read_page(path: &str) -> String {
+    let path = book_src().join(path);
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 /// Every Markdown file under `dir`, sorted so failures come in a stable order.
@@ -40,8 +46,8 @@ fn markdown_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// The ` ```yaml ` blocks of one Markdown file. Panics on a block that would escape the check:
-/// a `yml` block or an unknown attribute.
+/// The ` ```yaml ` blocks of one Markdown file. Panics on a block that would escape the check
+/// (a `yml` block, an unknown marker) or name a Diagnostic that does not exist.
 fn snippets(name: &str, markdown: &str) -> Vec<Snippet> {
     let mut snippets = Vec::new();
     let mut lines = markdown.lines().enumerate();
@@ -62,9 +68,11 @@ fn snippets(name: &str, markdown: &str) -> Vec<Snippet> {
             continue;
         }
         let expected = words
-            .map(|w| match w.strip_prefix("diagnostic=") {
-                Some(name) => name.to_owned(),
-                None => panic!("{location}: unknown attribute `{w}`"),
+            .map(|w| {
+                let token = w.strip_prefix("diagnostic=").unwrap_or_else(|| panic!("{location}: unknown marker `{w}`"));
+                let name =
+                    Name::from_token(token).unwrap_or_else(|| panic!("{location}: no Diagnostic is named `{token}`"));
+                name.as_str()
             })
             .collect();
         let mut text = body.join("\n");
@@ -74,25 +82,33 @@ fn snippets(name: &str, markdown: &str) -> Vec<Snippet> {
     snippets
 }
 
-/// The distinct Diagnostic names a description produces, and their rendering for messages.
-fn validate(snippet: &Snippet) -> (BTreeSet<String>, String) {
+/// What validating a snippet reports.
+struct Outcome {
+    /// The distinct Diagnostic names.
+    names: BTreeSet<&'static str>,
+    /// Every Diagnostic rendered, for failure messages.
+    rendered: String,
+}
+
+fn diagnose(snippet: &Snippet) -> Outcome {
     let source = Source::new(snippet.location.clone(), snippet.text.clone());
     let diagnostics = match crate::validate(&source) {
         Ok(valid) => valid.warnings().to_vec(),
         Err(diagnostics) => diagnostics.into_vec(),
     };
-    let names = diagnostics.iter().map(|d| d.name().to_owned()).collect();
-    let rendered = diagnostics.iter().map(|d| d.render(&source, &RenderOptions::default())).collect();
-    (names, rendered)
+    Outcome {
+        names: diagnostics.iter().map(crate::Diagnostic::name).collect(),
+        rendered: diagnostics.iter().map(|d| d.render(&source, &RenderOptions::default())).collect(),
+    }
 }
 
-fn all_snippets() -> Vec<Snippet> {
+fn book_snippets() -> Vec<Snippet> {
     let root = book_src();
     markdown_files(&root)
         .iter()
         .flat_map(|path| {
-            let name = path.strip_prefix(&root).unwrap().display().to_string();
-            snippets(&name, &fs::read_to_string(path).unwrap())
+            let page = path.strip_prefix(&root).unwrap().display().to_string();
+            snippets(&page, &read_page(&page))
         })
         .collect()
 }
@@ -100,22 +116,22 @@ fn all_snippets() -> Vec<Snippet> {
 /// Spec §11: every YAML snippet is a complete file that CI runs through `validate`.
 #[test]
 fn every_snippet_produces_exactly_the_diagnostics_it_names() {
-    let snippets = all_snippets();
+    let snippets = book_snippets();
     assert!(!snippets.is_empty(), "the book has no ```yaml snippet");
     let failures: Vec<String> = snippets
         .iter()
         .filter_map(|snippet| {
-            let (actual, rendered) = validate(snippet);
-            (actual != snippet.expected)
-                .then(|| format!("{}: expected {:?}, got {actual:?}\n{rendered}", snippet.location, snippet.expected))
+            let Outcome { names, rendered } = diagnose(snippet);
+            (names != snippet.expected)
+                .then(|| format!("{}: expected {:?}, got {names:?}\n{rendered}", snippet.location, snippet.expected))
         })
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// An entry of the Diagnostics index: a `## ... {#<name>}` heading and the text up to the next.
+/// A `## ... {#<anchor>}` section of a page: the anchor and the text up to the next section.
 struct Entry {
-    name: String,
+    anchor: String,
     body: String,
 }
 
@@ -125,9 +141,9 @@ fn entries(markdown: &str) -> Vec<Entry> {
     let mut entries: Vec<Entry> = Vec::new();
     for line in markdown.lines() {
         if let Some(heading) = line.strip_prefix("## ") {
-            let name = heading.rsplit_once("{#").and_then(|(_, id)| id.strip_suffix('}'));
-            let name = name.unwrap_or_else(|| panic!("`{line}` has no explicit {{#anchor}}"));
-            entries.push(Entry { name: name.to_owned(), body: String::new() });
+            let anchor = heading.rsplit_once("{#").and_then(|(_, id)| id.strip_suffix('}'));
+            let anchor = anchor.unwrap_or_else(|| panic!("`{line}` has no explicit {{#anchor}}"));
+            entries.push(Entry { anchor: anchor.to_owned(), body: String::new() });
         } else if let Some(entry) = entries.last_mut() {
             entry.body.push_str(line);
             entry.body.push('\n');
@@ -136,35 +152,37 @@ fn entries(markdown: &str) -> Vec<Entry> {
     entries
 }
 
-fn index() -> Vec<Entry> {
-    entries(&fs::read_to_string(book_src().join("diagnostics.md")).unwrap())
-}
+/// The page the renderer links to, under `book/src`.
+const INDEX_PAGE: &str = "diagnostics.md";
 
 /// Spec §11: the Diagnostics index has one entry per Diagnostic name and vice versa, each with
-/// its severity and a snippet that triggers it.
+/// its severity, a snippet that triggers it and how to fix it (or `allow:` it, for a warning).
 #[test]
 fn the_index_has_one_entry_per_diagnostic_name() {
-    let index = index();
+    let index = entries(&read_page(INDEX_PAGE));
     let mut documented = BTreeSet::new();
     for entry in &index {
-        assert!(documented.insert(entry.name.as_str()), "`{}` has two entries", entry.name);
+        assert!(documented.insert(entry.anchor.as_str()), "`{}` has two entries", entry.anchor);
     }
     let names: BTreeSet<&str> = Name::ALL.iter().map(|n| n.as_str()).collect();
     assert_eq!(documented, names, "the Diagnostics index and the Diagnostic names differ");
 
     for entry in &index {
-        let name = Name::from_token(&entry.name).unwrap();
+        let name =
+            Name::from_token(&entry.anchor).unwrap_or_else(|| panic!("no Diagnostic is named `{}`", entry.anchor));
+        let token = name.as_str();
         let severity = match name.severity() {
             Severity::Error => "error",
             Severity::Warning => "warning",
         };
-        assert!(
-            entry.body.lines().any(|l| l == format!("**Severity**: {severity}")),
-            "`{}` must say `**Severity**: {severity}`",
-            entry.name
-        );
-        let triggering = snippets(&entry.name, &entry.body).iter().any(|s| s.expected.contains(&entry.name));
-        assert!(triggering, "`{}` has no ```yaml,diagnostic={} snippet", entry.name, entry.name);
+        let has_line = |prefix: &str| entry.body.lines().any(|l| l.starts_with(prefix));
+        assert!(has_line(&format!("**Severity**: {severity}")), "`{token}` must say `**Severity**: {severity}`");
+        assert!(has_line("**Fix**: "), "`{token}` must say how to fix it in a `**Fix**: ` paragraph");
+        if name.severity() == Severity::Warning {
+            assert!(entry.body.contains("allow:"), "warning `{token}` must say how to `allow:` it");
+        }
+        let triggering = snippets(token, &entry.body).iter().any(|s| s.expected.contains(token));
+        assert!(triggering, "`{token}` has no ```yaml,diagnostic={token} snippet");
     }
 }
 
@@ -174,7 +192,7 @@ const PAGES_ROOT: &str = "https://cerclique.github.io/wirdigen/";
 /// Spec §6.4: the note ending every rendered Diagnostic links to its entry in the book.
 #[test]
 fn the_rendered_link_resolves_to_the_index_entry() {
-    let summary = fs::read_to_string(book_src().join("SUMMARY.md")).unwrap();
+    let summary = read_page("SUMMARY.md");
     let source = Source::new("demo.wirdigen.yaml", "");
     for &name in Name::ALL {
         let rendered = crate::Diagnostic::new(name, 0..0, "message").render(&source, &RenderOptions::default());
@@ -185,10 +203,11 @@ fn the_rendered_link_resolves_to_the_index_entry() {
             .strip_prefix(PAGES_ROOT)
             .and_then(|path| path.split_once('#'))
             .unwrap_or_else(|| panic!("`{url}` is not a page of {PAGES_ROOT} with an anchor"));
-        let markdown = page.strip_suffix(".html").map(|p| format!("{p}.md")).unwrap();
+        let markdown = page.strip_suffix(".html").unwrap_or_else(|| panic!("`{url}` is not an .html page"));
+        let markdown = format!("{markdown}.md");
         assert!(summary.contains(&format!("]({markdown})")), "{url}: `{markdown}` is not in SUMMARY.md");
-        let text = fs::read_to_string(book_src().join(&markdown)).unwrap();
-        assert!(entries(&text).iter().any(|e| e.name == anchor), "{url}: `{markdown}` has no `{{#{anchor}}}` anchor");
+        let text = read_page(&markdown);
+        assert!(entries(&text).iter().any(|e| e.anchor == anchor), "{url}: `{markdown}` has no `{{#{anchor}}}` anchor");
         assert_eq!(anchor, name.as_str(), "{url} points at another entry");
     }
 }
