@@ -1,0 +1,5 @@
+name: uints
+fields:
+  - { name: small, type: uint8 }
+  - { name: medium, type: uint16 }
+  - { name: large, type: uint32 }

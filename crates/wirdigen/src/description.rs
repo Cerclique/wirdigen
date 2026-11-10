@@ -14,19 +14,47 @@ const KEYS: [&str; 10] =
     ["name", "title", "registration", "framing", "endian", "info", "fields", "types", "enums", "allow"];
 
 /// A value with the span it came from.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Spanned<T> {
     pub(crate) value: T,
     pub(crate) span: Range<usize>,
 }
 
+/// A built-in type (spec §3.4.4). Only the unsigned integers read so far.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Builtin {
+    Uint8,
+    Uint16,
+    Uint32,
+}
+
+impl Builtin {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "uint8" => Some(Self::Uint8),
+            "uint16" => Some(Self::Uint16),
+            "uint32" => Some(Self::Uint32),
+            _ => None,
+        }
+    }
+}
+
+/// A Field of the top-level layout.
+#[derive(Debug, Clone)]
+pub(crate) struct Field {
+    pub(crate) name: String,
+    pub(crate) ty: Builtin,
+}
+
 /// The top level of a Protocol Description.
 ///
 /// Keys typed by later tickets (`registration`, `framing`, ...) are recognised but not yet read.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Description {
     pub(crate) name: Spanned<String>,
     pub(crate) title: Option<Spanned<String>>,
+    /// The top-level Fields this version understands, in order.
+    pub(crate) fields: Vec<Field>,
 }
 
 /// Stage 2: unknown and duplicate keys, required keys and value kinds.
@@ -90,6 +118,7 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
     };
     let name = string_value("name", "invalid-protocol-name");
     let title = string_value("title", "invalid-protocol-title");
+    let mut layout = Vec::new();
     if let Some(fields) = get("fields") {
         match &fields.value {
             Value::Sequence(items) if items.is_empty() => errors.push(Diagnostic::error(
@@ -97,15 +126,35 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
                 fields.span.clone(),
                 "`fields` must declare at least one Field",
             )),
-            Value::Sequence(_) => {}
+            Value::Sequence(items) => layout = items.iter().filter_map(read_field).collect(),
             _ => errors.push(wrong_type(fields.span.clone(), "`fields` must be a list of Fields")),
         }
     }
 
     match name {
-        Some(name) if errors.is_empty() => Ok(Description { name, title }),
+        Some(name) if errors.is_empty() => Ok(Description { name, title, fields: layout }),
         _ => Err(errors),
     }
+}
+
+/// Reads a Field made of a `name` and a `type` this version knows.
+///
+/// Field validation arrives with the Fields ticket; until then any other entry is left out of the
+/// layout rather than reported.
+fn read_field(node: &Node) -> Option<Field> {
+    let Value::Mapping(entries) = &node.value else { return None };
+    let text_of = |key: &str| {
+        entries.iter().find_map(|(k, v)| match (&k.value, &v.value) {
+            (Value::Scalar { text: k, .. }, Value::Scalar { text, .. }) if k == key => Some(text.as_str()),
+            _ => None,
+        })
+    };
+    let name = text_of("name")?;
+    let mut chars = name.chars();
+    let is_name = chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    let ty = Builtin::from_name(text_of("type")?)?;
+    is_name.then(|| Field { name: name.to_owned(), ty })
 }
 
 /// Semantic checks on a deserialized description.

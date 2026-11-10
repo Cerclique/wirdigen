@@ -20,6 +20,9 @@
 
 mod description;
 mod diagnostic;
+mod emit;
+mod lower;
+mod prelude;
 mod scalar;
 mod source;
 mod yaml;
@@ -32,6 +35,8 @@ pub use source::Source;
 /// It is opaque: accessors are added as real needs appear.
 #[derive(Debug, Clone)]
 pub struct ValidDescription {
+    source_name: String,
+    description: description::Description,
     warnings: Vec<Diagnostic>,
 }
 
@@ -44,10 +49,10 @@ impl ValidDescription {
 
     /// Generates the Wireshark Lua dissector. Infallible.
     ///
-    /// Until the generation ticket lands this returns a fixed placeholder.
+    /// The same description and Wirdigen version always give the same bytes.
     #[must_use]
     pub fn generate(&self) -> String {
-        String::from("-- wirdigen: dissector generation is not implemented yet\n")
+        emit::emit(&lower::lower(&self.description, &self.source_name))
     }
 }
 
@@ -66,5 +71,5 @@ pub fn validate(source: &Source) -> Result<ValidDescription, Diagnostics> {
     if diagnostics.has_errors() {
         return Err(diagnostics);
     }
-    Ok(ValidDescription { warnings: diagnostics.into_vec() })
+    Ok(ValidDescription { source_name: source.name().to_owned(), description, warnings: diagnostics.into_vec() })
 }
