@@ -36,6 +36,7 @@ mod description;
 mod diagnostic;
 mod emit;
 mod field;
+mod keys;
 mod lower;
 #[cfg(test)]
 mod lua_check;

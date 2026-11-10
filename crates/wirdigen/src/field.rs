@@ -3,8 +3,8 @@
 //! Stage 2 reads each entry's keys into a [`RawField`]; stage 4 turns the raw Fields into the
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
-use crate::description::{Keys, Spanned, closest, expect_string, read_keys, wrong_type};
 use crate::diagnostic::{Diagnostic, Name, record};
+use crate::keys::{Keys, Spanned, closest, expect_string, read_keys, wrong_type};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
