@@ -451,6 +451,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
+- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
@@ -716,7 +717,7 @@ A panic (`101`) is a bug, not part of the contract. A finer split can only come 
 - `<case>.wirdigen.yaml`;
 - a golden `<case>.lua`, compared byte for byte;
 - `packets.txt`: text2pcap hex, each packet commented;
-- a golden `dissected.json` from `tshark -T json -J <proto>`, cut down to the Dissector's own layer.
+- a golden `dissected.json`: tshark's `-T json --no-duplicate-keys` output cut down to the Dissector's own layer, the same layer `-J <proto>` keeps. The harness cuts it itself rather than passing `-J`, which could hide a top-level `_ws.lua.error`.
 
 Both Wireshark versions must produce the same `dissected.json`; a per-version file is a documented exception. Goldens are plain files (no `insta`), rewritten with `WIRDIGEN_BLESS=1`, never in CI. The corpus is `eol=lf` via `.gitattributes`. Each case is its own test. The three book examples (§11) are corpus cases.
 
@@ -741,7 +742,7 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
 - No source builds and no RC or nightly job. Lua 5.3 is covered only by the load check.
 - The harness sets `LC_ALL=C`, `TZ=UTC` and a temporary `WIRESHARK_CONFIG_DIR`.
 - The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5), since their behaviour through Lua's `add_packet_field` on 4.4 is not yet verified. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
-- The first implementation PR confirms these gotchas on a real runner.
+- Confirmed on 4.4.19 and 4.6.9 (#51): a Lua load error only prints to stderr and tshark still exits 0; as root, tshark warns on stderr and skips `-X lua_script`; every packet carries a harmless `_ws.lua.fake` item once a script is loaded; UDP never calls a Dissector for an empty payload. Installing tshark takes about 15 s from Debian and 45 s from the PPA.
 
 ### 10.6 Bad input
 
@@ -760,7 +761,7 @@ These use proptest only, with no cargo-fuzz in v1:
 - for random *valid* descriptions from a strategy over the v1 language: `validate` accepts them, `generate` doesn't panic, two generations are byte-identical, and the output passes the Lua checks;
 - weekly, end to end: random descriptions × random and truncated packets in tshark;
 - in-crate lowering unit tests cover scoping, locals and chunk selection;
-- cross-OS determinism comes from the golden `.lua` comparison on the 3-OS `test` job.
+- cross-OS determinism comes from the golden `.lua` comparison on the 3-OS `test` job (macOS is disabled for now and must be re-enabled before release (#106)).
 
 Shrunk failures become corpus cases.
 
@@ -768,13 +769,13 @@ Shrunk failures become corpus cases.
 
 - `trycmd` cases in `tests/cli/`, blessed with `TRYCMD=overwrite`, reuse the `tests/cases/` and `tests/diagnostics/` corpus. They cover exit codes, `--deny-warnings`, `--check` fresh/stale/missing, `-o`/`--out-dir`/stdin, JSON Lines and partial failure.
 - A few `assert_cmd` tests cover the unchanged mtime and forced-TTY / `CLICOLOR_FORCE` colour.
-- They run on all 3 OSes. Dissector behaviour is not re-tested at the CLI level.
+- They run on all 3 OSes (macOS is disabled for now and must be re-enabled before release (#106)). Dissector behaviour is not re-tested at the CLI level.
 
 ### 10.9 CI jobs
 
 | Job | Runs on | Required |
 |---|---|---|
-| `test`: goldens, Diagnostics, renderer, schema, lowering, proptest, CLI | ubuntu / macos / windows | yes |
+| `test`: goldens, Diagnostics, renderer, schema, lowering, proptest, CLI | ubuntu / macos / windows (macOS disabled for now, #106) | yes |
 | `lua` (`WIRDIGEN_LUA=1`) | ubuntu-24.04 with `lua5.2`/`5.3`/`5.4` | yes |
 | `tshark-4.4` (`WIRDIGEN_TSHARK=1`): `dissected.json` + fixed-seed bad packets | `debian:trixie` container, non-root | yes |
 | `tshark-stable` | ubuntu-24.04 + PPA | yes |
@@ -830,7 +831,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 ### 12.2 CI on every PR
 
 - `rust`: fmt, build, test, clippy and doc, all `--locked --all-targets`.
-- `test` on ubuntu, macos and windows (`fail-fast: false`).
+- `test` on ubuntu, macos and windows (`fail-fast: false`); macOS is disabled for now and must be re-enabled before release (#106).
 - `msrv`.
 - `deny` (advisories, licenses, bans, sources) plus `cargo machete`.
 - `typos`, `links` (lychee, offline), `workflows` (actionlint, zizmor) and `pr-title`.
@@ -905,7 +906,7 @@ These are not open design questions, but the spec deliberately leaves them to th
 
 - **The full list of Diagnostic names.** The checks in §6.3 are fixed; most of their kebab-case names are chosen when implemented. Names become stable at 1.0.0, and the completeness tests (§10.3, §11) keep the list, the corpus and the book in sync.
 - **The YAML 1.2 parser crate**: `saphyr-parser` (its event API, not serde), chosen in #47. It reports positions for every event, so Wirdigen builds its own span-carrying tree and enforces the strict subset and unknown/duplicate keys itself.
-- **The tshark gotchas** (exit code on Lua load errors, install time) confirmed by the first tshark CI PR (§10.5), and the `ENC_TIME_*` timestamp encodings confirmed by the corpus (§3.4.5).
+- **The tshark gotchas** (exit code on Lua load errors, install time), confirmed in #51 (§10.5), and the `ENC_TIME_*` timestamp encodings confirmed by the corpus (§3.4.5).
 - **Prelude chunk boundaries and helper names**, under the `wd_` prefix.
 
 ## 16. Decision index

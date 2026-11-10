@@ -1,0 +1,16 @@
+[
+  {
+    "keywords.end": "1",
+    "keywords.type": "515"
+  },
+  {
+    "keywords.end": "127",
+    "_ws.expert": {
+      "keywords._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: type",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "uints.small": "1",
+    "uints.medium": "515",
+    "uints.large": "67438087"
+  },
+  {
+    "uints.small": "255",
+    "uints.medium": "65535",
+    "uints.large": "4294967295"
+  },
+  {
+    "uints.small": "1",
+    "_ws.expert": {
+      "uints._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: medium",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "uints.small": "0",
+    "uints.medium": "0",
+    "_ws.expert": {
+      "uints._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: large",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "uints.small": "0",
+    "uints.medium": "0",
+    "uints.large": "0"
+  }
+]
