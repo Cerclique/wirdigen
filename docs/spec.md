@@ -761,7 +761,7 @@ These use proptest only, with no cargo-fuzz in v1:
 - for random *valid* descriptions from a strategy over the v1 language: `validate` accepts them, `generate` doesn't panic, two generations are byte-identical, and the output passes the Lua checks;
 - weekly, end to end: random descriptions × random and truncated packets in tshark;
 - in-crate lowering unit tests cover scoping, locals and chunk selection;
-- cross-OS determinism comes from the golden `.lua` comparison on the 3-OS `test` job.
+- cross-OS determinism comes from the golden `.lua` comparison on the 3-OS `test` job (macOS is disabled for now and must be re-enabled before release (#106)).
 
 Shrunk failures become corpus cases.
 
@@ -769,13 +769,13 @@ Shrunk failures become corpus cases.
 
 - `trycmd` cases in `tests/cli/`, blessed with `TRYCMD=overwrite`, reuse the `tests/cases/` and `tests/diagnostics/` corpus. They cover exit codes, `--deny-warnings`, `--check` fresh/stale/missing, `-o`/`--out-dir`/stdin, JSON Lines and partial failure.
 - A few `assert_cmd` tests cover the unchanged mtime and forced-TTY / `CLICOLOR_FORCE` colour.
-- They run on all 3 OSes. Dissector behaviour is not re-tested at the CLI level.
+- They run on all 3 OSes (macOS is disabled for now and must be re-enabled before release (#106)). Dissector behaviour is not re-tested at the CLI level.
 
 ### 10.9 CI jobs
 
 | Job | Runs on | Required |
 |---|---|---|
-| `test`: goldens, Diagnostics, renderer, schema, lowering, proptest, CLI | ubuntu / macos / windows | yes |
+| `test`: goldens, Diagnostics, renderer, schema, lowering, proptest, CLI | ubuntu / macos / windows (macOS disabled for now, #106) | yes |
 | `lua` (`WIRDIGEN_LUA=1`) | ubuntu-24.04 with `lua5.2`/`5.3`/`5.4` | yes |
 | `tshark-4.4` (`WIRDIGEN_TSHARK=1`): `dissected.json` + fixed-seed bad packets | `debian:trixie` container, non-root | yes |
 | `tshark-stable` | ubuntu-24.04 + PPA | yes |
@@ -831,7 +831,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 ### 12.2 CI on every PR
 
 - `rust`: fmt, build, test, clippy and doc, all `--locked --all-targets`.
-- `test` on ubuntu, macos and windows (`fail-fast: false`).
+- `test` on ubuntu, macos and windows (`fail-fast: false`); macOS is disabled for now and must be re-enabled before release (#106).
 - `msrv`.
 - `deny` (advisories, licenses, bans, sources) plus `cargo machete`.
 - `typos`, `links` (lychee, offline), `workflows` (actionlint, zizmor) and `pr-title`.
