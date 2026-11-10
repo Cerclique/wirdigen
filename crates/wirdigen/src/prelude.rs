@@ -65,6 +65,12 @@ pub(crate) fn select(wanted: &[&str]) -> Vec<&'static str> {
     lines
 }
 
+/// The name and own text of every chunk, in prelude order, for the Lua checks.
+#[cfg(test)]
+pub(crate) fn chunk_sources() -> impl Iterator<Item = (&'static str, String)> {
+    chunks().iter().map(|chunk| (chunk.name, chunk.lines.join("\n") + "\n"))
+}
+
 fn include(chunks: &[Chunk], name: &str, included: &mut [bool]) {
     let index =
         chunks.iter().position(|c| c.name == name).unwrap_or_else(|| panic!("the prelude has no chunk `{name}`"));
