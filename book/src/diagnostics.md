@@ -451,6 +451,22 @@ fields:
 
 **Fix**: write the description on one line, or quote a value YAML reads as a number or a bool.
 
+## `invalid-unit` {#invalid-unit}
+
+**Severity**: error
+
+A form of a Field's `unit:` is empty, blank, spans several lines or is not a string. The tree
+prints the unit on the value's line, right after it.
+
+```yaml,diagnostic=invalid-unit
+name: demo
+fields:
+  - { name: length, type: uint16, unit: [byte, ""] }
+```
+
+**Fix**: write each form on one line (`unit: [byte, bytes]`), or remove `unit:`. Quote a unit
+YAML reads as a number or a bool.
+
 ## `overlapping-values` {#overlapping-values}
 
 **Severity**: error

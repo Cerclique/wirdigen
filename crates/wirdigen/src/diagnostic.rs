@@ -73,6 +73,7 @@ names! {
     IncompatibleDisplay => "incompatible-display", Error;
     InvalidLabel => "invalid-label", Error;
     InvalidDescription => "invalid-description", Error;
+    InvalidUnit => "invalid-unit", Error;
     OverlappingValues => "overlapping-values", Error;
     ConflictingMappings => "conflicting-mappings", Error;
     UnknownEnum => "unknown-enum", Error;

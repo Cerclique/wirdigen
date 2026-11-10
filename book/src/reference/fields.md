@@ -321,7 +321,10 @@ fields:
 
 `unit:` is one string, used whatever the value, or a `[singular, plural]` pair: the singular
 when the value is 1, the plural otherwise. Here a length of 1 is shown as `1 byte` and a
-length of 16 as `16 bytes`.
+length of 16 as `16 bytes`. A unit with one form is a plain string: a list holds exactly the
+two forms ([`wrong-value-type`](../diagnostics.md#wrong-value-type)). Each form is a non-empty
+single line ([`invalid-unit`](../diagnostics.md#invalid-unit)), and a value YAML would read as
+a number or a bool needs quotes.
 
 ## Tree text {#tree-text}
 

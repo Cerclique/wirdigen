@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - { name: a, type: uint16, unit: 5 }
+  - { name: b, type: uint16, unit: }
+  - { name: c, type: float32, unit: [true, false] }

@@ -124,8 +124,15 @@ pub(crate) struct RawMappings {
     values: Option<MappingKey<RawValues>>,
     when_true: Option<MappingKey<Spanned<String>>>,
     when_false: Option<MappingKey<Spanned<String>>>,
-    /// Always a [`Mapping::Unit`]: a unit needs no stage 4 check beyond where it may go.
-    unit: Option<MappingKey<Mapping>>,
+    unit: Option<MappingKey<RawUnit>>,
+}
+
+/// A `unit:` as written, after stage 2: its forms are strings, not yet checked to be non-empty
+/// single lines.
+#[derive(Debug, Clone)]
+struct RawUnit {
+    singular: Spanned<String>,
+    plural: Option<Spanned<String>>,
 }
 
 /// Stage 2: reads the value-mapping keys of a Field, pushing their errors.
@@ -167,20 +174,24 @@ fn read_values(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawValues> {
     }
 }
 
-/// `unit:` is a string, or a `[singular, plural]` list.
-fn read_unit(node: &Node) -> Result<Mapping, Diagnostic> {
-    let wrong = || {
-        wrong_type(node.span.clone(), "`unit` must be a string or a `[singular, plural]` list")
-            .with_note("write `unit: ms` or `unit: [byte, bytes]`", None)
+/// `unit:` is a string, or a `[singular, plural]` list of exactly two strings. A unit with one
+/// form is a plain string, never a one-item list.
+fn read_unit(node: &Node) -> Result<RawUnit, Diagnostic> {
+    let wrong = |note: String| {
+        wrong_type(node.span.clone(), "`unit` must be a string or a `[singular, plural]` list").with_note(note, None)
     };
-    let string = |node: &Node| expect_string(node, "unit", Name::WrongValueType).map(|s| s.value);
+    let string = |node: &Node| expect_string(node, "unit", Name::InvalidUnit);
     match &node.value {
-        Value::Scalar { .. } => Ok(Mapping::Unit { singular: string(node)?, plural: None }),
+        Value::Scalar { .. } => Ok(RawUnit { singular: string(node)?, plural: None }),
         Value::Sequence(items) => match items.as_slice() {
-            [singular, plural] => Ok(Mapping::Unit { singular: string(singular)?, plural: Some(string(plural)?) }),
-            _ => Err(wrong()),
+            [singular, plural] => Ok(RawUnit { singular: string(singular)?, plural: Some(string(plural)?) }),
+            [only] => Err(wrong(match &only.value {
+                Value::Scalar { text, .. } => format!("a unit with one form is a string: write `unit: {text}`"),
+                _ => "write `unit: ms` or `unit: [byte, bytes]`".to_owned(),
+            })),
+            _ => Err(wrong("write `unit: ms` or `unit: [byte, bytes]`".to_owned())),
         },
-        Value::Mapping(_) => Err(wrong()),
+        Value::Mapping(_) => Err(wrong("write `unit: ms` or `unit: [byte, bytes]`".to_owned())),
     }
 }
 
@@ -459,7 +470,13 @@ pub(crate) fn check(
             };
             Some(Mapping::Bool { when_true: label(&raw.when_true), when_false: label(&raw.when_false) })
         }
-        _ => raw.unit.as_ref().map(|unit| unit.value.clone()),
+        _ => raw.unit.as_ref().map(|unit| {
+            let RawUnit { singular, plural } = &unit.value;
+            for form in std::iter::once(singular).chain(plural) {
+                check_unit(form, diagnostics);
+            }
+            Mapping::Unit { singular: singular.value.clone(), plural: plural.as_ref().map(|p| p.value.clone()) }
+        }),
     };
     if has_errors(&diagnostics[start..]) { Err(Invalid) } else { Ok(mapping) }
 }
@@ -527,6 +544,17 @@ fn check_label(label: &Spanned<String>, diagnostics: &mut Vec<Diagnostic>) {
             Name::InvalidLabel,
             label.span.clone(),
             "a label must be a non-empty single line",
+        ));
+    }
+}
+
+/// A unit form is a non-empty single line: it is printed in the tree right after the value.
+fn check_unit(form: &Spanned<String>, diagnostics: &mut Vec<Diagnostic>) {
+    if form.value.trim().is_empty() || !is_single_line(&form.value) {
+        diagnostics.push(Diagnostic::new(
+            Name::InvalidUnit,
+            form.span.clone(),
+            "a unit must be a non-empty single line",
         ));
     }
 }

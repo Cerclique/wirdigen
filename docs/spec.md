@@ -222,7 +222,7 @@ Any value outside this matrix, and an `encoding:` or value-mapping key (§3.4.7)
 |---|---|---|
 | `values:` | integer types, integer bitfield sub-Fields | An inline map from an integer or a `"low-high"` range string to a label, or the name of an Enum. |
 | `true:` / `false:` | `bool`, boolean bitfield sub-Fields | Labels for the two states; either may be given alone. |
-| `unit:` | integer and float types | A string, or `[singular, plural]`. |
+| `unit:` | integer and float types | A string, or a `[singular, plural]` list of exactly two strings (a one-item list is `wrong-value-type`). Each form is a non-empty single line, else the error `invalid-unit`. |
 
 - Overlapping keys in one table are the error `overlapping-values`. A key outside the type's range is the warning `unreachable-value`.
 - `unit:` together with `values:` is the error `conflicting-mappings`.
@@ -506,7 +506,7 @@ Errors:
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
 - `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
 - `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
-- `invalid-label`, `invalid-description` (§3.4.8);
+- `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - bitfield widths not adding up to the container;
 - forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;
