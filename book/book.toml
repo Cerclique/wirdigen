@@ -1,0 +1,15 @@
+[book]
+title = "Wirdigen"
+authors = ["Aurélien VERNIZEAU"]
+language = "en"
+src = "src"
+
+[build]
+create-missing = false
+
+[output.html]
+# The release book is served at the root, `main` at `/dev/`; the deploy workflow overrides this
+# for `/dev/`.
+site-url = "/wirdigen/"
+git-repository-url = "https://github.com/Cerclique/wirdigen"
+additional-js = ["dev-banner.js"]

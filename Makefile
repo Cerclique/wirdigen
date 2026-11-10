@@ -2,7 +2,7 @@ CARGO_FLAGS := --locked --all-targets
 export RUSTFLAGS := -D warnings
 export RUSTDOCFLAGS := -D warnings
 
-.PHONY: lint test test-lua test-tshark
+.PHONY: lint test test-lua test-tshark book
 
 lint:
 	cargo fmt --all --check
@@ -21,3 +21,7 @@ test-lua:
 # skips -X lua_script as root (spec §10.5); fails when one is missing.
 test-tshark:
 	WIRDIGEN_TSHARK=1 cargo test -p wirdigen --locked --test tshark
+
+# Needs mdbook 0.5.4 (the version CI uses). Snippets are checked by `make test`.
+book:
+	mdbook build book

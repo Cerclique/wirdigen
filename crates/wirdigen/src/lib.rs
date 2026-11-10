@@ -30,6 +30,8 @@
 
 #![deny(missing_docs)]
 
+#[cfg(test)]
+mod book;
 mod description;
 mod diagnostic;
 mod emit;
