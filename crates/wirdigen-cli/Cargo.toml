@@ -25,3 +25,7 @@ missing_docs = "allow"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+
+# The CLI does not call the library yet; drop this once it does (#72).
+[package.metadata.cargo-machete]
+ignored = ["wirdigen"]
