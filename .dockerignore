@@ -1,0 +1,3 @@
+# The images only need the toolchain file; the repository is mounted at run time.
+*
+!rust-toolchain.toml
