@@ -109,6 +109,20 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: make test-tshark
 
+  # Builds the book without deploying it (book.yml deploys). Its YAML snippets and the
+  # Diagnostics index are checked by the `book` unit tests in the `rust` and `test` jobs.
+  book:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: mdbook@0.5.4
+      - run: make book
+
   msrv:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -168,7 +182,9 @@ jobs:
           persist-credentials: false
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --offline --no-progress '**/*.md'
+          # SUMMARY.md lists unwritten chapters as empty draft links, which lychee rejects; the
+          # `book` job checks its links instead (`create-missing = false` fails on a missing file).
+          args: --offline --no-progress --exclude-path 'book/src/SUMMARY\.md' '**/*.md'
           fail: true
 
   workflows:
