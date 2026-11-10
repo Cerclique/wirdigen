@@ -125,6 +125,11 @@ fn edit_distance(a: &str, b: &str) -> usize {
     rows[a.len()][b.len()]
 }
 
+/// Whether `text` holds no line break, counting the Unicode ones YAML and editors break on.
+pub(crate) fn is_single_line(text: &str) -> bool {
+    !text.contains(['\n', '\r', '\u{85}', '\u{2028}', '\u{2029}'])
+}
+
 pub(crate) fn wrong_type(span: Range<usize>, message: impl Into<String>) -> Diagnostic {
     Diagnostic::new(Name::WrongValueType, span, message)
 }

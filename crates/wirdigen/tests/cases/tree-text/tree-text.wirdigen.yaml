@@ -1,0 +1,8 @@
+# `label:` and `description:` on each kind of ProtoField constructor.
+name: tree_text
+fields:
+  - { name: msg_type, type: uint8 }
+  - { name: id, type: uint16, display: hex, label: Message ID, description: Identifies the request }
+  - { name: flag, type: bool, label: "Flag \"urgent\"" }
+  - { name: ratio, type: float32, description: "Ratio, 0 to 1" }
+  - { name: addr, type: ipv4, label: Adresse IPv4 (élément), description: Where it came from }

@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use crate::lower::{Decode, Dissector, ProtoField, Stmt};
+use crate::lower::{Args, Decode, Dissector, ProtoField, Stmt};
 use crate::prelude;
 
 const INDENT: &str = "    ";
@@ -102,14 +102,20 @@ pub(crate) fn emit(model: &Dissector) -> String {
 }
 
 fn proto_field(field: &ProtoField) -> String {
-    let display = field.field_type.display.map(|d| format!(", {d}")).unwrap_or_default();
-    format!(
-        "local {} = ProtoField.{}({}, {}{display})",
-        field.local,
-        field.field_type.constructor,
-        lua_string(&field.abbrev),
-        lua_string(&field.label)
-    )
+    let mut args = vec![lua_string(&field.abbrev), lua_string(&field.label)];
+    let display = match field.field_type.args {
+        Args::Display(display) => Some(display),
+        Args::Plain => None,
+    };
+    args.extend(display.map(str::to_owned));
+    if let Some(description) = &field.description {
+        if display.is_some() {
+            // No value string or mask yet: those slots before the blurb stay `nil`.
+            args.extend(["nil".to_owned(), "nil".to_owned()]);
+        }
+        args.push(lua_string(description));
+    }
+    format!("local {} = ProtoField.{}({})", field.local, field.field_type.constructor, args.join(", "))
 }
 
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {

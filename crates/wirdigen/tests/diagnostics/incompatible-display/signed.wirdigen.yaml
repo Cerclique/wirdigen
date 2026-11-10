@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: t, type: int16, display: hex }

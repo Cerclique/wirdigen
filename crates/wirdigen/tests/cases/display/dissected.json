@@ -1,0 +1,22 @@
+[
+  {
+    "display.plain": "42",
+    "display.dec": "42",
+    "display.hex": "0x0102",
+    "display.oct": "8",
+    "display.dec_hex": "256",
+    "display.hex_dec": "0x001000",
+    "display.wide_hex": "0x0000010203040506",
+    "display.signed": "-2"
+  },
+  {
+    "display.plain": "255",
+    "display.dec": "255",
+    "display.hex": "0xffff",
+    "display.oct": "255",
+    "display.dec_hex": "4294967295",
+    "display.hex_dec": "0xffffff",
+    "display.wide_hex": "0x0000ffffffffffff",
+    "display.signed": "-1"
+  }
+]

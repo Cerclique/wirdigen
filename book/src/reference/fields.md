@@ -28,7 +28,8 @@ A Field is a mapping with a `name:` and exactly one key saying what it is. This 
   ([`duplicate-field-name`](../diagnostics.md#duplicate-field-name)).
 
 The tree shows a Field under a label derived from its name: `_` becomes a space and the first
-letter is capitalised, so `msg_type` is shown as "Msg type".
+letter is capitalised, so `msg_type` is shown as "Msg type". `label:` replaces it (see
+[Tree text](#tree-text)).
 
 ## Built-in types
 
@@ -87,3 +88,55 @@ Byte order applies to the multi-byte integers, `float32`, `float64`, `ipv4`, `eu
 `guid`. A little-endian `guid` is the mixed-endian layout Windows uses, with its first three
 groups reversed. Single bytes, `ipv6` and `ether` have no byte order, so `endian:` does not
 change them.
+
+## Display {#display}
+
+`display:` says how an integer's value is shown in the tree. Which values it takes depends on
+the type:
+
+| Type | `display:` | Default | Shows 258 as |
+|---|---|---|---|
+| unsigned integers | `dec` | yes | `258` |
+| | `hex` | | `0x0102` |
+| | `oct` | | `0402` |
+| | `dec_hex` | | `258 (0x0102)` |
+| | `hex_dec` | | `0x0102 (258)` |
+| signed integers | `dec` | yes | `258` |
+
+Hex digits are padded to the type's width. `bool`, `float32`, `float64` and the address types
+take no `display:`. Any other combination is
+[`incompatible-display`](../diagnostics.md#incompatible-display).
+
+```yaml
+name: demo
+fields:
+  - { name: flags, type: uint8, display: hex }
+  - { name: length, type: uint16 }
+  - { name: mode, type: uint16, display: oct }
+  - { name: session, type: uint32, display: hex_dec }
+```
+
+Display changes only what the tree shows: a filter matches the value whichever way it is
+written, so `demo.flags == 16` and `demo.flags == 0x10` are the same filter.
+
+## Tree text {#tree-text}
+
+`label:` is the text the tree shows for the Field, in place of the one derived from its name.
+`description:` is a longer explanation, which Wireshark shows in the status bar when the
+Field is selected and in its field reference.
+
+```yaml
+name: demo
+fields:
+  - { name: msg_type, type: uint8 }
+  - name: seq
+    type: uint32
+    label: Sequence number
+    description: Incremented by the sender for each message
+```
+
+Here `msg_type` is shown as "Msg type" and `seq` as "Sequence number". A label is a non-empty
+single line ([`invalid-label`](../diagnostics.md#invalid-label)); a description is a single
+line ([`invalid-description`](../diagnostics.md#invalid-description)). Both are plain text, so
+a value YAML would read as a number or a bool, such as `label: 2` or `label: true`, needs
+quotes.

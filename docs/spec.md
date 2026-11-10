@@ -239,8 +239,8 @@ enums:
 
 #### 3.4.8 Tree text
 
-- `label:` is optional, non-empty and single line. It defaults to `name:` with `_` turned into a space and the first letter capitalised (`msg_type` → "Msg type"). Array elements show `<label> [i]`.
-- `description:` is optional and single line. It becomes the ProtoField's blurb.
+- `label:` is optional, non-empty and single line (error `invalid-label`). It defaults to `name:` with `_` turned into a space and the first letter capitalised (`msg_type` → "Msg type"). Array elements show `<label> [i]`.
+- `description:` is optional and single line (error `invalid-description`). It becomes the ProtoField's blurb.
 
 #### 3.4.9 Sharing a ProtoField
 
@@ -502,6 +502,7 @@ Errors:
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
 - `missing-field-kind`, `conflicting-field-kind` (§3.4.3); length keys on a fixed-size type, or none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
 - `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
+- `invalid-label`, `invalid-description` (§3.4.8);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - bitfield widths not adding up to the container;
 - forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;

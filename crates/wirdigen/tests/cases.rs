@@ -47,4 +47,6 @@ cases! {
     integers => "integers",
     fixed_types => "fixed-types",
     endian => "endian",
+    display => "display",
+    tree_text => "tree-text",
 }

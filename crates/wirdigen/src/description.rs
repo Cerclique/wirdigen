@@ -2,7 +2,7 @@
 
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Endian, Field, RawField};
-use crate::keys::{Spanned, expect_string, read_keys, wrong_type};
+use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
 use crate::yaml::{Node, Value};
 
 /// The longest protocol name Wireshark filters accept here (spec §3.3, ADR 0014).
@@ -127,8 +127,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         );
     }
     if let Some(title) = &description.title {
-        let line_breaks = ['\n', '\r', '\u{85}', '\u{2028}', '\u{2029}'];
-        if title.value.trim().is_empty() || title.value.contains(line_breaks) {
+        if title.value.trim().is_empty() || !is_single_line(&title.value) {
             diagnostics.push(Diagnostic::new(
                 Name::InvalidProtocolTitle,
                 title.span.clone(),

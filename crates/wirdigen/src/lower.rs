@@ -4,7 +4,7 @@
 //! a Wirdigen bug and panics, it is never a Diagnostic.
 
 use crate::description::Protocol;
-use crate::field::{Builtin, Endian, Field};
+use crate::field::{Builtin, Display, Endian, Field};
 use crate::prelude;
 
 /// The model the emitter prints.
@@ -33,7 +33,10 @@ pub(crate) struct ProtoField {
     pub(crate) local: String,
     /// The filter name (`demo.length`).
     pub(crate) abbrev: String,
+    /// The tree text.
     pub(crate) label: String,
+    /// The blurb, if any.
+    pub(crate) description: Option<String>,
     pub(crate) field_type: FieldType,
 }
 
@@ -42,13 +45,24 @@ pub(crate) struct ProtoField {
 pub(crate) struct FieldType {
     /// The `ProtoField.<constructor>` function (`uint16`, `ipv4`).
     pub(crate) constructor: &'static str,
-    /// The display argument (`base.DEC`), for the constructors that take one.
-    pub(crate) display: Option<&'static str>,
+    pub(crate) args: Args,
+}
+
+/// The arguments a `ProtoField` constructor takes after its filter name and label, which also
+/// says where the blurb goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Args {
+    /// `(display, valuestring, mask, description)`, as integers and `bool` take them; the
+    /// display (`base.DEC`) is always written.
+    Display(&'static str),
+    /// `(description)` only. `float` and `double` take a unit table first, but only when it is a
+    /// table: without one their blurb is the third argument, not a `nil` unit then the blurb.
+    Plain,
 }
 
 impl FieldType {
-    const fn new(constructor: &'static str, display: Option<&'static str>) -> Self {
-        Self { constructor, display }
+    const fn new(constructor: &'static str, args: Args) -> Self {
+        Self { constructor, args }
     }
 }
 
@@ -86,8 +100,9 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         proto_fields.push(ProtoField {
             local: format!("f_{}", field.name),
             abbrev: format!("{filter_name}.{}", field.name),
-            label: default_label(&field.name),
-            field_type: field_type(field.ty),
+            label: field.label.clone().unwrap_or_else(|| default_label(&field.name)),
+            description: field.description.clone(),
+            field_type: field_type(field),
         });
         layout.push(Stmt::Read {
             field: proto_fields.len() - 1,
@@ -110,9 +125,9 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     }
 }
 
-/// The Wireshark field type a built-in is shown as (spec §3.4.4).
-fn field_type(ty: Builtin) -> FieldType {
-    match ty {
+/// The Wireshark field type a Field is shown as (spec §3.4.4, §3.4.6).
+fn field_type(field: &Field) -> FieldType {
+    match field.ty {
         Builtin::Int { signed, bytes } => {
             let constructor = match (signed, bytes) {
                 (false, 1) => "uint8",
@@ -126,16 +141,28 @@ fn field_type(ty: Builtin) -> FieldType {
                 (true, 4) => "int32",
                 (true, _) => "int64",
             };
-            FieldType::new(constructor, Some("base.DEC"))
+            let display = field.display.expect("validation gives every integer a display");
+            FieldType::new(constructor, Args::Display(base(display)))
         }
-        Builtin::Bool => FieldType::new("bool", Some("base.NONE")),
-        Builtin::Float32 => FieldType::new("float", None),
-        Builtin::Float64 => FieldType::new("double", None),
-        Builtin::Ipv4 => FieldType::new("ipv4", None),
-        Builtin::Ipv6 => FieldType::new("ipv6", None),
-        Builtin::Ether => FieldType::new("ether", None),
-        Builtin::Eui64 => FieldType::new("eui64", None),
-        Builtin::Guid => FieldType::new("guid", None),
+        Builtin::Bool => FieldType::new("bool", Args::Display("base.NONE")),
+        Builtin::Float32 => FieldType::new("float", Args::Plain),
+        Builtin::Float64 => FieldType::new("double", Args::Plain),
+        Builtin::Ipv4 => FieldType::new("ipv4", Args::Plain),
+        Builtin::Ipv6 => FieldType::new("ipv6", Args::Plain),
+        Builtin::Ether => FieldType::new("ether", Args::Plain),
+        Builtin::Eui64 => FieldType::new("eui64", Args::Plain),
+        Builtin::Guid => FieldType::new("guid", Args::Plain),
+    }
+}
+
+/// The Lua `base` value of a display.
+fn base(display: Display) -> &'static str {
+    match display {
+        Display::Dec => "base.DEC",
+        Display::Hex => "base.HEX",
+        Display::Oct => "base.OCT",
+        Display::DecHex => "base.DEC_HEX",
+        Display::HexDec => "base.HEX_DEC",
     }
 }
 

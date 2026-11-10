@@ -4,11 +4,12 @@
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
 use crate::diagnostic::{Diagnostic, Name, record};
-use crate::keys::{Keys, Spanned, closest, expect_string, read_keys, wrong_type};
+use crate::keys::{Keys, Spanned, closest, expect_string, is_single_line, read_keys, wrong_type};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-const KEYS: [&str; 8] = ["name", "type", "fields", "switch", "endian", "size", "prefix", "terminator"];
+const KEYS: [&str; 11] =
+    ["name", "type", "fields", "switch", "endian", "size", "prefix", "terminator", "display", "label", "description"];
 
 /// The keys that say what a Field is; exactly one is required (spec §3.4.3).
 const KIND_KEYS: [&str; 3] = ["type", "fields", "switch"];
@@ -91,6 +92,23 @@ impl Builtin {
         }
     }
 
+    /// The `display:` values this type takes, the default first (spec §3.4.6). Empty when the
+    /// type takes none.
+    pub(crate) fn displays(self) -> &'static [Display] {
+        match self {
+            Self::Int { signed: false, .. } => &UNSIGNED_DISPLAYS,
+            Self::Int { signed: true, .. } => &[Display::Dec],
+            Self::Bool
+            | Self::Float32
+            | Self::Float64
+            | Self::Ipv4
+            | Self::Ipv6
+            | Self::Ether
+            | Self::Eui64
+            | Self::Guid => &[],
+        }
+    }
+
     /// Whether `endian:` changes how the value is read. Single bytes, IPv6 addresses and
     /// Ethernet addresses have no byte order.
     pub(crate) fn has_byte_order(self) -> bool {
@@ -99,6 +117,52 @@ impl Builtin {
             Self::Float32 | Self::Float64 | Self::Ipv4 | Self::Eui64 | Self::Guid => true,
             Self::Bool | Self::Ipv6 | Self::Ether => false,
         }
+    }
+}
+
+/// How a value is shown (spec §3.4.6). Which values a type takes is [`Builtin::displays`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Display {
+    Dec,
+    Hex,
+    Oct,
+    DecHex,
+    HexDec,
+}
+
+/// The `display:` values of an unsigned integer, the default first.
+const UNSIGNED_DISPLAYS: [Display; 5] = [Display::Dec, Display::Hex, Display::Oct, Display::DecHex, Display::HexDec];
+
+impl Display {
+    /// The value as written in `display:`.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dec => "dec",
+            Self::Hex => "hex",
+            Self::Oct => "oct",
+            Self::DecHex => "dec_hex",
+            Self::HexDec => "hex_dec",
+        }
+    }
+
+    /// Reads the `display:` value of a Field of type `builtin`, written `ty`, reporting anything
+    /// outside the matrix as `incompatible-display`.
+    fn check(value: &Spanned<String>, ty: &Spanned<String>, builtin: Builtin) -> Result<Self, Diagnostic> {
+        let allowed = builtin.displays();
+        if let Some(display) = allowed.iter().copied().find(|d| d.as_str() == value.value) {
+            return Ok(display);
+        }
+        let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
+        Err(match allowed {
+            [] => error(format!("`{}` takes no `display`", ty.value)).with_note("remove `display`", None),
+            [only] => error(format!("`{}` is shown only as `{}`", ty.value, only.as_str()))
+                .with_note("remove `display`: it is the default", None),
+            _ => {
+                let names: Vec<&str> = allowed.iter().map(|d| d.as_str()).collect();
+                error(format!("`{}` is not a display of `{}`", value.value, ty.value))
+                    .with_note(format!("`display` is one of: {}", names.join(", ")), None)
+            }
+        })
     }
 }
 
@@ -130,6 +194,9 @@ pub(crate) struct RawField {
     name: Spanned<String>,
     ty: Spanned<String>,
     endian: Option<Spanned<String>>,
+    display: Option<Spanned<String>>,
+    label: Option<Spanned<String>>,
+    description: Option<Spanned<String>>,
     /// The length keys present, by key span.
     length_keys: Vec<Spanned<&'static str>>,
 }
@@ -141,6 +208,12 @@ pub(crate) struct Field {
     pub(crate) ty: Builtin,
     /// The byte order in effect: the Field's own, else the top level's.
     pub(crate) endian: Endian,
+    /// The `display:` value, or the type's default; `None` for a type that takes none.
+    pub(crate) display: Option<Display>,
+    /// The tree text, when `label:` gives one (spec §3.4.8).
+    pub(crate) label: Option<String>,
+    /// The `ProtoField` blurb, when `description:` gives one.
+    pub(crate) description: Option<String>,
 }
 
 /// Stage 2: reads one entry of a structure, pushing its errors.
@@ -159,15 +232,21 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
 
     let ty = read_kind(node, &keys, errors);
 
-    let endian =
-        keys.get("endian").and_then(|value| record(expect_string(value, "endian", Name::InvalidEndian), errors));
+    let mut string_value =
+        |key: &str, invalid: Name| keys.get(key).and_then(|value| record(expect_string(value, key, invalid), errors));
+    let endian = string_value("endian", Name::InvalidEndian);
+    let display = string_value("display", Name::IncompatibleDisplay);
+    let label = string_value("label", Name::InvalidLabel);
+    let description = string_value("description", Name::InvalidDescription);
     let length_keys = LENGTH_KEYS
         .iter()
         .filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() }))
         .collect();
 
     match (name, ty) {
-        (Some(name), Some(ty)) if errors.len() == before => Some(RawField { name, ty, endian, length_keys }),
+        (Some(name), Some(ty)) if errors.len() == before => {
+            Some(RawField { name, ty, endian, display, label, description, length_keys })
+        }
         _ => None,
     }
 }
@@ -262,11 +341,37 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
             Some(value) => record(Endian::check(value), diagnostics),
             None => Some(endian),
         };
-        if let (Some(ty), Some(endian)) = (ty, endian) {
-            layout.push(Field { name: name.value.clone(), ty, endian });
+        let display = match (ty, &field.display) {
+            (Some(ty), Some(value)) => record(Display::check(value, &field.ty, ty), diagnostics).map(Some),
+            (Some(ty), None) => Some(ty.displays().first().copied()),
+            (None, _) => None,
+        };
+        check_tree_text(field, diagnostics);
+        if let (Some(ty), Some(endian), Some(display)) = (ty, endian, display) {
+            let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
+            let (label, description) = (text(&field.label), text(&field.description));
+            layout.push(Field { name: name.value.clone(), ty, endian, display, label, description });
         }
     }
     layout
+}
+
+/// `label:` is non-empty and single line, `description:` single line (spec §3.4.8).
+fn check_tree_text(field: &RawField, diagnostics: &mut Vec<Diagnostic>) {
+    if let Some(label) = field.label.as_ref().filter(|l| l.value.trim().is_empty() || !is_single_line(&l.value)) {
+        diagnostics.push(Diagnostic::new(
+            Name::InvalidLabel,
+            label.span.clone(),
+            "a label must be a non-empty single line",
+        ));
+    }
+    if let Some(description) = field.description.as_ref().filter(|d| !is_single_line(&d.value)) {
+        diagnostics.push(Diagnostic::new(
+            Name::InvalidDescription,
+            description.span.clone(),
+            "a description must be a single line",
+        ));
+    }
 }
 
 /// Why a `type:` names no built-in this version reads: a built-in of the format that is not

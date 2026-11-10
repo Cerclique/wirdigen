@@ -1,0 +1,6 @@
+# plain=dec=42, hex=0x0102, oct=8, dec_hex=256, hex_dec=0x001000, wide_hex=0x010203040506, signed=-2.
+0000  2a 2a 01 02 08 00 00 01 00 00 10 00 01 02 03 04
+0010  05 06 ff fe
+# Every unsigned at its maximum, signed=-1.
+0000  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+0010  ff ff ff ff

@@ -306,6 +306,51 @@ fields: [ {name: id, type: uint32, size: 4} ]
 
 **Fix**: remove the length key.
 
+## `incompatible-display` {#incompatible-display}
+
+**Severity**: error
+
+A Field's `display:` is not one its type takes. Unsigned integers take `dec`, `hex`, `oct`,
+`dec_hex` and `hex_dec`; signed integers are shown only as `dec`; `bool`, the floats and the
+address types take no `display:` at all.
+
+```yaml,diagnostic=incompatible-display
+name: demo
+fields: [ {name: offset, type: int16, display: hex} ]
+```
+
+**Fix**: pick a value from the table in [Fields](reference/fields.md#display), or remove
+`display:` to use the type's default. A signed value shown in hex needs an unsigned type.
+
+## `invalid-label` {#invalid-label}
+
+**Severity**: error
+
+A Field's `label:` is empty, blank, spans several lines or is not a string. The label is the
+Field's one-line text in the protocol tree.
+
+```yaml,diagnostic=invalid-label
+name: demo
+fields: [ {name: id, type: uint8, label: ""} ]
+```
+
+**Fix**: write a single-line label, or leave `label:` out to derive it from the name ("Id").
+
+## `invalid-description` {#invalid-description}
+
+**Severity**: error
+
+A Field's `description:` spans several lines or is not a string. Wireshark shows it on one
+line, in the status bar and the field reference.
+
+```yaml,diagnostic=invalid-description
+name: demo
+fields:
+  - { name: id, type: uint8, description: "Identifies\nthe request" }
+```
+
+**Fix**: write the description on one line, or quote a value YAML reads as a number or a bool.
+
 ## `not-supported-yet` {#not-supported-yet}
 
 **Severity**: error

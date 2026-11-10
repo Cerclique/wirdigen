@@ -1,0 +1,9 @@
+[
+  {
+    "tree_text.msg_type": "1",
+    "tree_text.id": "0x1234",
+    "tree_text.flag": "1",
+    "tree_text.ratio": "0.5",
+    "tree_text.addr": "192.168.0.1"
+  }
+]
