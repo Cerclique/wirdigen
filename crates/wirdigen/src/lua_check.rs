@@ -58,10 +58,13 @@ fn check(lua: Lua, mode: Mode, name: &str, source: &str) -> Result<(), String> {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap_or_else(|e| panic!("cannot run `{}` ({e}); install it or unset WIRDIGEN_LUA", lua.binary));
-    child.stdin.take().unwrap().write_all(source.as_bytes()).unwrap();
-    let output = child.wait_with_output().unwrap();
+    // The driver exits before reading stdin on a wrong interpreter, so a failed write is only
+    // an error once the exit status says the source was read.
+    let written = child.stdin.take().expect("stdin is piped").write_all(source.as_bytes());
+    let output = child.wait_with_output().expect("the interpreter's output is readable");
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     match output.status.code() {
+        Some(0 | 1) if written.is_err() => panic!("cannot send the source to `{}`: {written:?}", lua.binary),
         Some(0) => Ok(()),
         Some(1) => Err(stderr),
         _ => panic!("`{}` is unusable: {} {stderr}", lua.binary, output.status),

@@ -731,7 +731,7 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
 ### 10.4 Lua checks (`WIRDIGEN_LUA=1`)
 
 - Every golden `.lua` and every prelude chunk parses under Lua 5.2 and compiles under 5.3 and 5.4.
-- Under 5.3 and 5.4, each chunk plus its declared dependencies runs its top level in a strict environment: the standard library, its dependencies' names and inert placeholders for Wireshark's globals. Any other global read is an error.
+- Under 5.3 and 5.4, each chunk plus its declared dependencies runs its top level in a strict environment: the standard library, its dependencies' names and inert placeholders for Wireshark's globals, with `get_version()` returning the 4.4 floor so the version guard runs. Any other global read is an error.
 
 ### 10.5 tshark (`WIRDIGEN_TSHARK=1`)
 
