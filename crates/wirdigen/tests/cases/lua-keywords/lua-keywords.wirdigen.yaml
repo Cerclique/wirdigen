@@ -1,0 +1,5 @@
+name: keywords
+title: Lua "keywords" as Field names
+fields:
+  - { name: end, type: uint8 }
+  - { name: type, type: uint16 }
