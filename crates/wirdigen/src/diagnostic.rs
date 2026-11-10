@@ -104,6 +104,12 @@ pub struct Diagnostic {
     notes: Vec<Note>,
 }
 
+/// The value of `result`, or `None` after pushing its Diagnostic to `diagnostics`, so a check
+/// can go on and report every mistake.
+pub(crate) fn record<T>(result: Result<T, Diagnostic>, diagnostics: &mut Vec<Diagnostic>) -> Option<T> {
+    result.map_err(|d| diagnostics.push(d)).ok()
+}
+
 impl Diagnostic {
     /// A Diagnostic whose severity is the one its name carries.
     pub(crate) fn new(name: Name, span: Range<usize>, message: impl Into<String>) -> Self {

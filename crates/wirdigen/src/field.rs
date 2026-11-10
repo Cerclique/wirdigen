@@ -4,7 +4,7 @@
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
 use crate::description::{Spanned, closest, expect_string, read_keys, wrong_type};
-use crate::diagnostic::{Diagnostic, Name};
+use crate::diagnostic::{Diagnostic, Name, record};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
@@ -155,9 +155,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
     if keys.get("name").is_none() && !keys.misspelt("name") {
         errors.push(Diagnostic::new(Name::MissingKey, node.span.clone(), "missing required key `name`"));
     }
-    let name = keys
-        .get("name")
-        .and_then(|value| expect_string(value, "name", Name::InvalidFieldName).map_err(|e| errors.push(e)).ok());
+    let name = keys.get("name").and_then(|value| record(expect_string(value, "name", Name::InvalidFieldName), errors));
 
     let kinds: Vec<(&str, &Node)> = KIND_KEYS.iter().filter_map(|k| keys.key_of(k).map(|key| (*k, key))).collect();
     let ty = match kinds.as_slice() {
@@ -172,7 +170,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
         }
         [("type", _)] => {
             let value = keys.get("type").expect("the key was found");
-            expect_string(value, "type", Name::WrongValueType).map_err(|e| errors.push(e)).ok()
+            record(expect_string(value, "type", Name::WrongValueType), errors)
         }
         [(kind, key)] => {
             errors.push(Diagnostic::new(
@@ -197,9 +195,8 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
         }
     };
 
-    let endian = keys
-        .get("endian")
-        .and_then(|value| expect_string(value, "endian", Name::InvalidEndian).map_err(|e| errors.push(e)).ok());
+    let endian =
+        keys.get("endian").and_then(|value| record(expect_string(value, "endian", Name::InvalidEndian), errors));
     let length_keys = LENGTH_KEYS
         .iter()
         .filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() }))
@@ -255,7 +252,7 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
             None => diagnostics.push(unknown_type(&field.ty)),
         }
         let endian = match &field.endian {
-            Some(value) => Endian::check(value).map_err(|e| diagnostics.push(e)).ok(),
+            Some(value) => record(Endian::check(value), diagnostics),
             None => Some(endian),
         };
         if let (Some(ty), Some(endian)) = (ty, endian) {

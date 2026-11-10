@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use crate::diagnostic::{Diagnostic, Name, Severity};
+use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Endian, Field, RawField};
 use crate::scalar::{Kind, resolve_plain};
 use crate::yaml::{Node, Value};
@@ -139,14 +139,8 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
         }
     }
 
-    let mut string_value = |key: &str, invalid: Name| match keys.get(key).map(|n| expect_string(n, key, invalid)) {
-        Some(Ok(value)) => Some(value),
-        Some(Err(error)) => {
-            errors.push(error);
-            None
-        }
-        None => None,
-    };
+    let mut string_value =
+        |key: &str, invalid: Name| keys.get(key).and_then(|n| record(expect_string(n, key, invalid), &mut errors));
     let name = string_value("name", Name::InvalidProtocolName);
     let title = string_value("title", Name::InvalidProtocolTitle);
     let endian = string_value("endian", Name::InvalidEndian);
@@ -179,9 +173,7 @@ fn read_allow(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<Spanned<String>>
     };
     items
         .iter()
-        .filter_map(|item| {
-            expect_string(item, "an `allow` entry", Name::WrongValueType).map_err(|e| errors.push(e)).ok()
-        })
+        .filter_map(|item| record(expect_string(item, "an `allow` entry", Name::WrongValueType), errors))
         .collect()
 }
 
@@ -223,7 +215,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         diagnostics.push(Diagnostic::new(Name::UnknownAllow, entry.span.clone(), message));
     }
     let endian = match &description.endian {
-        Some(value) => Endian::check(value).map_err(|e| diagnostics.push(e)).ok(),
+        Some(value) => record(Endian::check(value), &mut diagnostics),
         None => Some(Endian::default()),
     };
     // An invalid top-level byte order is an error already, so any stand-in will do.
