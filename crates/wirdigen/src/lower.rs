@@ -4,7 +4,7 @@
 //! a Wirdigen bug and panics, it is never a Diagnostic.
 
 use crate::description::Protocol;
-use crate::field::{self, Builtin, Endian, Field};
+use crate::field::{Builtin, Endian, Field};
 use crate::prelude;
 
 /// The model the emitter prints.
@@ -75,7 +75,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         proto_fields.push(ProtoField {
             local: format!("f_{}", field.name),
             abbrev: format!("{filter_name}.{}", field.name),
-            label: field::default_label(&field.name),
+            label: default_label(&field.name),
             ftype,
             display,
         });
@@ -143,6 +143,13 @@ fn add(field: &Field) -> Add {
     }
 }
 
+/// The default tree text of a Field: `msg_type` becomes "Msg type" (spec §3.4.8).
+fn default_label(name: &str) -> String {
+    let spaced = name.replace('_', " ");
+    let mut chars = spaced.chars();
+    chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +159,13 @@ mod tests {
         let root = yaml::parse(text).unwrap();
         let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
         lower(&protocol.unwrap_or_else(|| panic!("{diagnostics:?}")), source_name)
+    }
+
+    #[test]
+    fn labels_come_from_names() {
+        assert_eq!(default_label("msg_type"), "Msg type");
+        assert_eq!(default_label("id"), "Id");
+        assert_eq!(default_label("ip_v4_addr"), "Ip v4 addr");
     }
 
     #[test]

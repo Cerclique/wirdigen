@@ -294,22 +294,3 @@ fn is_field_name(name: &str) -> bool {
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
-
-/// The default tree text of a Field: `msg_type` becomes "Msg type" (spec §3.4.8).
-pub(crate) fn default_label(name: &str) -> String {
-    let spaced = name.replace('_', " ");
-    let mut chars = spaced.chars();
-    chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn labels_come_from_names() {
-        assert_eq!(default_label("msg_type"), "Msg type");
-        assert_eq!(default_label("id"), "Id");
-        assert_eq!(default_label("ip_v4_addr"), "Ip v4 addr");
-    }
-}
