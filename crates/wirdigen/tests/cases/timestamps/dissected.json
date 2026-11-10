@@ -1,0 +1,27 @@
+[
+  {
+    "timestamps.abs_secs": "Jan  1, 2024 00:00:00.000000000 UTC",
+    "timestamps.abs_secs_nsecs": "Jan  1, 2024 00:00:00.500000000 UTC",
+    "timestamps.abs_ntp": "Jan  1, 2024 00:00:00.500000000 UTC",
+    "timestamps.abs_msecs": "Jan  1, 2024 00:00:00.123000000 UTC",
+    "timestamps.abs_usecs": "2024/001:00:00:00.123456000 UTC",
+    "timestamps.abs_nsecs": "Jan  1, 2024 00:00:00.123456789 UTC",
+    "timestamps.abs_le": "Jan  1, 2024 00:00:00.000000000 UTC",
+    "timestamps.rel_secs": "90.000000000",
+    "timestamps.rel_secs_nsecs": "1.250000000",
+    "timestamps.rel_msecs": "1.500000000",
+    "timestamps.rel_usecs": "1.500000000",
+    "timestamps.rel_nsecs": "1.500000000"
+  },
+  {
+    "timestamps.abs_secs": "Jan  1, 2024 00:00:00.000000000 UTC",
+    "timestamps.abs_secs_nsecs": "Jan  1, 2024 00:00:00.500000000 UTC",
+    "_ws.expert": {
+      "timestamps._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: abs_ntp",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

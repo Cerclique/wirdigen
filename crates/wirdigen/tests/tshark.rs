@@ -229,6 +229,11 @@ cases! {
     endian => "endian",
     display => "display",
     tree_text => "tree-text",
+    strings => "strings",
+    bytes => "bytes",
+    prefixes => "prefixes",
+    timestamps => "timestamps",
+    timestamps_le => "timestamps-le",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.

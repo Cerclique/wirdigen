@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: user, type: string, terminator: '0' }

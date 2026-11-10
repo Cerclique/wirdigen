@@ -1,0 +1,9 @@
+# 2024-01-01 00:00:00 UTC as abs_secs, then + 0.5 s (secs_nsecs, ntp), + 0.123 s (msecs), + 0.123456 s (usecs), + 0.123456789 s (nsecs), abs_le little-endian; rel_secs 90 s, rel_secs_nsecs 1.25 s, rel_msecs, rel_usecs and rel_nsecs 1.5 s.
+0000  65 92 00 80 65 92 00 80 1d cd 65 00 e9 3c 7f 00
+0010  80 00 00 00 00 00 01 8c c2 51 f4 7b 00 06 0d d7
+0020  10 23 02 40 17 a6 10 17 08 c0 cd 15 80 00 92 65
+0030  00 00 00 5a 00 00 00 01 0e e6 b2 80 00 00 00 00
+0040  00 00 05 dc 00 00 00 00 00 16 e3 60 00 00 00 00
+0050  59 68 2f 00
+# Truncated in abs_ntp: 4 of its 8 bytes.
+0000  65 92 00 80 65 92 00 80 1d cd 65 00 e9 3c 7f 00

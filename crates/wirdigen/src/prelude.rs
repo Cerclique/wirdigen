@@ -14,6 +14,8 @@ pub(crate) const VERSION: &str = "version";
 pub(crate) const MALFORMED: &str = "malformed";
 /// Bounds checking before a read.
 pub(crate) const BOUNDS: &str = "bounds";
+/// Finding the end of a `terminator:` Field.
+pub(crate) const TERMINATED: &str = "terminated";
 
 #[derive(Debug)]
 struct Chunk {

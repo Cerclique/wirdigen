@@ -202,7 +202,7 @@ Built-in names describe the wire, not Wireshark's ftypes.
 - `utf16` and `ucs2` follow the Field's `endian:` (§3.11), and their `terminator:` is a 2-byte zero.
 - A timestamp's size follows from its encoding, so `size:` on `abs_time`/`rel_time` is rejected.
 - `encoding:` on any other type is `incompatible-display`.
-- That every `ENC_TIME_*` value works through Lua's `add_packet_field` on 4.4 is unverified; the tshark corpus covers every value (§10.5).
+- Every `ENC_TIME_*` value works through Lua's `add_packet_field` on 4.4.19 and 4.6.9, in both byte orders (#57); the `timestamps` corpus case covers each value (§10.5).
 
 #### 3.4.6 `display:`
 
@@ -268,8 +268,10 @@ A variable-length Field (string, bytes, …) states its length with exactly one 
 |---|---|
 | `size: <expr>` | Byte length from an Expression over earlier Fields, or a constant. |
 | `size: "_remaining"` | Up to the end of the innermost enclosing structure with a known size, or of the message. |
-| `prefix: <int type>` | Length read from an integer just before the value (`prefix: uint16`). |
-| `terminator: <byte>` | Ends at that byte (NUL-terminated strings). |
+| `prefix: <int type>` | Length read from an unsigned integer type (`uint8` … `uint64`) just before the value, in the Field's byte order (`prefix: uint16`). |
+| `terminator: <byte>` | Ends at that byte, 0 to 255 (NUL-terminated strings). The terminator is consumed but not part of the value. |
+
+None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
 
 A Field placed after a `size: "_remaining"` Field in the same structure is a warning.
 
@@ -500,7 +502,7 @@ Each stage reports **all** its errors, and the next stage runs only if the curre
 Errors:
 
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
-- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); length keys on a fixed-size type, or none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
+- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
 - `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
 - `invalid-label`, `invalid-description` (§3.4.8);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
@@ -508,7 +510,8 @@ Errors:
 - forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;
 - duplicate sibling Field names; duplicate or unknown Type names; recursive Types;
 - overlapping `switch` cases;
-- mutually exclusive keys together (`size`/`prefix`/`terminator`, `count`/`repeat`);
+- mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`);
+- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; a leading-zero literal; a non-associative comparison chain;
 - invalid ports and port ranges (§3.12);
@@ -742,8 +745,9 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
   - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04.
 - No source builds and no RC or nightly job. Lua 5.3 is covered only by the load check.
 - The harness sets `LC_ALL=C`, `TZ=UTC` and a temporary `WIRESHARK_CONFIG_DIR`.
-- The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5), since their behaviour through Lua's `add_packet_field` on 4.4 is not yet verified. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
+- The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5) in both byte orders. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
 - Confirmed on 4.4.19 and 4.6.9 (#51): a Lua load error only prints to stderr and tshark still exits 0; as root, tshark warns on stderr and skips `-X lua_script`; every packet carries a harmless `_ws.lua.fake` item once a script is loaded; UDP never calls a Dissector for an empty payload. Installing tshark takes about 15 s from Debian and 45 s from the PPA.
+- Confirmed on 4.4.19 and 4.6.9 (#57): `-T json` prints an `FT_ABSOLUTE_TIME` value as its display text on 4.4 (`Jan  1, 2024 00:00:00.000000000 UTC`) but as ISO 8601 UTC on 4.6, whatever its `display:` (`2024-01-01T00:00:00.000000000Z`). The decoded instants agree, so the `timestamps` case carries the documented exception `dissected-4.6.json`; a new stable version may need its own file.
 
 ### 10.6 Bad input
 

@@ -1,3 +1,0 @@
-name: demo
-fields:
-  - { name: id, type: string }

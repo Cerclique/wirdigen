@@ -1,0 +1,24 @@
+[
+  {
+    "prefixes.p16": "aa",
+    "prefixes.p24": "bb:cc",
+    "prefixes.p32_le": "dd",
+    "prefixes.p40": "ee",
+    "prefixes.p56_le": "hi",
+    "prefixes.p64": "ok"
+  },
+  {
+    "prefixes.p16": "",
+    "prefixes.p24": "",
+    "prefixes.p32_le": "",
+    "prefixes.p40": "",
+    "prefixes.p56_le": "",
+    "_ws.expert": {
+      "prefixes._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: p64",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

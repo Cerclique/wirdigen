@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: sent, type: abs_time, size: 4 }

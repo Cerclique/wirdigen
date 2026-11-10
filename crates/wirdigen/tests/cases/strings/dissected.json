@@ -1,0 +1,56 @@
+[
+  {
+    "strings.fixed": "abcd",
+    "strings.user": "alice",
+    "strings.note": "é!",
+    "strings.path": "/tmp",
+    "strings.line": "ok",
+    "strings.wide": "Hi",
+    "strings.wide_be": "AB",
+    "strings.legacy": "été"
+  },
+  {
+    "strings.fixed": "ab",
+    "strings.user": "",
+    "strings.note": "",
+    "strings.path": "",
+    "strings.line": "",
+    "strings.wide": "AĀ",
+    "strings.wide_be": "AB",
+    "strings.legacy": "ABC"
+  },
+  {
+    "strings.fixed": "abcd",
+    "_ws.expert": {
+      "strings._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: user",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "strings.fixed": "abcd",
+    "strings.user": "",
+    "strings.note": "",
+    "_ws.expert": {
+      "strings._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: path",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "strings.fixed": "abcd",
+    "strings.user": "",
+    "strings.note": "",
+    "_ws.expert": {
+      "strings._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: path",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

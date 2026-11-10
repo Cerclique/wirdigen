@@ -1,0 +1,6 @@
+# Little-endian: 2024-01-01 00:00:00 UTC as abs_secs, + 0.5 s (secs_nsecs, ntp), + 0.123 s (msecs), + 0.123456 s (usecs), + 0.123456789 s (nsecs); rel_secs 90 s, rel_secs_nsecs 1.25 s, rel_msecs, rel_usecs and rel_nsecs 1.5 s.
+0000  80 00 92 65 80 00 92 65 00 65 cd 1d 00 7f 3c e9
+0010  00 00 00 80 7b f4 51 c2 8c 01 00 00 40 02 23 10
+0020  d7 0d 06 00 15 cd c0 08 17 10 a6 17 5a 00 00 00
+0030  01 00 00 00 80 b2 e6 0e dc 05 00 00 00 00 00 00
+0040  60 e3 16 00 00 00 00 00 00 2f 68 59 00 00 00 00

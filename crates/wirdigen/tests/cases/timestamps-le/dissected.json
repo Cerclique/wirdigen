@@ -1,0 +1,15 @@
+[
+  {
+    "timestamps-le.abs_secs": "Jan  1, 2024 00:00:00.000000000 UTC",
+    "timestamps-le.abs_secs_nsecs": "Jan  1, 2024 00:00:00.500000000 UTC",
+    "timestamps-le.abs_ntp": "Jan  1, 2024 00:00:00.500000000 UTC",
+    "timestamps-le.abs_msecs": "Jan  1, 2024 00:00:00.123000000 UTC",
+    "timestamps-le.abs_usecs": "Jan  1, 2024 00:00:00.123456000 UTC",
+    "timestamps-le.abs_nsecs": "Jan  1, 2024 00:00:00.123456789 UTC",
+    "timestamps-le.rel_secs": "90.000000000",
+    "timestamps-le.rel_secs_nsecs": "1.250000000",
+    "timestamps-le.rel_msecs": "1.500000000",
+    "timestamps-le.rel_usecs": "1.500000000",
+    "timestamps-le.rel_nsecs": "1.500000000"
+  }
+]

@@ -49,4 +49,9 @@ cases! {
     endian => "endian",
     display => "display",
     tree_text => "tree-text",
+    strings => "strings",
+    bytes => "bytes",
+    prefixes => "prefixes",
+    timestamps => "timestamps",
+    timestamps_le => "timestamps-le",
 }

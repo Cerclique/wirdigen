@@ -40,3 +40,17 @@ end
 local function wd_fits(tvb, offset, size)
     return offset + size <= tvb:len()
 end
+
+--@chunk terminated
+-- The number of bytes from `offset` to the first run of `width` `terminator` bytes, searched
+-- in steps of `width` so a 2-byte terminator stays aligned; nil when the packet ends first.
+local function wd_terminated(tvb, offset, terminator, width)
+    local bytes = tvb:raw(offset)
+    local mark = string.rep(string.char(terminator), width)
+    for at = 1, #bytes - width + 1, width do
+        if string.sub(bytes, at, at + width - 1) == mark then
+            return at - 1
+        end
+    end
+    return nil
+end

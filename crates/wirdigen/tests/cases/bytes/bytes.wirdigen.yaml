@@ -1,0 +1,9 @@
+# Bytes of every length key and display.
+name: bytes
+fields:
+  - { name: raw, type: bytes, size: 3 }
+  - { name: dotted, type: bytes, size: 3, display: dot }
+  - { name: dashed, type: bytes, prefix: uint8, display: dash }
+  - { name: colons, type: bytes, prefix: uint32, endian: little, display: colon }
+  - { name: spaced, type: bytes, terminator: 255, display: space, description: Ends at 0xff }
+  - { name: empty, type: bytes, size: 0 }

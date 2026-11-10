@@ -1,0 +1,9 @@
+# raw=01 02 03, dotted=04 05 06, dashed=07 08 (prefix 2), colons=09 0a 0b (LE uint32 prefix 3), spaced=0c 0d then ff, empty.
+0000  01 02 03 04 05 06 02 07 08 03 00 00 00 09 0a 0b
+0010  0c 0d ff
+# dashed and colons of length 0, spaced ends at once.
+0000  01 02 03 04 05 06 00 00 00 00 00 ff
+# Truncated in colons: its prefix says 5 bytes, 2 are left.
+0000  01 02 03 04 05 06 00 05 00 00 00 09 0a
+# Truncated in spaced: no ff before the end.
+0000  01 02 03 04 05 06 00 00 00 00 00 0c 0d

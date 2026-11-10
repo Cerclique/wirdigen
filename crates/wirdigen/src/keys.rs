@@ -135,7 +135,6 @@ pub(crate) fn wrong_type(span: Range<usize>, message: impl Into<String>) -> Diag
 }
 
 /// Reads a key that takes a constant: only a YAML integer, never a float or a bool.
-#[cfg_attr(not(test), expect(dead_code, reason = "first used by the Fields ticket"))]
 pub(crate) fn expect_integer(node: &Node, key: &str) -> Result<i64, Diagnostic> {
     let wrong = |what: &str| Diagnostic::new(Name::WrongValueType, node.span.clone(), format!("`{key}` {what}"));
     let Value::Scalar { text, plain: true, .. } = &node.value else {
