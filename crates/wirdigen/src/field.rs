@@ -214,10 +214,11 @@ fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Opti
     }
 }
 
-/// Stage 4: checks the Fields of one structure, pushing every Diagnostic. The Fields are
-/// returned only when none of them is wrong.
-pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<Diagnostic>) -> Option<Vec<Field>> {
-    let before = diagnostics.len();
+/// Stage 4: checks the Fields of one structure, pushing every Diagnostic.
+///
+/// Returns the Fields that passed. A wrong Field is left out, so the layout is complete only
+/// when no error was pushed: the caller decides on the run as a whole.
+pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<Diagnostic>) -> Vec<Field> {
     let mut layout = Vec::new();
     for (index, field) in fields.iter().enumerate() {
         let name = &field.name;
@@ -265,7 +266,7 @@ pub(crate) fn check(fields: &[RawField], endian: Endian, diagnostics: &mut Vec<D
             layout.push(Field { name: name.value.clone(), ty, endian });
         }
     }
-    (diagnostics.len() == before).then_some(layout)
+    layout
 }
 
 fn unknown_type(ty: &Spanned<String>) -> Diagnostic {

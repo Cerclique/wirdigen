@@ -151,7 +151,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
     // An invalid top-level byte order is an error already, so any stand-in will do.
     let fields = field::check(&description.fields, endian.unwrap_or_default(), &mut diagnostics);
     let has_errors = diagnostics.iter().any(|d| d.severity() == Severity::Error);
-    let protocol = fields.filter(|_| !has_errors).map(|fields| Protocol {
+    let protocol = (!has_errors).then(|| Protocol {
         name: description.name.value.clone(),
         title: description.title.as_ref().map(|t| t.value.clone()),
         fields,
