@@ -306,6 +306,22 @@ fields: [ {name: id, type: uint32, size: 4} ]
 
 **Fix**: remove the length key.
 
+## `not-supported-yet` {#not-supported-yet}
+
+**Severity**: error
+
+The description uses part of the format that this version of Wirdigen does not read yet, such
+as a Field made of inline `fields:` or a `switch:`. A newer Wirdigen will accept it.
+
+```yaml,diagnostic=not-supported-yet
+name: demo
+fields:
+  - { name: header, fields: [ {name: id, type: uint8} ] }
+```
+
+**Fix**: upgrade Wirdigen, or describe the layout with what this version supports, here by
+listing the Fields at the top level.
+
 ## `unknown-allow` {#unknown-allow}
 
 **Severity**: warning

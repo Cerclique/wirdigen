@@ -192,7 +192,7 @@ fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Opti
         }
         [(kind, key)] => {
             errors.push(Diagnostic::new(
-                Name::UnknownKey,
+                Name::NotSupportedYet,
                 key.span.clone(),
                 format!("`{kind}` Fields are not supported by this version of Wirdigen yet"),
             ));

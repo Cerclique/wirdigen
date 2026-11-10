@@ -64,6 +64,7 @@ names! {
     DuplicateFieldName => "duplicate-field-name", Error;
     UnknownType => "unknown-type", Error;
     UnexpectedLength => "unexpected-length", Error;
+    NotSupportedYet => "not-supported-yet", Error;
     UnknownAllow => "unknown-allow", Warning;
 }
 
