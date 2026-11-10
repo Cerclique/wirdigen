@@ -130,14 +130,10 @@ impl<'a> Reader<'a> {
         match event {
             Event::Scalar(text, style, anchor, tag) => {
                 self.check_properties(anchor, tag.is_some(), &span);
-                // A block scalar's span runs to the next line; the value ends with its last
-                // non-blank character.
-                let span = if matches!(style, ScalarStyle::Literal | ScalarStyle::Folded) {
-                    let trimmed = self.text[span.clone()].trim_end().len();
-                    span.start..span.start + trimmed
-                } else {
-                    span
-                };
+                // A block scalar's span runs to the next line, and a quoted one in a flow
+                // collection over the blanks after its quote: the value ends with its last
+                // non-blank character, the closing quote for a quoted scalar.
+                let span = span.start..span.start + self.text[span.clone()].trim_end().len();
                 let quoted = matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);
                 let spelled = match style {
                     ScalarStyle::Plain => Some(span.clone()),
@@ -234,6 +230,14 @@ mod tests {
         assert_eq!(token("size: 'a + bc'\n", 4..6), "bc");
         assert_eq!(token("size: \"a + bc\"\n", 0..1), "a");
         assert_eq!(token("{size: a + bc}\n", 4..6), "bc");
+        assert_eq!(token("{size: 'a + bc' }\n", 4..6), "bc");
+        assert_eq!(token("{size: \"a + bc\" , x: 1}\n", 0..1), "a");
+    }
+
+    #[test]
+    fn quoted_strings_in_flow_mappings_end_at_their_quote() {
+        assert_eq!(token("{size: \"a\\tb\" }\n", 0..1), "\"a\\tb\"");
+        assert_eq!(token("{size: 'a ' , x: 1}\n", 0..9), "'a '");
     }
 
     #[test]
