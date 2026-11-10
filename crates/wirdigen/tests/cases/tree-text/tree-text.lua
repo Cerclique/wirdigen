@@ -37,7 +37,7 @@ local f_msg_type = ProtoField.uint8("tree_text.msg_type", "Msg type", base.DEC)
 local f_id = ProtoField.uint16("tree_text.id", "Message ID", base.HEX, nil, nil, "Identifies the request")
 local f_flag = ProtoField.bool("tree_text.flag", "Flag \"urgent\"", base.NONE)
 local f_ratio = ProtoField.float("tree_text.ratio", "Ratio", "Ratio, 0 to 1")
-local f_addr = ProtoField.ipv4("tree_text.addr", "Adresse IPv4 (élément)", "Where it came from")
+local f_addr = ProtoField.ipv4("tree_text.addr", "Émetteur IPv4", "Where it came from")
 
 wd_proto.fields = {
     f_msg_type,

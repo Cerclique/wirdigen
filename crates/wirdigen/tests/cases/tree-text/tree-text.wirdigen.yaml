@@ -5,4 +5,4 @@ fields:
   - { name: id, type: uint16, display: hex, label: Message ID, description: Identifies the request }
   - { name: flag, type: bool, label: "Flag \"urgent\"" }
   - { name: ratio, type: float32, description: "Ratio, 0 to 1" }
-  - { name: addr, type: ipv4, label: Adresse IPv4 (élément), description: Where it came from }
+  - { name: addr, type: ipv4, label: Émetteur IPv4, description: Where it came from }
