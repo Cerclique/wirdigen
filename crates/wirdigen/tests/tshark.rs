@@ -8,8 +8,8 @@
 //!
 //! tshark exits 0 when a Lua script fails to load, and as root it skips the script with only a
 //! warning, so success is never judged from the exit status. It is judged from stderr, which
-//! must be empty, from `_ws.lua.error` and `_ws.malformed` items anywhere in a packet, and from
-//! every packet carrying the protocol's layer. tshark runs without `-J`, which could hide a
+//! must be empty, from `_ws.lua.error` and `_ws.malformed.expert` items anywhere in a packet,
+//! and from every packet carrying the protocol's layer. tshark runs without `-J`, which could hide a
 //! top-level `_ws.lua.error`; the cut to the protocol's layer is made here instead.
 //!
 //! Both supported Wireshark versions must produce the same `dissected.json`. A version-specific
@@ -125,15 +125,13 @@ fn path_str(path: &Path) -> &str {
 }
 
 /// The first key naming a Lua error or a malformed-packet exception, anywhere in `value`.
-/// `_ws.lua.fake`, on every packet once a Lua script is loaded, is not an error.
+/// Not errors: `_ws.lua.fake`, on every packet once a Lua script is loaded, and a bare
+/// `_ws.malformed`, which Wireshark adds beside every expert info in the MALFORMED group (our
+/// truncation report). An exception escaping a dissector adds `_ws.malformed.expert`.
 fn find_error(value: &Value) -> Option<String> {
     match value {
         Value::Object(map) => map.iter().find_map(|(key, value)| {
-            if key == "_ws.lua.error" || key.starts_with("_ws.malformed") {
-                Some(key.clone())
-            } else {
-                find_error(value)
-            }
+            if key == "_ws.lua.error" || key == "_ws.malformed.expert" { Some(key.clone()) } else { find_error(value) }
         }),
         Value::Array(values) => values.iter().find_map(find_error),
         _ => None,
@@ -295,7 +293,12 @@ mod harness {
     fn errors_are_found_at_any_depth() {
         let packet = serde_json::json!({ "_source": { "layers": { "uints": { "_ws.lua.error": "" } } } });
         assert_eq!(find_error(&packet).as_deref(), Some("_ws.lua.error"));
-        let fine = serde_json::json!({ "_ws.lua.fake": "", "uints": { "uints.small": "1" } });
+        let exception = serde_json::json!({ "_ws.malformed": { "_ws.malformed.expert": "" } });
+        assert_eq!(find_error(&exception).as_deref(), Some("_ws.malformed.expert"));
+        let fine = serde_json::json!({
+            "_ws.lua.fake": "",
+            "uints": { "uints.small": "1", "_ws.malformed": "Malformed Packet" }
+        });
         assert_eq!(find_error(&fine), None);
     }
 }
