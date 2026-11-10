@@ -40,4 +40,4 @@ The `1.0.0-alpha.1` section of `CHANGELOG.md` is hand-written (ADR 0003). On its
 3. **First publish of a new crate.** If a crate has never been published, publish it once by hand with a scoped API token (`cargo publish -p <crate>`), then complete step 2 and revoke the token.
 4. Optionally, once Trusted Publishing works, tick *Require trusted publishing* on each crate to disable token publishing.
 
-Both crates are published in one `cargo publish --workspace` run, in dependency order. If it fails part-way, fix the cause and re-run the failed job: already-published crates are skipped.
+Both crates are published in one `cargo publish --workspace` run, in dependency order. If it fails part-way, check crates.io for which crates were published before deciding how to proceed: a published version can never be re-published.
