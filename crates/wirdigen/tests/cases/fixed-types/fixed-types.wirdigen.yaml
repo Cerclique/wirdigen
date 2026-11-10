@@ -1,0 +1,11 @@
+# Every fixed-size built-in that is not an integer, big-endian.
+name: fixed-types
+fields:
+  - { name: is_set, type: bool }
+  - { name: ratio, type: float32 }
+  - { name: precise_ratio, type: float64 }
+  - { name: ipv4_addr, type: ipv4 }
+  - { name: ipv6_addr, type: ipv6 }
+  - { name: mac_addr, type: ether }
+  - { name: eui64_addr, type: eui64 }
+  - { name: uuid, type: guid }

@@ -1,2 +1,2 @@
 name: true
-fields: [ {name: a} ]
+fields: [ {name: a, type: uint8} ]

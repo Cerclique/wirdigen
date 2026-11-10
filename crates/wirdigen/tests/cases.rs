@@ -44,4 +44,7 @@ macro_rules! cases {
 cases! {
     uints => "uints",
     lua_keywords => "lua-keywords",
+    integers => "integers",
+    fixed_types => "fixed-types",
+    endian => "endian",
 }

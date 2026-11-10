@@ -28,13 +28,13 @@ fn diagnostics_work_with_question_mark() {
     fn run(text: &str) -> Result<String, Box<dyn std::error::Error>> {
         Ok(wirdigen::validate(&Source::new("x", text))?.generate())
     }
-    let err = run("name: Demo\nfields: [ {name: a} ]\n").unwrap_err();
+    let err = run("name: Demo\nfields: [ {name: a, type: uint8} ]\n").unwrap_err();
     assert!(err.to_string().contains("1 error"), "{err}");
 }
 
 #[test]
 fn diagnostic_accessors() {
-    let source = Source::new("x", "name: Demo\nfields: [ {name: a} ]\n");
+    let source = Source::new("x", "name: Demo\nfields: [ {name: a, type: uint8} ]\n");
     let diagnostics = wirdigen::validate(&source).unwrap_err();
     assert!(diagnostics.has_errors());
     let d = &diagnostics.iter().next().expect("one");

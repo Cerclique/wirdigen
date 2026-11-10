@@ -1,0 +1,20 @@
+# Unsigned: each width counts up from 0x01 (u16=0x0102 ... u64=0x0102030405060708). Signed: all -1.
+0000  01 01 02 01 02 03 01 02 03 04 01 02 03 04 05 01
+0010  02 03 04 05 06 01 02 03 04 05 06 07 01 02 03 04
+0020  05 06 07 08 ff ff ff ff ff ff ff ff ff ff ff ff
+0030  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+0040  ff ff ff ff ff ff ff ff
+# Unsigned at their maximums; signed at their minimums (0x80 then zeros).
+0000  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+0010  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+0020  ff ff ff ff 80 80 00 80 00 00 80 00 00 00 80 00
+0030  00 00 00 80 00 00 00 00 00 80 00 00 00 00 00 00
+0040  80 00 00 00 00 00 00 00
+# Unsigned all zero; signed at their maximums (0x7f then 0xff).
+0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0010  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0020  00 00 00 00 7f 7f ff 7f ff ff 7f ff ff ff 7f ff
+0030  ff ff ff 7f ff ff ff ff ff 7f ff ff ff ff ff ff
+0040  7f ff ff ff ff ff ff ff
+# Truncated in u40, read by the generated code: u8 to u32 are zero, then 3 of its 5 bytes.
+0000  00 00 00 00 00 00 00 00 00 00 01 02 03
