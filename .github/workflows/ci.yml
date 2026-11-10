@@ -88,8 +88,6 @@ jobs:
           runuser -l tester -c "cd '$GITHUB_WORKSPACE' && . ~/.cargo/env && rustup toolchain install"
       - name: tshark version
         run: tshark --version
-      - name: Probe tshark gotchas (temporary)
-        run: sh .github/probe-tshark.sh
       - run: runuser -l tester -c "cd '$GITHUB_WORKSPACE' && . ~/.cargo/env && make test-tshark"
 
   # The latest stable Wireshark, following upstream releases through the PPA (spec §10.5).
@@ -107,8 +105,6 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark
       - name: tshark version
         run: tshark --version
-      - name: Probe tshark gotchas (temporary)
-        run: sh .github/probe-tshark.sh
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: make test-tshark
 
