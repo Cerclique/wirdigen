@@ -3,6 +3,8 @@
 //! Stage 2 reads each entry's keys into a [`RawField`]; stage 4 turns the raw Fields into the
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
+use std::ops::RangeInclusive;
+
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping};
@@ -115,13 +117,13 @@ impl Builtin {
         }
     }
 
-    /// The lowest and highest values of an integer type, or `None` for any other type.
-    pub(crate) fn int_range(self) -> Option<(i128, i128)> {
+    /// The values of an integer type, or `None` for any other type.
+    pub(crate) fn int_range(self) -> Option<RangeInclusive<i128>> {
         match self {
-            Self::Int { signed: false, bytes } => Some((0, (1_i128 << (8 * bytes)) - 1)),
+            Self::Int { signed: false, bytes } => Some(0..=(1_i128 << (8 * bytes)) - 1),
             Self::Int { signed: true, bytes } => {
                 let half = 1_i128 << (8 * bytes - 1);
-                Some((-half, half - 1))
+                Some(-half..=half - 1)
             }
             _ => None,
         }
@@ -658,6 +660,7 @@ pub(crate) fn check(
             (Some(ty), None) => Some(ty.displays().first().copied()),
             (None, _) => None,
         };
+        enums.mark_used(&field.mappings);
         let mapping = ty.and_then(|ty| mapping::check(&field.mappings, &field.ty, ty, enums, diagnostics).ok());
         check_tree_text(field, diagnostics);
         if let (Some(ty), Some(endian), Some(length), Some(encoding), Some(display), Some(mapping)) =

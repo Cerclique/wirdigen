@@ -6,11 +6,11 @@
 //! top-level `enums:` names tables so several Fields can share one.
 
 use std::collections::BTreeMap;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::Builtin;
-use crate::keys::{Keys, Spanned, closest, expect_string, is_single_line, wrong_type};
+use crate::keys::{Keys, Spanned, closest, duplicate_key, expect_string, is_single_line, wrong_type};
 use crate::scalar::{Kind, parse_int, resolve_plain};
 use crate::yaml::{Node, Value};
 
@@ -22,22 +22,32 @@ const KEY_MAX: i128 = u64::MAX as i128;
 /// A key of a values table: one value, or every value of an inclusive range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Key {
+    /// The lowest value the key matches.
     pub(crate) low: i128,
+    /// The highest value the key matches, `low` itself for a single value.
     pub(crate) high: i128,
     /// Whether the key was written as a range, which makes the table a range string.
     pub(crate) range: bool,
 }
 
 impl Key {
+    /// Whether some value matches both keys.
     fn overlaps(self, other: Self) -> bool {
         self.low <= other.high && other.low <= self.high
+    }
+
+    /// Whether no value the key matches is in `range`, the values of a Field's type.
+    fn outside(self, range: &RangeInclusive<i128>) -> bool {
+        self.high < *range.start() || self.low > *range.end()
     }
 }
 
 /// One label of a validated table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Entry {
+    /// The values labelled.
     pub(crate) key: Key,
+    /// The text shown in place of those values.
     pub(crate) label: String,
 }
 
@@ -64,6 +74,7 @@ pub(crate) enum Mapping {
 /// Where a Field's `values:` table is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Values {
+    /// Written in the Field's own `values:`.
     Inline(Table),
     /// An Enum of [`Enums`], by name.
     Enum(String),
@@ -72,23 +83,29 @@ pub(crate) enum Values {
 /// One entry of a table as written, after stage 2.
 #[derive(Debug, Clone)]
 struct RawEntry {
+    /// The values labelled, spanning the key.
     key: Spanned<Key>,
     /// The key as written, for messages.
     text: String,
+    /// The label, not yet checked to be a non-empty single line.
     label: Spanned<String>,
 }
 
 /// A Field's `values:` as written.
 #[derive(Debug, Clone)]
 enum RawValues {
+    /// A table of the Field's own.
     Inline(Vec<RawEntry>),
+    /// The name of an Enum, not yet looked up.
     Enum(Spanned<String>),
 }
 
 /// An Enum as written, after stage 2.
 #[derive(Debug, Clone)]
 pub(crate) struct RawEnum {
+    /// The name, not yet checked against the naming rule.
     name: Spanned<String>,
+    /// The table, in source order.
     entries: Vec<RawEntry>,
 }
 
@@ -96,17 +113,19 @@ pub(crate) struct RawEnum {
 /// reported.
 #[derive(Debug, Clone)]
 struct MappingKey<T> {
+    /// The span of the key (`values`, `unit`, ...).
     key: Range<usize>,
     value: T,
 }
 
 /// The value-mapping keys of a Field as written, after stage 2.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct RawMappings {
     values: Option<MappingKey<RawValues>>,
     when_true: Option<MappingKey<Spanned<String>>>,
     when_false: Option<MappingKey<Spanned<String>>>,
-    unit: Option<MappingKey<(String, Option<String>)>>,
+    /// Always a [`Mapping::Unit`]: a unit needs no stage 4 check beyond where it may go.
+    unit: Option<MappingKey<Mapping>>,
 }
 
 /// Stage 2: reads the value-mapping keys of a Field, pushing their errors.
@@ -149,27 +168,24 @@ fn read_values(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawValues> {
 }
 
 /// `unit:` is a string, or a `[singular, plural]` list.
-fn read_unit(node: &Node) -> Result<(String, Option<String>), Diagnostic> {
+fn read_unit(node: &Node) -> Result<Mapping, Diagnostic> {
     let wrong = || {
         wrong_type(node.span.clone(), "`unit` must be a string or a `[singular, plural]` list")
             .with_note("write `unit: ms` or `unit: [byte, bytes]`", None)
     };
+    let string = |node: &Node| expect_string(node, "unit", Name::WrongValueType).map(|s| s.value);
     match &node.value {
-        Value::Scalar { .. } => expect_string(node, "unit", Name::WrongValueType).map(|unit| (unit.value, None)),
+        Value::Scalar { .. } => Ok(Mapping::Unit { singular: string(node)?, plural: None }),
         Value::Sequence(items) => match items.as_slice() {
-            [singular, plural] => {
-                let singular = expect_string(singular, "unit", Name::WrongValueType)?;
-                let plural = expect_string(plural, "unit", Name::WrongValueType)?;
-                Ok((singular.value, Some(plural.value)))
-            }
+            [singular, plural] => Ok(Mapping::Unit { singular: string(singular)?, plural: Some(string(plural)?) }),
             _ => Err(wrong()),
         },
         Value::Mapping(_) => Err(wrong()),
     }
 }
 
-/// Reads a values table: a mapping from keys to labels. A key spelt twice is `duplicate-key`;
-/// two spellings of one value are left to stage 4.
+/// Reads a values table: a mapping from keys to labels. A key written twice is `duplicate-key`
+/// (YAML keys: `16` and `"16"` differ); two spellings of one value are left to stage 4.
 fn read_table(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawEntry>> {
     let Value::Mapping(pairs) = &node.value else {
         errors.push(wrong_type(node.span.clone(), "a values table maps integers or ranges to labels"));
@@ -177,18 +193,20 @@ fn read_table(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawEntry>
     };
     let before = errors.len();
     let mut entries: Vec<RawEntry> = Vec::new();
+    // Every scalar key seen, read or not, as (text, plain): what makes two YAML keys the same.
+    let mut seen: Vec<(&str, bool, &Node)> = Vec::new();
     for (key, value) in pairs {
         let text = match &key.value {
-            Value::Scalar { text, .. } => text.clone(),
+            Value::Scalar { text, plain, .. } => {
+                if let Some((_, _, first)) = seen.iter().find(|(t, p, _)| t == text && p == plain) {
+                    errors.push(duplicate_key(text, key, &first.span));
+                    continue;
+                }
+                seen.push((text, *plain, key));
+                text.clone()
+            }
             _ => String::new(),
         };
-        if let Some(first) = entries.iter().find(|e| !text.is_empty() && e.text == text) {
-            errors.push(
-                Diagnostic::new(Name::DuplicateKey, key.span.clone(), format!("duplicate key `{text}`"))
-                    .with_note("first defined here", Some(first.key.span.clone())),
-            );
-            continue;
-        }
         let parsed = record(read_key(key), errors);
         let label = record(read_label(value), errors);
         if let (Some(parsed), Some(label)) = (parsed, label) {
@@ -269,10 +287,7 @@ pub(crate) fn read_enums(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<RawEn
             continue;
         };
         if let Some(first) = enums.iter().find(|e| e.name.value == *text) {
-            errors.push(
-                Diagnostic::new(Name::DuplicateKey, key.span.clone(), format!("duplicate key `{text}`"))
-                    .with_note("first defined here", Some(first.name.span.clone())),
-            );
+            errors.push(duplicate_key(text, key, &first.name.span));
             continue;
         }
         if let Some(entries) = read_table(value, errors) {
@@ -284,12 +299,16 @@ pub(crate) fn read_enums(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<RawEn
 
 /// The Enums of a description, during stage 4: what Fields look up and mark as used.
 pub(crate) struct Enums<'a> {
+    /// In source order.
     enums: Vec<CheckedEnum<'a>>,
 }
 
+/// An Enum whose name and table were checked, with what its uses found so far.
 struct CheckedEnum<'a> {
     raw: &'a RawEnum,
+    /// The validated table, even when it has errors: the run fails on them anyway.
     table: Table,
+    /// Whether a Field names it, or misspells its name (one mistake, one error).
     used: bool,
     /// For each entry, whether `unreachable-value` was reported already: an entry is reported
     /// once, from the first Field whose type cannot reach it.
@@ -317,6 +336,16 @@ impl<'a> Enums<'a> {
             })
             .collect();
         Self { enums }
+    }
+
+    /// The Enum named `name`.
+    fn get_mut(&mut self, name: &str) -> Option<&mut CheckedEnum<'a>> {
+        self.enums.iter_mut().find(|e| e.raw.name.value == name)
+    }
+
+    /// The names of the Enums, in source order.
+    fn names(&self) -> Vec<&str> {
+        self.enums.iter().map(|e| e.raw.name.value.as_str()).collect()
     }
 
     /// Reports every Enum no Field uses, and returns the tables by name.
@@ -355,14 +384,14 @@ pub(crate) fn check(
     enums: &mut Enums<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Option<Mapping>, Invalid> {
-    let before = errors(diagnostics);
+    let start = diagnostics.len();
     let range = builtin.int_range();
     let takes_unit = range.is_some() || matches!(builtin, Builtin::Float32 | Builtin::Float64);
     let misplaced = |key: &Range<usize>, what: &str, takers: &str| {
         Diagnostic::new(Name::IncompatibleDisplay, key.clone(), format!("`{}` takes no `{what}`", ty.value))
             .with_note(format!("only {takers} take `{what}`"), None)
     };
-    if let (Some(values), None) = (&raw.values, range) {
+    if let (Some(values), None) = (&raw.values, &range) {
         diagnostics.push(misplaced(&values.key, "values", "integer types"));
     }
     if builtin != Builtin::Bool {
@@ -375,7 +404,7 @@ pub(crate) fn check(
     if let (Some(unit), false) = (&raw.unit, takes_unit) {
         diagnostics.push(misplaced(&unit.key, "unit", "integer and float types"));
     }
-    if let (Some(values), Some(unit), Some(_)) = (&raw.values, &raw.unit, range) {
+    if let (Some(values), Some(unit), Some(_)) = (&raw.values, &raw.unit, &range) {
         diagnostics.push(
             Diagnostic::new(
                 Name::ConflictingMappings,
@@ -385,74 +414,90 @@ pub(crate) fn check(
             .with_note("`values` is here", Some(values.key.clone())),
         );
     }
-    if errors(diagnostics) > before {
+    if has_errors(&diagnostics[start..]) {
         return Err(Invalid);
     }
 
-    let mapping = if let (Some(values), Some(range)) = (&raw.values, range) {
-        let unreachable = |entry: &RawEntry| entry.key.value.high < range.0 || entry.key.value.low > range.1;
-        let report = |entry: &RawEntry| {
-            Diagnostic::new(
-                Name::UnreachableValue,
-                entry.key.span.clone(),
-                format!("`{}` is never a `{}` value", entry.text, ty.value),
-            )
-            .with_note(format!("`{}` holds {} to {}", ty.value, range.0, range.1), Some(ty.span.clone()))
-        };
-        Some(Mapping::Values(match &values.value {
-            RawValues::Inline(entries) => {
-                let table = check_table(entries, diagnostics);
-                diagnostics.extend(entries.iter().filter(|e| unreachable(e)).map(report));
-                Values::Inline(table)
-            }
-            RawValues::Enum(name) => {
-                let Some(found) = enums.enums.iter_mut().find(|e| e.raw.name.value == name.value) else {
-                    diagnostics.push(unknown_enum(name, enums));
-                    return Err(Invalid);
-                };
-                found.used = true;
-                for (entry, reported) in found.raw.entries.iter().zip(&mut found.unreachable_reported) {
-                    if !*reported && unreachable(entry) {
-                        *reported = true;
-                        diagnostics.push(report(entry));
-                    }
+    let mapping = match (&raw.values, range) {
+        (Some(values), Some(range)) => {
+            let report = |entry: &RawEntry| {
+                Diagnostic::new(
+                    Name::UnreachableValue,
+                    entry.key.span.clone(),
+                    format!("`{}` is never a `{}` value", entry.text, ty.value),
+                )
+                .with_note(format!("`{}` holds {} to {}", ty.value, range.start(), range.end()), Some(ty.span.clone()))
+            };
+            Some(Mapping::Values(match &values.value {
+                RawValues::Inline(entries) => {
+                    let table = check_table(entries, diagnostics);
+                    diagnostics.extend(entries.iter().filter(|e| e.key.value.outside(&range)).map(report));
+                    Values::Inline(table)
                 }
-                Values::Enum(name.value.clone())
-            }
-        }))
-    } else if raw.when_true.is_some() || raw.when_false.is_some() {
-        let mut label = |label: &Option<MappingKey<Spanned<String>>>| {
-            label.as_ref().map(|l| {
-                check_label(&l.value, diagnostics);
-                l.value.value.clone()
-            })
-        };
-        Some(Mapping::Bool { when_true: label(&raw.when_true), when_false: label(&raw.when_false) })
-    } else {
-        raw.unit.as_ref().map(|unit| Mapping::Unit { singular: unit.value.0.clone(), plural: unit.value.1.clone() })
+                RawValues::Enum(name) => {
+                    let names: Vec<String> = enums.names().into_iter().map(str::to_owned).collect();
+                    let Some(found) = enums.get_mut(&name.value) else {
+                        diagnostics.push(unknown_enum(name, &names));
+                        return Err(Invalid);
+                    };
+                    for (entry, reported) in found.raw.entries.iter().zip(&mut found.unreachable_reported) {
+                        if !*reported && entry.key.value.outside(&range) {
+                            *reported = true;
+                            diagnostics.push(report(entry));
+                        }
+                    }
+                    Values::Enum(name.value.clone())
+                }
+            }))
+        }
+        _ if raw.when_true.is_some() || raw.when_false.is_some() => {
+            let mut label = |label: &Option<MappingKey<Spanned<String>>>| {
+                label.as_ref().map(|l| {
+                    check_label(&l.value, diagnostics);
+                    l.value.value.clone()
+                })
+            };
+            Some(Mapping::Bool { when_true: label(&raw.when_true), when_false: label(&raw.when_false) })
+        }
+        _ => raw.unit.as_ref().map(|unit| unit.value.clone()),
     };
-    if errors(diagnostics) == before { Ok(mapping) } else { Err(Invalid) }
+    if has_errors(&diagnostics[start..]) { Err(Invalid) } else { Ok(mapping) }
 }
 
-fn errors(diagnostics: &[Diagnostic]) -> usize {
-    diagnostics.iter().filter(|d| d.severity() == Severity::Error).count()
+impl Enums<'_> {
+    /// Marks the Enum a Field's `values:` names as used, or the one it most likely misspells.
+    ///
+    /// It runs for every Field whatever else is wrong with it, so that one mistake on the Field
+    /// (a misspelt name, a type that takes no `values:`) is one error and not also an
+    /// `unused-enum`.
+    pub(crate) fn mark_used(&mut self, raw: &RawMappings) {
+        let Some(MappingKey { value: RawValues::Enum(name), .. }) = &raw.values else { return };
+        let names = self.names();
+        let meant = if names.contains(&name.value.as_str()) {
+            Some(name.value.clone())
+        } else {
+            closest(&name.value, &names).map(str::to_owned)
+        };
+        if let Some(meant) = meant.and_then(|m| self.get_mut(&m)) {
+            meant.used = true;
+        }
+    }
 }
 
-/// Why `values:` names no Enum. The Enum it most likely misspells counts as used: one mistake
-/// is one error, not also an `unused-enum`.
-fn unknown_enum(name: &Spanned<String>, enums: &mut Enums<'_>) -> Diagnostic {
+/// Whether any of `diagnostics` is an error.
+fn has_errors(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics.iter().any(|d| d.severity() == Severity::Error)
+}
+
+/// Why `values:` names no Enum, given the names of the Enums there are.
+fn unknown_enum(name: &Spanned<String>, names: &[String]) -> Diagnostic {
     let unknown =
         Diagnostic::new(Name::UnknownEnum, name.span.clone(), format!("there is no Enum named `{}`", name.value));
-    let names: Vec<&str> = enums.enums.iter().map(|e| e.raw.name.value.as_str()).collect();
-    let note = match closest(&name.value, &names).map(str::to_owned) {
-        Some(guess) => {
-            if let Some(meant) = enums.enums.iter_mut().find(|e| e.raw.name.value == guess) {
-                meant.used = true;
-            }
-            format!("did you mean `{guess}`?")
-        }
-        None if names.is_empty() => "declare it under the top-level `enums`".to_owned(),
-        None => format!("the Enums are: {}", names.join(", ")),
+    let candidates: Vec<&str> = names.iter().map(String::as_str).collect();
+    let note = match closest(&name.value, &candidates) {
+        Some(guess) => format!("did you mean `{guess}`?"),
+        None if candidates.is_empty() => "declare it under the top-level `enums`".to_owned(),
+        None => format!("the Enums are: {}", candidates.join(", ")),
     };
     unknown.with_note(note, None)
 }

@@ -65,15 +65,18 @@ pub(crate) fn read_keys<'a>(
             continue;
         };
         if let Some(first) = keys.key_of(name) {
-            errors.push(
-                Diagnostic::new(Name::DuplicateKey, key.span.clone(), format!("duplicate key `{name}`"))
-                    .with_note("first defined here", Some(first.span.clone())),
-            );
+            errors.push(duplicate_key(name, key, &first.span));
         } else {
             keys.found.push((name, key, value));
         }
     }
     keys
+}
+
+/// A mapping key written a second time, at `key`; `first` is the first one's span.
+pub(crate) fn duplicate_key(text: &str, key: &Node, first: &Range<usize>) -> Diagnostic {
+    Diagnostic::new(Name::DuplicateKey, key.span.clone(), format!("duplicate key `{text}`"))
+        .with_note("first defined here", Some(first.clone()))
 }
 
 /// Reads a string value. A scalar that resolves to another kind (`123`, `true`, an empty value)
