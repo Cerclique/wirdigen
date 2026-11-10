@@ -1,0 +1,8 @@
+name: demo
+enums:
+  Kind: {1: One}
+fields:
+  - name: options
+    display: hex
+    values: Kind
+    fields: [ {name: ttl, type: uint8} ]

@@ -81,18 +81,7 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
     let name = string_value("name", Name::InvalidProtocolName);
     let title = string_value("title", Name::InvalidProtocolTitle);
     let endian = string_value("endian", Name::InvalidEndian);
-    let mut layout = Vec::new();
-    if let Some(fields) = keys.get("fields") {
-        match &fields.value {
-            Value::Sequence(items) if items.is_empty() => errors.push(Diagnostic::new(
-                Name::EmptyFields,
-                fields.span.clone(),
-                "`fields` must declare at least one Field",
-            )),
-            Value::Sequence(items) => layout = items.iter().filter_map(|item| field::read(item, &mut errors)).collect(),
-            _ => errors.push(wrong_type(fields.span.clone(), "`fields` must be a list of Fields")),
-        }
-    }
+    let layout = keys.get("fields").and_then(|fields| field::read_structure(fields, &mut errors)).unwrap_or_default();
 
     let enums = keys.get("enums").map_or_else(Vec::new, |node| mapping::read_enums(node, &mut errors));
     let allow = keys.get("allow").map_or_else(Vec::new, |node| read_allow(node, &mut errors));

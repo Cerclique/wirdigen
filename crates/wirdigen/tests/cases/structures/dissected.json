@@ -1,0 +1,33 @@
+[
+  {
+    "structures.id": "1",
+    "structures.header": {
+      "structures.header.id": "770",
+      "structures.header.flags": {
+        "structures.header.flags.kind": "1",
+        "structures.header.flags.extra": {
+          "structures.header.flags.extra.id": "1029"
+        }
+      }
+    },
+    "structures.name": "ab"
+  },
+  {
+    "structures.id": "1",
+    "structures.header": {
+      "structures.header.id": "770",
+      "structures.header.flags": {
+        "structures.header.flags.kind": "2",
+        "structures.header.flags.extra": {
+          "_ws.expert": {
+            "structures._malformed.truncated": "",
+            "_ws.expert.message": "Malformed: truncated: header.flags.extra.id",
+            "_ws.expert.severity": "8388608",
+            "_ws.expert.group": "117440512"
+          },
+          "_ws.malformed": "Malformed Packet"
+        }
+      }
+    }
+  }
+]

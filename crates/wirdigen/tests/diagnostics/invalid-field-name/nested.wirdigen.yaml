@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - name: outer
+    fields:
+      - {name: Bad, type: uint8}
+      - {name: worse, type: uint9}

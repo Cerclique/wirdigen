@@ -12,12 +12,13 @@ fields:
 ```
 
 Each Field is shown in the protocol tree and can be filtered as `<protocol>.<name>`, here
-`demo.msg_type`, `demo.length` and `demo.sender`.
+`demo.msg_type`, `demo.length` and `demo.sender` (see [Filter names](#filter-names)).
 
 ## A Field
 
 A Field is a mapping with a `name:` and exactly one key saying what it is. This chapter covers
-`type:` with a built-in type.
+`type:` with a built-in type, and `fields:` with an
+[inline structure](#inline-structures).
 
 - Leaving all of them out is the error
   [`missing-field-kind`](../diagnostics.md#missing-field-kind); giving more than one is
@@ -71,8 +72,9 @@ fields:
 ## Byte order {#byte-order}
 
 Fields are big-endian (network byte order) unless `endian:` says otherwise. The top-level
-`endian:` sets the default for the whole description, and a Field's own `endian:` overrides
-it. The value is `big` or `little`
+`endian:` sets the default for the whole description, an
+[inline structure](#inline-structures)'s `endian:` the default for the Fields inside it, and a
+Field's own `endian:` overrides both. The value is `big` or `little`
 ([`invalid-endian`](../diagnostics.md#invalid-endian)).
 
 ```yaml
@@ -347,3 +349,51 @@ single line ([`invalid-label`](../diagnostics.md#invalid-label)); a description 
 line ([`invalid-description`](../diagnostics.md#invalid-description)). Both are plain text, so
 a value YAML would read as a number or a bool, such as `label: 2` or `label: true`, needs
 quotes.
+
+## Inline structures {#inline-structures}
+
+A Field with `fields:` in place of `type:` is an **inline structure**: a group of Fields read
+one after another, shown as a subtree that spans the bytes they read. Its `fields:` is written
+like the top-level one, a non-empty list of Fields
+([`empty-fields`](../diagnostics.md#empty-fields)), and a Field inside it can be a structure
+too, to any depth.
+
+```yaml
+name: demo
+fields:
+  - { name: msg_type, type: uint8 }
+  - name: header
+    label: Fixed header
+    endian: little
+    fields:
+      - { name: length, type: uint16 }
+      - name: flags
+        fields:
+          - { name: urgent, type: bool }
+          - { name: priority, type: uint8 }
+  - { name: payload, type: bytes, prefix: uint8 }
+```
+
+A structure takes `name:`, `label:`, `description:` and `endian:`, which is the byte order of
+the Fields inside it unless they set their own (see [Byte order](#byte-order)). The keys that
+say how a value is read or shown belong on the Fields inside: a length key on a structure is
+[`unexpected-length`](../diagnostics.md#unexpected-length), and `display:`, `encoding:`,
+`values:`, `true:`, `false:` or `unit:` is
+[`incompatible-display`](../diagnostics.md#incompatible-display).
+
+Only the Fields of one structure need different names: `header.length` and a top-level
+`length` can live side by side.
+
+## Filter names {#filter-names}
+
+Every Field the tree shows, structures included, gets the display filter name
+`<protocol>.<path>`, where the path is the chain of Field names from the top level down. In the
+example above they are `demo.msg_type`, `demo.header`, `demo.header.length`,
+`demo.header.flags`, `demo.header.flags.urgent`, `demo.header.flags.priority` and
+`demo.payload`. A filter on a structure, such as `demo.header.flags`, matches every packet
+that has it.
+
+Filter names are part of a Dissector's behaviour: users save filters and colouring rules
+against them. Renaming a Field, or moving it into or out of a structure, changes its filter
+name, and so breaks those filters. Wirdigen never renames a Field on its own: the filter name
+is always the one the description spells.
