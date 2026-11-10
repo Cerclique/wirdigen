@@ -789,6 +789,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 
 - **Book**: an mdBook in `book/` on GitHub Pages is the user guide and format reference.
   - The release book is served at `/`, built from the latest tag. `main` is served at `/dev/` with a "development version" banner. There is no per-version archive.
+  - Until a tag carries `book/`, `/` also serves `main`, so the Diagnostic links rendered by the library resolve before the first v1 release (#52).
   - PR CI builds the book and checks snippets without deploying.
 - **README**: a short landing page (what Wirdigen is, install, a ~20-line quickstart, a link to the book). It is also `wirdigen-cli`'s crates.io page.
 - **Format reference**: hand-written, one chapter per construct (Fields and Types, sizes, arrays, bitfields, `if`/`switch`, Registration, Framing, Expressions, `info:`, Diagnostics), plus a one-page cheat sheet of the ten top-level keys in §3.2's order.
