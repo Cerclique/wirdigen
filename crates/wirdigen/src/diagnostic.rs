@@ -61,6 +61,7 @@ names! {
     MissingFieldKind => "missing-field-kind", Error;
     ConflictingFieldKind => "conflicting-field-kind", Error;
     InvalidFieldName => "invalid-field-name", Error;
+    InvalidTypeName => "invalid-type-name", Error;
     DuplicateFieldName => "duplicate-field-name", Error;
     UnknownType => "unknown-type", Error;
     UnexpectedLength => "unexpected-length", Error;
@@ -72,7 +73,12 @@ names! {
     IncompatibleDisplay => "incompatible-display", Error;
     InvalidLabel => "invalid-label", Error;
     InvalidDescription => "invalid-description", Error;
+    OverlappingValues => "overlapping-values", Error;
+    ConflictingMappings => "conflicting-mappings", Error;
+    UnknownEnum => "unknown-enum", Error;
     NotSupportedYet => "not-supported-yet", Error;
+    UnreachableValue => "unreachable-value", Warning;
+    UnusedEnum => "unused-enum", Warning;
     UnknownAllow => "unknown-allow", Warning;
 }
 

@@ -230,6 +230,99 @@ fields:
 Display changes only what the tree shows: a filter matches the value whichever way it is
 written, so `demo.flags == 16` and `demo.flags == 0x10` are the same filter.
 
+## Value labels and units {#value-mappings}
+
+Three keys give a value words. Like `display:`, they change only what the tree shows: a filter
+still matches the number, so `demo.msg_type == 1` finds every "Request".
+
+| Key | Types | Shows |
+|---|---|---|
+| `values:` | integers | a label in place of the value, with the value after it: `Request (1)` |
+| `true:` / `false:` | `bool` | a label for each state, in place of `True` and `False` |
+| `unit:` | integers, `float32`, `float64` | the value, a space, then the unit: `16 bytes` |
+
+On any other type, each of these keys is
+[`incompatible-display`](../diagnostics.md#incompatible-display). A Field has `values:` or
+`unit:`, not both ([`conflicting-mappings`](../diagnostics.md#conflicting-mappings)).
+
+### Values tables
+
+`values:` maps values to labels. A key is an integer, in decimal or hex, or a range of
+integers written as a string `"low-high"`, both bounds included. A value with no key is shown
+as `Unknown (7)`.
+
+```yaml
+name: demo
+fields:
+  - name: status
+    type: uint16
+    display: hex
+    values:
+      0x0000: OK
+      0x0001: Retry
+      0xffff: Failed
+  - name: delta
+    type: int8
+    values:
+      "-128--1": Behind
+      0: Even
+      "1-127": Ahead
+```
+
+A negative bound keeps its sign, so `"-128--1"` runs from -128 to -1. A key that is neither an
+integer nor a range, such as `1.5` or a quoted `"16"`, and a range whose first bound is the
+higher, are [`wrong-value-type`](../diagnostics.md#wrong-value-type); a key spelt twice is
+[`duplicate-key`](../diagnostics.md#duplicate-key). Two keys matching one value, such as
+`5` inside `"0-9"`, are [`overlapping-values`](../diagnostics.md#overlapping-values). A key the
+Field's type cannot hold, such as `256` on a `uint8`, is the warning
+[`unreachable-value`](../diagnostics.md#unreachable-value); a range is reported only when none
+of its values fit. Each label is a non-empty single line
+([`invalid-label`](../diagnostics.md#invalid-label)).
+
+### Enums {#enums}
+
+A table several Fields share is declared once as an **Enum**, under the top-level `enums:`, and
+named by each Field's `values:`. A request and its response sharing an opcode table is the
+typical case.
+
+```yaml
+name: demo
+fields:
+  - { name: msg_type, type: uint8, values: MsgType }
+  - { name: reply_to, type: uint8, values: MsgType }
+enums:
+  MsgType:
+    1: Request
+    2: Response
+    "16-31": Vendor
+```
+
+An Enum's name is an uppercase letter then letters or digits
+([`invalid-type-name`](../diagnostics.md#invalid-type-name)). A `values:` naming no Enum is
+[`unknown-enum`](../diagnostics.md#unknown-enum), and an Enum no Field names is the warning
+[`unused-enum`](../diagnostics.md#unused-enum). An Enum's table follows the rules of an inline
+one. A key outside the type of one Field using it is reported once, and is left out only for
+that Field, so one Enum can serve a `uint8` and a `uint16`.
+
+### States and units
+
+`true:` and `false:` label the two states of a `bool`. Either can be given alone; the other
+keeps its default, `True` or `False`.
+
+```yaml
+name: demo
+fields:
+  - { name: enabled, type: bool, true: Enabled, false: Disabled }
+  - { name: urgent, type: bool, true: Urgent }
+  - { name: length, type: uint16, unit: [byte, bytes] }
+  - { name: timeout, type: uint32, unit: ms }
+  - { name: distance, type: float32, unit: [metre, metres] }
+```
+
+`unit:` is one string, used whatever the value, or a `[singular, plural]` pair: the singular
+when the value is 1, the plural otherwise. Here a length of 1 is shown as `1 byte` and a
+length of 16 as `16 bytes`.
+
 ## Tree text {#tree-text}
 
 `label:` is the text the tree shows for the Field, in place of the one derived from its name.

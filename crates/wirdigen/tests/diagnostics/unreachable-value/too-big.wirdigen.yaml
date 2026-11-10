@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - name: kind
+    type: uint8
+    values:
+      1: One
+      256: Never
+      "300-400": Neither

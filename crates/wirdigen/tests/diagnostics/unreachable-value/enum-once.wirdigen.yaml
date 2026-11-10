@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - { name: a, type: uint8, values: Kind }
+  - { name: b, type: int8, values: Kind }
+  - { name: c, type: uint16, values: Kind }
+enums:
+  Kind: { 1: One, 200: Big, 1000: Huge }

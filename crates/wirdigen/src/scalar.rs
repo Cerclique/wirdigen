@@ -23,6 +23,27 @@ pub(crate) fn resolve_plain(s: &str) -> Kind {
     }
 }
 
+/// The value of an integer literal as YAML's core schema spells it (`12`, `-4`, `0x1F`, `0o17`),
+/// or `None` for anything else or a value beyond `i128`.
+pub(crate) fn parse_int(s: &str) -> Option<i128> {
+    if !is_int(s) {
+        return None;
+    }
+    let (negative, body) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s.strip_prefix('+').unwrap_or(s)),
+    };
+    let (digits, radix) = if let Some(hex) = body.strip_prefix("0x") {
+        (hex, 16)
+    } else if let Some(oct) = body.strip_prefix("0o") {
+        (oct, 8)
+    } else {
+        (body, 10)
+    };
+    let magnitude = i128::from_str_radix(digits, radix).ok()?;
+    Some(if negative { -magnitude } else { magnitude })
+}
+
 fn is_int(s: &str) -> bool {
     if let Some(hex) = s.strip_prefix("0x") {
         return !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit());
@@ -95,5 +116,18 @@ mod tests {
         ] {
             assert_eq!(resolve_plain(text), kind, "{text:?}");
         }
+    }
+
+    #[test]
+    fn parses_integer_literals() {
+        assert_eq!(parse_int("12"), Some(12));
+        assert_eq!(parse_int("+7"), Some(7));
+        assert_eq!(parse_int("-4"), Some(-4));
+        assert_eq!(parse_int("0x1F"), Some(31));
+        assert_eq!(parse_int("0o17"), Some(15));
+        assert_eq!(parse_int("18446744073709551615"), Some(18_446_744_073_709_551_615));
+        assert_eq!(parse_int("1.5"), None);
+        assert_eq!(parse_int("abc"), None);
+        assert_eq!(parse_int(""), None);
     }
 }

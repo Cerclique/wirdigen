@@ -1,0 +1,68 @@
+# Value mappings: inline tables, ranges, shared Enums, bool states and units.
+name: values
+fields:
+  - name: msg_type
+    type: uint8
+    values: MsgType
+  - name: reply_type
+    type: uint8
+    values: MsgType
+    description: The type this message answers
+  - name: status
+    type: uint16
+    display: hex
+    values:
+      0x0000: OK
+      0x0001: Retry
+      0xffff: Failed
+  - name: delta
+    type: int8
+    values:
+      "-128--1": Behind
+      0: Even
+      "1-127": Ahead
+  - name: drift
+    type: int32
+    values: { "-10-10": Small }
+  # Level reaches 300 only as a uint16, so the uint8 gets its own copy of the table.
+  - name: level8
+    type: uint8
+    values: Level
+  - name: level16
+    type: uint16
+    values: Level
+  - name: huge
+    type: uint64
+    values: { 0xffffffffffffffff: All ones }
+  - name: id48
+    type: uint48
+    values: { "0-0xffff": Low }
+  - name: enabled
+    type: bool
+    true: Enabled
+    false: Disabled
+  - name: urgent
+    type: bool
+    true: Urgent
+  - name: length
+    type: uint16
+    unit: [byte, bytes]
+  - name: timeout
+    type: int16
+    unit: ms
+  - name: distance
+    type: float32
+    unit: [metre, metres]
+    description: Distance to the sender
+  - name: ratio
+    type: float64
+    unit: "%"
+enums:
+  MsgType:
+    1: Request
+    2: Response
+    "16-31": Vendor
+  Level:
+    0: Off
+    300: Overdrive
+allow: [unreachable-value]

@@ -1,8 +1,11 @@
 //! Stage 2 (strict deserialization of the top level) and the first semantic checks.
 
+use std::collections::BTreeMap;
+
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Endian, Field, RawField};
 use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
+use crate::mapping::{self, Enums, RawEnum, Table};
 use crate::yaml::{Node, Value};
 
 /// The longest protocol name Wireshark filters accept here (spec §3.3, ADR 0014).
@@ -22,6 +25,8 @@ pub(crate) struct Description {
     pub(crate) endian: Option<Spanned<String>>,
     /// The top-level Fields, in order.
     pub(crate) fields: Vec<RawField>,
+    /// The Enums of `enums:`, in order.
+    pub(crate) enums: Vec<RawEnum>,
     /// The `allow:` entries, as written.
     pub(crate) allow: Vec<Spanned<String>>,
 }
@@ -39,6 +44,8 @@ pub(crate) struct Protocol {
     pub(crate) name: String,
     pub(crate) title: Option<String>,
     pub(crate) fields: Vec<Field>,
+    /// The tables of the Enums, by name.
+    pub(crate) enums: BTreeMap<String, Table>,
 }
 
 /// Stage 2: unknown and duplicate keys, required keys and value kinds.
@@ -87,10 +94,11 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
         }
     }
 
+    let enums = keys.get("enums").map_or_else(Vec::new, |node| mapping::read_enums(node, &mut errors));
     let allow = keys.get("allow").map_or_else(Vec::new, |node| read_allow(node, &mut errors));
 
     match name {
-        Some(name) if errors.is_empty() => Ok(Description { name, title, endian, fields: layout, allow }),
+        Some(name) if errors.is_empty() => Ok(Description { name, title, endian, fields: layout, enums, allow }),
         _ => Err(errors),
     }
 }
@@ -148,12 +156,15 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         None => Some(Endian::default()),
     };
     // An invalid top-level byte order is an error already, so any stand-in will do.
-    let fields = field::check(&description.fields, endian.unwrap_or_default(), &mut diagnostics);
+    let mut enums = Enums::check(&description.enums, &mut diagnostics);
+    let fields = field::check(&description.fields, endian.unwrap_or_default(), &mut enums, &mut diagnostics);
+    let enums = enums.finish(&mut diagnostics);
     let has_errors = diagnostics.iter().any(|d| d.severity() == Severity::Error);
     let protocol = (!has_errors).then(|| Protocol {
         name: description.name.value.clone(),
         title: description.title.as_ref().map(|t| t.value.clone()),
         fields,
+        enums,
     });
     (protocol, diagnostics)
 }

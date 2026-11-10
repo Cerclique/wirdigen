@@ -40,6 +40,7 @@ mod keys;
 mod lower;
 #[cfg(test)]
 mod lua_check;
+mod mapping;
 mod prelude;
 mod render;
 mod scalar;

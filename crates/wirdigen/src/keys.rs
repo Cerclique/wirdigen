@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use crate::diagnostic::{Diagnostic, Name};
-use crate::scalar::{Kind, resolve_plain};
+use crate::scalar::{Kind, parse_int, resolve_plain};
 use crate::yaml::{Node, Value};
 
 /// A value with the span it came from.
@@ -90,7 +90,7 @@ pub(crate) fn expect_string(node: &Node, key: &str, invalid: Name) -> Result<Spa
 }
 
 /// The candidate `word` is most likely a misspelling of, if any is close enough.
-pub(crate) fn closest(word: &str, candidates: &[&'static str]) -> Option<&'static str> {
+pub(crate) fn closest<'c>(word: &str, candidates: &[&'c str]) -> Option<&'c str> {
     candidates
         .iter()
         .map(|c| (edit_distance(word, c), *c))
@@ -143,14 +143,7 @@ pub(crate) fn expect_integer(node: &Node, key: &str) -> Result<i64, Diagnostic> 
     if resolve_plain(text) != Kind::Int {
         return Err(wrong("must be an integer, not a float, a bool or text"));
     }
-    let (digits, radix) = if let Some(hex) = text.strip_prefix("0x") {
-        (hex, 16)
-    } else if let Some(oct) = text.strip_prefix("0o") {
-        (oct, 8)
-    } else {
-        (text.strip_prefix('+').unwrap_or(text), 10)
-    };
-    i64::from_str_radix(digits, radix).map_err(|_| wrong("is out of range"))
+    parse_int(text).and_then(|value| i64::try_from(value).ok()).ok_or_else(|| wrong("is out of range"))
 }
 
 #[cfg(test)]

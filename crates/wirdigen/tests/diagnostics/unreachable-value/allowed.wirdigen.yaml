@@ -1,0 +1,4 @@
+name: demo
+fields:
+  - { name: kind, type: uint8, values: { 256: Never } }
+allow: [unreachable-value]

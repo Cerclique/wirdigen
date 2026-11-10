@@ -261,6 +261,24 @@ fields: [ {name: msgType, type: uint8} ]
 **Fix**: rename the Field, here `msg_type`. Its tree label is derived from the name
 ("Msg type").
 
+## `invalid-type-name` {#invalid-type-name}
+
+**Severity**: error
+
+The name of an Enum under `enums:` is not an uppercase letter followed by letters or digits.
+Names of Enums start with an uppercase letter so they can never be mistaken for a Field or a
+built-in type, which are lowercase.
+
+```yaml,diagnostic=invalid-type-name
+name: demo
+fields:
+  - { name: kind, type: uint8, values: msg_type }
+enums:
+  msg_type: { 1: Request }
+```
+
+**Fix**: rename the Enum and every `values:` naming it, here `MsgType`.
+
 ## `duplicate-field-name` {#duplicate-field-name}
 
 **Severity**: error
@@ -383,12 +401,14 @@ fields: [ {name: user, type: string, encoding: utf16, terminator: 10} ]
 
 **Severity**: error
 
-A Field's `display:` or `encoding:` is not one its type takes. Unsigned integers take `dec`,
-`hex`, `oct`, `dec_hex` and `hex_dec`; signed integers are shown only as `dec`; `bytes` take
-`plain`, `dot`, `dash`, `colon` and `space`; `abs_time` takes `local`, `utc` and `doy_utc`;
-`string`, `rel_time`, `bool`, the floats and the address types take no `display:` at all. Only
-`string`, `abs_time` and `rel_time` take `encoding:`, each its own values: `ntp` is an
-`abs_time` encoding only.
+A Field's `display:` or `encoding:` is not one its type takes, or the Field has a value-mapping
+key its type does not take. Unsigned integers take `dec`, `hex`, `oct`, `dec_hex` and
+`hex_dec`; signed integers are shown only as `dec`; `bytes` take `plain`, `dot`, `dash`,
+`colon` and `space`; `abs_time` takes `local`, `utc` and `doy_utc`; `string`, `rel_time`,
+`bool`, the floats and the address types take no `display:` at all. Only `string`, `abs_time`
+and `rel_time` take `encoding:`, each its own values: `ntp` is an `abs_time` encoding only.
+Only integers take `values:`, only `bool` takes `true:` and `false:`, and only integers and
+floats take `unit:`.
 
 ```yaml,diagnostic=incompatible-display
 name: demo
@@ -398,14 +418,16 @@ fields: [ {name: offset, type: int16, display: hex} ]
 **Fix**: pick a value from the table in [Fields](reference/fields.md#display), or remove
 `display:` to use the type's default. A signed value shown in hex needs an unsigned type. The
 encodings are listed in [Strings and bytes](reference/fields.md#strings-and-bytes) and
-[Timestamps](reference/fields.md#timestamps).
+[Timestamps](reference/fields.md#timestamps), and the value mappings in
+[Value labels and units](reference/fields.md#value-mappings).
 
 ## `invalid-label` {#invalid-label}
 
 **Severity**: error
 
-A Field's `label:` is empty, blank, spans several lines or is not a string. The label is the
-Field's one-line text in the protocol tree.
+A label is empty, blank, spans several lines or is not a string: a Field's `label:`, a label
+in a values table, or the `true:` or `false:` label of a `bool`. A label is one line of text
+in the protocol tree.
 
 ```yaml,diagnostic=invalid-label
 name: demo
@@ -429,6 +451,61 @@ fields:
 
 **Fix**: write the description on one line, or quote a value YAML reads as a number or a bool.
 
+## `overlapping-values` {#overlapping-values}
+
+**Severity**: error
+
+Two keys of one values table match a same value: a value inside a range, two ranges that
+share values, or one value spelt twice (`16` and `0x10`). The Dissector could show only one of
+the labels.
+
+```yaml,diagnostic=overlapping-values
+name: demo
+fields:
+  - name: kind
+    type: uint8
+    values:
+      "0-9": Low
+      5: Five
+```
+
+**Fix**: give each value one label, here by splitting the range into `"0-4"` and `"6-9"`.
+
+## `conflicting-mappings` {#conflicting-mappings}
+
+**Severity**: error
+
+A Field has both `values:` and `unit:`. Wireshark shows either a label in place of the value or
+a unit after it, never both.
+
+```yaml,diagnostic=conflicting-mappings
+name: demo
+fields:
+  - name: length
+    type: uint16
+    values: { 0: Empty }
+    unit: [byte, bytes]
+```
+
+**Fix**: keep one of them. A label for a special value can go in the Field's `description:`.
+
+## `unknown-enum` {#unknown-enum}
+
+**Severity**: error
+
+A Field's `values:` names an Enum that the top-level `enums:` does not declare.
+
+```yaml,diagnostic=unknown-enum
+name: demo
+fields:
+  - { name: kind, type: uint8, values: MsgTyp }
+enums:
+  MsgType: { 1: Request }
+```
+
+**Fix**: correct the name, here `MsgType`, or declare the Enum under `enums:`. To label the
+values of this Field only, write the table inline: `values: { 1: Request }`.
+
 ## `not-supported-yet` {#not-supported-yet}
 
 **Severity**: error
@@ -445,6 +522,59 @@ fields:
 
 **Fix**: upgrade Wirdigen, or describe the layout with what this version supports, here by
 listing the Fields at the top level.
+
+## `unreachable-value` {#unreachable-value}
+
+**Severity**: warning
+
+A key of a values table is outside the range of the Field's type, so no packet can show its
+label: `256` on a `uint8`, or `-1` on any unsigned type. A range is reported only when none of
+its values fit. For an Enum, each key is reported once, for the first Field whose type cannot
+hold it. The Dissector leaves the key out.
+
+```yaml,diagnostic=unreachable-value
+name: demo
+fields:
+  - { name: kind, type: uint8, values: { 1: One, 256: Never } }
+```
+
+**Fix**: remove the key, or widen the Field's type if the value can occur. An Enum shared by
+Fields of several widths can keep keys only the widest reaches; allow the warning then:
+
+```yaml
+name: demo
+fields:
+  - { name: short_kind, type: uint8, values: Kind }
+  - { name: long_kind, type: uint16, values: Kind }
+enums:
+  Kind: { 1: One, 256: Wide }
+allow: [unreachable-value]
+```
+
+## `unused-enum` {#unused-enum}
+
+**Severity**: warning
+
+An Enum under `enums:` is never named by a Field's `values:`.
+
+```yaml,diagnostic=unused-enum
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+enums:
+  MsgType: { 1: Request }
+```
+
+**Fix**: use it with `values: MsgType`, or remove it. To keep it for later, allow the warning:
+
+```yaml
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+enums:
+  MsgType: { 1: Request }
+allow: [unused-enum]
+```
 
 ## `unknown-allow` {#unknown-allow}
 

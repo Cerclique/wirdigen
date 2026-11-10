@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - { name: kind, type: uint8, values: MsgType }
+enums:
+  MsgType: { 1: Request }
+  MsgType: { 2: Response }

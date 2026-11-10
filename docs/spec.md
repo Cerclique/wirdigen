@@ -228,6 +228,8 @@ Any value outside this matrix, and an `encoding:` or value-mapping key (§3.4.7)
 - `unit:` together with `values:` is the error `conflicting-mappings`.
 - The generator emits a Wireshark value string, or a range string when any key is a range.
 - A top-level `enums:` maps an **Enum** name to a values table, referenced as `values: <EnumName>`. Inline tables stay allowed. An unknown Enum is the error `unknown-enum`; an Enum never used is the warning `unused-enum`.
+- A key is a YAML integer, or a string `"low-high"` of two integers with `low <= high`; anything else, a quoted integer included, is `wrong-value-type`, and a key spelt twice is `duplicate-key`. A range is `unreachable-value` only when none of its values fit the type, and an Enum's key is reported once, for the first Field that cannot reach it. Labels, including `true:`/`false:`, follow `invalid-label` (§3.4.8).
+- Confirmed on 4.4.19 and 4.6.9 (#55): Wireshark converts each key and range bound to an unsigned integer of the ProtoField's width (32 or 64 bits) and compares range strings unsigned. Generated code therefore leaves out keys the type cannot hold and cuts ranges to it, writes a negative bound of a signed type up to 32 bits as its 32-bit two's complement, and splits a range crossing zero. An Enum is one Lua table per distinct cut. A unit is printed right after the value, so the generator adds the space. `-T json` shows only raw values, so the `values` corpus case checks that the tables load and dissect, not the label text.
 
 ```yaml
 enums:
