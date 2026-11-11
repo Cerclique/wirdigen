@@ -24,6 +24,8 @@ pub(crate) const DIVISION: &str = "division";
 pub(crate) const BITWISE: &str = "bitwise";
 /// Expression operators: comparisons, `!`, and the 1 or 0 of `&&` and `||`.
 pub(crate) const LOGIC: &str = "logic";
+/// Reporting a size known only when the packet is read that has no value or is negative.
+pub(crate) const INVALID: &str = "invalid";
 
 #[derive(Debug)]
 struct Chunk {

@@ -45,6 +45,7 @@ mod mapping;
 mod prelude;
 mod render;
 mod scalar;
+mod scope;
 mod source;
 mod types;
 mod yaml;

@@ -1,0 +1,59 @@
+[
+  {
+    "runtime.a": "-7",
+    "runtime.b": "2",
+    "runtime.quotient": "01",
+    "runtime.remainder": "02",
+    "runtime.shift": "1",
+    "runtime.shifted": "03",
+    "runtime.big": "9223372036854775809",
+    "runtime.wrapped": "aa:bb:cc"
+  },
+  {
+    "runtime.a": "-7",
+    "runtime.b": "0",
+    "_ws.expert": {
+      "runtime._malformed.expression": "",
+      "_ws.expert.message": "Malformed: division by zero: quotient",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "runtime.a": "-7",
+    "runtime.b": "2",
+    "runtime.quotient": "01",
+    "runtime.remainder": "02",
+    "runtime.shift": "64",
+    "_ws.expert": {
+      "runtime._malformed.expression": "",
+      "_ws.expert.message": "Malformed: shift by 64, outside 0 to 63: shifted",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "runtime.a": "-128",
+    "runtime.b": "1",
+    "_ws.expert": {
+      "runtime._malformed.expression": "",
+      "_ws.expert.message": "Malformed: size -124 is negative: quotient",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "runtime.a": "127",
+    "runtime.b": "1",
+    "_ws.expert": {
+      "runtime._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: quotient",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

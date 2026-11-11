@@ -6,8 +6,11 @@
 
 use std::fmt::Write as _;
 
+use std::collections::BTreeMap;
+
 use crate::lower::{
-    Args, Decode, Dissector, Length, LuaExpr, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt, Strings, TableRef,
+    Args, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt, Strings,
+    TableRef, Value, ValueRead,
 };
 use crate::prelude;
 
@@ -80,20 +83,32 @@ pub(crate) fn emit(model: &Dissector) -> String {
         w.line("");
     }
     w.line(&format!("local wd_ei_truncated = wd_expert_truncated({proto})"));
-    w.line("wd_proto.experts = { wd_ei_truncated }");
+    if model.chunks.contains(&prelude::INVALID) {
+        w.line(&format!("local wd_ei_invalid = wd_expert_invalid({proto})"));
+        w.line("wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }");
+    } else {
+        w.line("wd_proto.experts = { wd_ei_truncated }");
+    }
     w.line("");
 
     // Every dissect function returns the offset after what it read, or `nil` once it stopped
-    // on a truncated packet, so that its callers stop too.
+    // on a truncated or malformed packet, so that its callers stop too. A Type whose caller
+    // reads inside it also returns the values read, in a table.
     for function in &model.types {
         w.line(&format!("-- Type: {}", function.name));
+        let context = if function.context { ", ctx" } else { "" };
         w.block(
-            &format!("local function dissect_{}(tvb, tree, offset, site)", function.name),
+            &format!("local function dissect_{}(tvb, tree, offset, site{context})", function.name),
             |w| {
+                declare(w, &function.locals);
                 for stmt in &function.body {
                     statement(w, model, stmt, Scope::Type);
                 }
-                w.line("return offset");
+                if function.exports.is_empty() {
+                    w.line("return offset");
+                } else {
+                    w.line(&format!("return offset, {}", export_table(&function.exports)));
+                }
             },
             "end",
         );
@@ -104,6 +119,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.block(
         "local function dissect_top(tvb, tree, offset)",
         |w| {
+            declare(w, &model.locals);
             for stmt in &model.layout {
                 statement(w, model, stmt, Scope::Top);
             }
@@ -215,6 +231,53 @@ fn site_entries(w: &mut Writer, model: &Dissector, site: &Site) {
     }
 }
 
+/// Declares, up front, the locals a function keeps values in: values read inside a structure
+/// are read later, after the structure's `do` block has ended.
+fn declare(w: &mut Writer, locals: &[String]) {
+    if !locals.is_empty() {
+        w.line(&format!("local {}", locals.join(", ")));
+    }
+}
+
+/// The table constructor of what a Type returns.
+fn export_table(exports: &BTreeMap<String, Export>) -> String {
+    let entries: Vec<String> = exports
+        .iter()
+        .map(|(key, export)| {
+            let value = match export {
+                Export::Local(local) => local.clone(),
+                Export::Table(inner) => export_table(inner),
+            };
+            format!("{} = {value}", table_key(key))
+        })
+        .collect();
+    format!("{{ {} }}", entries.join(", "))
+}
+
+/// The Lua keywords, which cannot be written as plain table keys.
+const LUA_KEYWORDS: [&str; 22] = [
+    "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in", "local", "nil",
+    "not", "or", "repeat", "return", "then", "true", "until", "while",
+];
+
+/// Whether `key` can be written as a plain name: `t.key`, `{ key = ... }`.
+fn is_plain_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !LUA_KEYWORDS.contains(&key)
+}
+
+/// A key in a table constructor: `key` or `["key"]`.
+fn table_key(key: &str) -> String {
+    if is_plain_key(key) { key.to_owned() } else { format!("[{}]", lua_string(key)) }
+}
+
+/// An index into a table: `.key` or `["key"]`.
+fn index(key: &str) -> String {
+    if is_plain_key(key) { format!(".{key}") } else { format!("[{}]", lua_string(key)) }
+}
+
 /// Which dissect function a statement is in, which says how its paths are reported.
 #[derive(Clone, Copy)]
 enum Scope {
@@ -240,23 +303,56 @@ fn site_ref(model: &Dissector, r: &Ref) -> String {
     }
 }
 
+/// A call of a Type's dissect function, in the subtree of the Field using it, passing the
+/// context table and keeping the table it returns when the caller reads inside it.
+#[expect(clippy::too_many_arguments, reason = "the parts of a `Stmt::Call`, spelled out")]
+fn call(
+    w: &mut Writer,
+    model: &Dissector,
+    field: &Ref,
+    path: &str,
+    ty: &str,
+    site: &Ref,
+    context: &[(String, LuaExpr)],
+    result: Option<&str>,
+) {
+    let local = field_ref(model, field);
+    let mut args = vec![site_ref(model, site)];
+    if !context.is_empty() {
+        let entries: Vec<String> =
+            context.iter().map(|(key, value)| format!("{} = {}", table_key(key), lua_expr(value))).collect();
+        args.push(format!("{{ {} }}", entries.join(", ")));
+    }
+    let args = args.join(", ");
+    let assigned = result.as_ref().map_or_else(|| "offset".to_owned(), |r| format!("offset, {r}"));
+    w.line(&format!("-- Field: {path}"));
+    w.block(
+        "do",
+        |w| {
+            w.line("local start = offset");
+            w.line(&format!("local tree = tree:add({local}, tvb(offset, tvb:len() - offset))"));
+            w.line(&format!("{assigned} = dissect_{ty}(tvb, tree, offset, {args})"));
+            w.block("if not offset then", |w| w.line("return nil"), "end");
+            w.line("tree:set_len(offset - start)");
+        },
+        "end",
+    );
+}
+
+/// Keeps the value of a `size`-byte read at `offset` in the local an Expression reads.
+fn keep_value(w: &mut Writer, value: &Value, size: usize) {
+    match &value.read {
+        ValueRead::Integer(format) => {
+            w.line(&format!("{} = string.unpack({}, tvb:raw(offset, {size}))", value.local, lua_string(format)));
+        }
+        ValueRead::Bool => w.line(&format!("{} = wd_bool(tvb(offset, {size}):uint() ~= 0)", value.local)),
+    }
+}
+
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
-        Stmt::Call { field, path, ty, site } => {
-            let local = field_ref(model, field);
-            let site = site_ref(model, site);
-            w.line(&format!("-- Field: {path}"));
-            w.block(
-                "do",
-                |w| {
-                    w.line("local start = offset");
-                    w.line(&format!("local tree = tree:add({local}, tvb(offset, tvb:len() - offset))"));
-                    w.line(&format!("offset = dissect_{ty}(tvb, tree, offset, {site})"));
-                    w.block("if not offset then", |w| w.line("return nil"), "end");
-                    w.line("tree:set_len(offset - start)");
-                },
-                "end",
-            );
+        Stmt::Call { field, path, ty, site, context, result } => {
+            call(w, model, field, path, ty, site, context, result.as_deref());
         }
         Stmt::Structure { field, path, body } => {
             let local = field_ref(model, field);
@@ -276,7 +372,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 "end",
             );
         }
-        Stmt::Read { field, length, decode, path } => {
+        Stmt::Read { field, length, decode, path, value } => {
             let local = field_ref(model, field);
             let reported = match scope {
                 Scope::Top => lua_string(path),
@@ -284,6 +380,10 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             };
             let truncated = |w: &mut Writer| {
                 w.line(&format!("wd_truncated(tree, wd_ei_truncated, {reported})"));
+                w.line("return nil");
+            };
+            let invalid = |w: &mut Writer, reason: &str| {
+                w.line(&format!("wd_invalid(tree, wd_ei_invalid, {reason}, {reported})"));
                 w.line("return nil");
             };
             let add = |range: &str| match decode {
@@ -302,12 +402,26 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 Length::Fixed(size) => {
                     w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
                     w.line(&add(&format!("tvb(offset, {size})")));
+                    if let Some(value) = value {
+                        keep_value(w, value, *size);
+                    }
                     w.line(&format!("offset = offset + {size}"));
                 }
-                Length::Expression(expr) => w.block(
+                Length::Expression { value: expr, checked, faults } => w.block(
                     "do",
                     |w| {
-                        w.line(&format!("local len = {}", lua_expr(expr)));
+                        if *faults {
+                            w.line(&format!(
+                                "local len, fault = wd_evaluate(function() return {} end)",
+                                lua_expr(expr)
+                            ));
+                            w.block("if not len then", |w| invalid(w, "fault"), "end");
+                        } else {
+                            w.line(&format!("local len = {}", lua_expr(expr)));
+                        }
+                        if *checked {
+                            w.block("if len < 0 then", |w| invalid(w, "\"size \" .. len .. \" is negative\""), "end");
+                        }
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
                         w.line(&add("tvb(offset, len)"));
                         w.line("offset = offset + len");
@@ -353,6 +467,10 @@ fn lua_expr(expr: &LuaExpr) -> String {
         }
         LuaExpr::And(left, right) => format!("wd_bool({} ~= 0 and {} ~= 0)", lua_expr(left), lua_expr(right)),
         LuaExpr::Or(left, right) => format!("wd_bool({} ~= 0 or {} ~= 0)", lua_expr(left), lua_expr(right)),
+        LuaExpr::Local { local, keys } => keys.iter().fold(local.clone(), |access, key| access + &index(key)),
+        LuaExpr::Context(key) => format!("ctx{}", index(key)),
+        LuaExpr::Offset => "offset".to_owned(),
+        LuaExpr::Remaining => "tvb:len() - offset".to_owned(),
     }
 }
 

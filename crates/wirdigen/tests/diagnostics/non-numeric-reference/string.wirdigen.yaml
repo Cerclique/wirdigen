@@ -1,0 +1,4 @@
+name: demo
+fields:
+  - { name: tag, type: string, size: 4 }
+  - { name: data, type: bytes, size: tag }

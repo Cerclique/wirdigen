@@ -1,0 +1,31 @@
+# Expression references (spec §4.3, §4.5): nearest-first names, dotted paths into structures
+# and Types read earlier, Types whose names resolve at each use, and the built-ins. The
+# comments give each size for the first packet.
+name: references
+fields:
+  - { name: len, type: uint8 }                                       # 2
+  - { name: data, type: bytes, size: len }                           # 2: a sibling
+  - name: hdr
+    fields:
+      - { name: len, type: uint16 }                                  # 3
+      - { name: more, type: bool }                                   # true
+      - { name: body, type: bytes, size: "len - 1" }                 # 2: `hdr.len`, the nearest
+  - { name: extra, type: bytes, size: "hdr.more * hdr.len" }         # 3: a true `bool` reads 1
+  - { name: first, type: Record }                                    # its `len` is the top-level one
+  - name: inner
+    fields:
+      - { name: len, type: uint8 }                                   # 1
+      - { name: second, type: Record }                               # its `len` is `inner.len`
+  - { name: echo, type: bytes, size: "first.items.end + inner.second.count" } # 4: inside Types
+  - { name: at, type: bytes, size: "_offset % 4" }                   # 1: at offset 25
+  - { name: rest, type: bytes, size: "_remaining" }                  # 2: the rest of the packet
+types:
+  Record:
+    fields:
+      - { name: count, type: uint8 }
+      - { name: items, type: Items }
+  Items:
+    fields:
+      - { name: end, type: uint8 }       # a Lua keyword, returned under `["end"]`
+      # `count` is the Record's, passed in by it; `len` comes from each use of the Record.
+      - { name: payload, type: bytes, size: "count + len - end" }

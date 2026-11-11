@@ -238,6 +238,8 @@ cases! {
     structures => "structures",
     types => "types",
     expressions => "expressions",
+    references => "references",
+    runtime => "runtime",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.

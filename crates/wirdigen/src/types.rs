@@ -1,12 +1,13 @@
 //! Named Types (spec §3.5): reading `types:` (stage 2), and the checks that span Types (stage 4):
 //! their names, which Fields use them, recursion and the order lowering defines them in.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::field::{self, Endian, Field, RawField};
 use crate::keys::{Spanned, closest, duplicate_key, expect_string, is_type_name, read_keys, wrong_type};
 use crate::mapping::Enums;
+use crate::scope::{FreeRef, Scope};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Type body, in documentation order.
@@ -89,11 +90,19 @@ pub(crate) struct Types<'a> {
     /// One `unknown-type` per unknown name, at its first use in the source: an unknown Type is
     /// one error, not one per use.
     unknown: Vec<(String, Diagnostic)>,
+    /// The names each Type reads but does not declare, once computed; `None` while a Type is
+    /// being walked, so a recursive Type stops the walk (spec §4.3).
+    pub(crate) free: BTreeMap<String, Option<Vec<FreeRef>>>,
 }
 
 impl<'a> Types<'a> {
     fn new(raw: &'a [RawType]) -> Self {
-        Self { raw, used: vec![false; raw.len()], unknown: Vec::new() }
+        Self { raw, used: vec![false; raw.len()], unknown: Vec::new(), free: BTreeMap::new() }
+    }
+
+    /// The Fields of the Type named `name`, as written.
+    pub(crate) fn body(&self, name: &str) -> Option<&'a [RawField]> {
+        self.position(name).map(|i| self.raw[i].fields.as_slice())
     }
 
     fn position(&self, name: &str) -> Option<usize> {
@@ -140,9 +149,9 @@ impl<'a> Types<'a> {
 ///
 /// Returns the checked layout, and the Types in dependency order, each after the Types it uses,
 /// so lowering can define each one before its callers.
-pub(crate) fn check(
-    raw: &[RawType],
-    top: &[RawField],
+pub(crate) fn check<'a>(
+    raw: &'a [RawType],
+    top: &'a [RawField],
     endian: Endian,
     enums: &mut Enums<'_>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -161,9 +170,10 @@ pub(crate) fn check(
             );
         }
         let endian = Endian::resolve(t.endian.as_ref(), endian, diagnostics);
-        bodies.push(Some(field::check(&t.fields, endian, enums, &mut types, diagnostics)));
+        let scope = Scope { ty: Some(&t.name.value), levels: &[] };
+        bodies.push(Some(field::check(&t.fields, endian, enums, &mut types, scope, diagnostics)));
     }
-    let layout = field::check(top, endian, enums, &mut types, diagnostics);
+    let layout = field::check(top, endian, enums, &mut types, Scope { ty: None, levels: &[] }, diagnostics);
     diagnostics.extend(types.unknown.into_iter().map(|(_, d)| d));
     for (t, used) in raw.iter().zip(&types.used) {
         if !used {

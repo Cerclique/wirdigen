@@ -120,9 +120,19 @@ Leaving all three out is [`missing-length`](../diagnostics.md#missing-length), a
 than one is [`conflicting-length`](../diagnostics.md#conflicting-length). A negative `size:` is
 [`invalid-size`](../diagnostics.md#invalid-size), a `prefix:` that is not an unsigned integer
 type is [`invalid-prefix`](../diagnostics.md#invalid-prefix), and a `terminator:` outside 0 to
-255 is [`invalid-terminator`](../diagnostics.md#invalid-terminator). This version takes only a
-constant `size:`, such as `"4 * 6 + 2"`; a size computed from earlier Fields is not read yet
-([`not-supported-yet`](../diagnostics.md#not-supported-yet)).
+255 is [`invalid-terminator`](../diagnostics.md#invalid-terminator).
+
+A `size:` Expression can read Fields read earlier, by name, and `size: "_remaining"` reads up to
+the end of the packet. See [Expressions](expressions.md#references):
+
+```yaml
+name: chat
+fields:
+  - { name: length, type: uint16 }
+  - { name: text, type: string, size: length }
+  - { name: padding, type: bytes, size: "(4 - length % 4) % 4" }
+  - { name: trailer, type: bytes, size: "_remaining" }
+```
 
 The tree shows the value bytes only: the `prefix:` count and the terminator are read but not
 highlighted with the value. When the packet ends before the value does, or before a

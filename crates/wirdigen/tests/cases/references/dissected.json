@@ -1,0 +1,66 @@
+[
+  {
+    "references.len": "2",
+    "references.data": "aa:aa",
+    "references.hdr": {
+      "references.hdr.len": "3",
+      "references.hdr.more": "1",
+      "references.hdr.body": "bb:bb"
+    },
+    "references.extra": "cc:cc:cc",
+    "references.first": {
+      "references.first.count": "2",
+      "references.first.items": {
+        "references.first.items.end": "1",
+        "references.first.items.payload": "dd:dd:dd"
+      }
+    },
+    "references.inner": {
+      "references.inner.len": "1",
+      "references.inner.second": {
+        "references.inner.second.count": "3",
+        "references.inner.second.items": {
+          "references.inner.second.items.end": "2",
+          "references.inner.second.items.payload": "ee:ee"
+        }
+      }
+    },
+    "references.echo": "ff:ff:ff:ff",
+    "references.at": "11",
+    "references.rest": "22:33"
+  },
+  {
+    "references.len": "2",
+    "references.data": "aa:aa",
+    "references.hdr": {
+      "references.hdr.len": "3",
+      "references.hdr.more": "1",
+      "references.hdr.body": "bb:bb"
+    },
+    "references.extra": "cc:cc:cc",
+    "references.first": {
+      "references.first.count": "2",
+      "references.first.items": {
+        "references.first.items.end": "1",
+        "references.first.items.payload": "dd:dd:dd"
+      }
+    },
+    "references.inner": {
+      "references.inner.len": "1",
+      "references.inner.second": {
+        "references.inner.second.count": "3",
+        "references.inner.second.items": {
+          "references.inner.second.items.end": "2",
+          "references.inner.second.items.payload": "ee:ee"
+        }
+      }
+    },
+    "_ws.expert": {
+      "references._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: echo",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

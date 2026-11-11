@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - { name: len, type: float32 }
+  - { name: rec, type: Record }
+types:
+  Record:
+    fields:
+      - { name: data, type: bytes, size: len }

@@ -1,3 +1,0 @@
-name: demo
-fields:
-  - { name: data, type: bytes, size: "_remaining" }

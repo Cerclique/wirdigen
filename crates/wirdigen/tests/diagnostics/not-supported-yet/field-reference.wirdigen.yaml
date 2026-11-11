@@ -1,4 +1,0 @@
-name: demo
-fields:
-  - { name: len, type: uint8 }
-  - { name: data, type: bytes, size: "len * 2 + hdr.extra" }

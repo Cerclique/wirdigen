@@ -1,0 +1,10 @@
+name: demo
+fields:
+  - { name: outer, type: Outer }
+types:
+  Outer:
+    fields:
+      - { name: inner, type: Inner }
+  Inner:
+    fields:
+      - { name: data, type: bytes, size: count }

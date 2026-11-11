@@ -275,7 +275,7 @@ A variable-length Field (string, bytes, …) states its length with exactly one 
 
 None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, and so is a constant Expression that is negative, divides by zero or shifts by a count outside 0..63 (#60: rejected when building rather than reported at runtime as in §4.4), any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
 
-A Field placed after a `size: "_remaining"` Field in the same structure is a warning.
+A Field placed after a `size: "_remaining"` Field in the same structure is the warning `unreachable-field`.
 
 ### 3.7 Arrays
 
@@ -455,7 +455,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`.
+- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
@@ -509,7 +509,7 @@ Errors:
 - `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - bitfield widths not adding up to the container;
-- forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;
+- `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; conditional Fields used outside their scope;
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - overlapping `switch` cases;
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`);
@@ -526,7 +526,7 @@ Warnings:
 - `tcp-without-framing`;
 - `unused-type`, `unused-enum`;
 - `unreachable-value`: a `values:` key outside the Field type's range;
-- a Field after a `repeat: to_end` array or a `size: "_remaining"` Field in the same structure;
+- `unreachable-field`: a Field after a `repeat: to_end` array or a `size: "_remaining"` Field in the same structure;
 - an `expect:` that can never match;
 - `protocol-name-taken`;
 - `unknown-allow`: an `allow:` entry that names no warning, either an unknown name or an error's (a warning so that a description allowing a warning from a newer minor still works).
