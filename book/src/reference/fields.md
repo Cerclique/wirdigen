@@ -394,7 +394,7 @@ A structure takes `name:`, `label:`, `description:`, `count:` or `repeat:` to ma
 set their own (see [Byte order](#byte-order)). The keys that
 say how a value is read or shown belong on the Fields inside: a length key on a structure is
 [`unexpected-length`](../diagnostics.md#unexpected-length), and `display:`, `encoding:`,
-`values:`, `true:`, `false:` or `unit:` is
+`values:`, `true:`, `false:`, `unit:` or [`expect:`](#expect) is
 [`incompatible-display`](../diagnostics.md#incompatible-display).
 
 Only the Fields of one structure need different names: `header.length` and a top-level
@@ -435,7 +435,7 @@ types:
   [`if:`](conditionals.md) and [`hidden:`](#hidden) only: `endian:`
   on it is [`invalid-endian`](../diagnostics.md#invalid-endian),
   a length key [`unexpected-length`](../diagnostics.md#unexpected-length), and a display or
-  value-mapping key [`incompatible-display`](../diagnostics.md#incompatible-display).
+  value-mapping key, or [`expect:`](#expect), [`incompatible-display`](../diagnostics.md#incompatible-display).
 - Using a Type nobody declared is [`unknown-type`](../diagnostics.md#unknown-type), reported
   once however many Fields use it. Declaring a name twice is
   [`duplicate-key`](../diagnostics.md#duplicate-key). A Type that contains itself, directly or
@@ -491,6 +491,38 @@ fields:
       - { name: a, type: uint32 }
       - { name: b, type: uint32 }
 ```
+
+## Expected values {#expect}
+
+`expect:` declares the values a Field should hold: one value, a `"low-high"` range string with
+both bounds included, or a list mixing both. It goes on integer and `bool` Fields and on
+[bitfield](bitfields.md) sub-Fields. A `bool` holds 0 or 1, as [Expressions](expressions.md)
+read it.
+
+```yaml
+name: demo
+fields:
+  - { name: magic, type: uint32, display: hex, expect: 0xcafe }
+  - { name: version, type: uint8, expect: [1, "5-7"] }
+  - { name: ready, type: bool, expect: 1 }
+  - name: flags
+    type: uint8
+    bits:
+      - { name: reserved, width: 4, expect: 0 }
+      - { name: kind, width: 4 }
+```
+
+A value outside it is not a malformed packet: the Dissector adds an expert info **warning** on
+the Field, "Unexpected value: version (expected 1, 5-7)", filtered as
+`<protocol>._protocol.unexpected`, and goes on reading. A hidden Field is checked too.
+
+Values are written as in a [values table](#values-tables): an entry that is neither an integer
+nor a range, a range whose first bound is the higher, and an empty list are
+[`wrong-value-type`](../diagnostics.md#wrong-value-type). On any other type, `expect:` is
+[`incompatible-display`](../diagnostics.md#incompatible-display). An `expect:` none of whose
+values the Field's type can hold, such as `256` on a `uint8`, never matches: it is the warning
+[`unreachable-expect`](../diagnostics.md#unreachable-expect), and every packet gets the expert
+info.
 
 ## Filter names {#filter-names}
 

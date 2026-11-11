@@ -1,0 +1,23 @@
+# Expected values (spec §3.10): a value outside a Field's `expect:` adds an expert info warning,
+# filtered `expect._protocol.unexpected`, and the dissection goes on.
+name: expect
+fields:
+  - { name: magic, type: uint16, display: hex, expect: 0xcafe }
+  - { name: version, type: uint8, expect: [1, "5-7"] }
+  - { name: delta, type: int8, expect: "-2--1" }
+  - { name: big, type: uint64, expect: "9223372036854775806-9223372036854775809" }   # across 2^63
+  - { name: ready, type: bool, expect: 1 }
+  - { name: secret, type: uint8, hidden: true, expect: 0 }                           # still checked
+  - name: flags                                                                       # little-endian
+    type: uint16
+    endian: little
+    expect: "0-0x7fff"
+    bits:
+      - { name: kind, width: 4, expect: [2, 3] }
+      - { name: on, width: 1, expect: 1 }
+      - { padding: 11 }
+  - { name: point, type: Point }
+types:
+  Point:
+    fields:
+      - { name: x, type: uint8, expect: 0 }

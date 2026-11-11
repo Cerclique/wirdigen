@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - { name: kind, type: uint8, expect: 256 }
+  - { name: mode, type: int8, expect: [ 200, "128-255" ] }
+  - { name: flag, type: bool, expect: 2 }
+  - { name: some, type: uint8, expect: [ 1, 300 ] }

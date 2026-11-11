@@ -1,0 +1,112 @@
+[
+  {
+    "expect.magic": "0xcafe",
+    "expect.version": "6",
+    "expect.delta": "-1",
+    "expect.big": "9223372036854775808",
+    "expect.ready": "1",
+    "expect.secret": "0",
+    "expect.flags": "10240",
+    "expect.flags_tree": {
+      "expect.flags.kind": "2",
+      "expect.flags.on": "1"
+    },
+    "expect.point": {
+      "expect.point.x": "0"
+    }
+  },
+  {
+    "expect.magic": "0x0001",
+    "expect.magic_tree": {
+      "_ws.expert": {
+        "expect._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: magic (expected 0xcafe)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "expect.version": "2",
+    "expect.version_tree": {
+      "_ws.expert": {
+        "expect._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: version (expected 1, 5-7)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "expect.delta": "0",
+    "expect.delta_tree": {
+      "_ws.expert": {
+        "expect._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: delta (expected -2--1)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "expect.big": "0",
+    "expect.big_tree": {
+      "_ws.expert": {
+        "expect._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: big (expected 9223372036854775806-9223372036854775809)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "expect.ready": "0",
+    "expect.ready_tree": {
+      "_ws.expert": {
+        "expect._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: ready (expected 1)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "expect.secret": "9",
+    "expect.secret_tree": {
+      "_ws.expert": {
+        "expect._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: secret (expected 0)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "expect.flags": "32768",
+    "expect.flags_tree": {
+      "_ws.expert": {
+        "expect._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: flags (expected 0-0x7fff)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      },
+      "expect.flags.kind": "8",
+      "expect.flags.kind_tree": {
+        "_ws.expert": {
+          "expect._protocol.unexpected": "",
+          "_ws.expert.message": "Unexpected value: flags.kind (expected 2, 3)",
+          "_ws.expert.severity": "6291456",
+          "_ws.expert.group": "150994944"
+        }
+      },
+      "expect.flags.on": "0",
+      "expect.flags.on_tree": {
+        "_ws.expert": {
+          "expect._protocol.unexpected": "",
+          "_ws.expert.message": "Unexpected value: flags.on (expected 1)",
+          "_ws.expert.severity": "6291456",
+          "_ws.expert.group": "150994944"
+        }
+      }
+    },
+    "expect.point": {
+      "expect.point.x": "4",
+      "expect.point.x_tree": {
+        "_ws.expert": {
+          "expect._protocol.unexpected": "",
+          "_ws.expert.message": "Unexpected value: point.x (expected 0)",
+          "_ws.expert.severity": "6291456",
+          "_ws.expert.group": "150994944"
+        }
+      }
+    }
+  }
+]

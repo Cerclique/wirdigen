@@ -8,6 +8,7 @@ use std::ops::{Range, RangeInclusive};
 
 use crate::bits::{self, Bit, RawBits};
 use crate::diagnostic::{Diagnostic, Name, record};
+use crate::expect::{self, Expect, RawExpect};
 use crate::expr::{self, Expr, ExprKind, Fault};
 use crate::keys::{
     Keys, Spanned, closest, expect_bool, expect_integer, expect_string, is_single_line, read_keys, wrong_type,
@@ -20,7 +21,7 @@ use crate::types::Types;
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-pub(crate) const KEYS: [&str; 23] = [
+pub(crate) const KEYS: [&str; 24] = [
     "name",
     "type",
     "fields",
@@ -40,6 +41,7 @@ pub(crate) const KEYS: [&str; 23] = [
     "true",
     "false",
     "unit",
+    "expect",
     "label",
     "description",
     "hidden",
@@ -734,13 +736,13 @@ impl Endian {
 
 /// The keys only a Field read as a value takes, in documentation order: an inline structure
 /// takes none of them (spec §3.4.3).
-const VALUE_KEYS: [&str; 9] =
-    ["size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit"];
+const VALUE_KEYS: [&str; 10] =
+    ["size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit", "expect"];
 
 /// The keys a Field of a Type does not take, in documentation order: the value keys, and
 /// `endian:`, since a Type is read in its own byte order (spec §3.5, §3.11).
-const TYPE_USE_KEYS: [&str; 10] =
-    ["endian", "size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit"];
+const TYPE_USE_KEYS: [&str; 11] =
+    ["endian", "size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit", "expect"];
 
 /// What a Field is, as written.
 #[derive(Debug, Clone)]
@@ -807,6 +809,8 @@ pub(crate) struct RawField {
     /// The length keys present, in documentation order.
     lengths: Vec<LengthKey>,
     mappings: mapping::RawMappings,
+    /// `expect:`, the values the Field should hold (spec §3.10).
+    expect: Option<RawExpect>,
     /// The sub-Fields, when the Field is a bitfield (spec §3.8).
     bits: Option<RawBits>,
     /// How the Field repeats, when it is an array (spec §3.7), at its key.
@@ -1008,6 +1012,8 @@ pub(crate) struct BuiltinField {
     pub(crate) display: Option<Display>,
     /// The labels of values, states or the unit, when the Field has any (spec §3.4.7).
     pub(crate) mapping: Option<Mapping>,
+    /// The values the Field should hold, when it has `expect:` (spec §3.10).
+    pub(crate) expect: Option<Expect>,
     /// The sub-Fields of a bitfield, most significant first; empty for any other Field.
     pub(crate) bits: Vec<Bit>,
 }
@@ -1059,6 +1065,7 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
         })
         .collect();
     let mappings = mapping::read(&keys, errors);
+    let expect = expect::read(&keys, errors);
     let bits = keys.key_of("bits").zip(keys.get("bits")).and_then(|(key, value)| bits::read(key, value, errors));
     let array = read_array(&keys, errors);
     let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
@@ -1078,6 +1085,7 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
             description,
             lengths,
             mappings,
+            expect,
             bits,
             array,
             hidden,
@@ -1345,6 +1353,11 @@ fn check_builtin<'a>(
     };
     let mapping =
         ty.and_then(|ty| mapping::check(&field.mappings, &Subject::builtin(ty_name, ty), enums, diagnostics).ok());
+    let expect = match (ty, &field.expect) {
+        (_, None) | (None, _) => Some(None),
+        (Some(ty), Some(raw)) => record(expect::Subject::builtin(raw, ty_name, ty), diagnostics)
+            .map(|subject| Some(expect::check(raw, &subject, diagnostics))),
+    };
     let bits = match (&field.bits, ty) {
         (None, _) => Some(Vec::new()),
         (Some(raw), Some(Builtin::Int { signed: false, bytes })) => {
@@ -1356,9 +1369,9 @@ fn check_builtin<'a>(
         }
         (Some(_), None) => None,
     };
-    let (ty, endian, length, encoding, display, mapping, bits) =
-        (ty?, endian?, length?, encoding?, display?, mapping?, bits?);
-    Some(BuiltinField { ty, endian, length, encoding, display, mapping, bits })
+    let (ty, endian, length, encoding, display, mapping, expect, bits) =
+        (ty?, endian?, length?, encoding?, display?, mapping?, expect?, bits?);
+    Some(BuiltinField { ty, endian, length, encoding, display, mapping, expect, bits })
 }
 
 /// Checks how an array Field repeats (spec §3.7): only an inline structure or a Field of a Type

@@ -98,6 +98,7 @@ names! {
     NotSupportedYet => "not-supported-yet", Error;
     UnreachableValue => "unreachable-value", Warning;
     UnreachableField => "unreachable-field", Warning;
+    UnreachableExpect => "unreachable-expect", Warning;
     UnusedEnum => "unused-enum", Warning;
     UnusedType => "unused-type", Warning;
     UnknownAllow => "unknown-allow", Warning;

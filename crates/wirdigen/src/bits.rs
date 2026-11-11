@@ -8,6 +8,7 @@
 use std::ops::Range;
 
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
+use crate::expect::{self, Expect, RawExpect};
 use crate::field::{self, Builtin, Display};
 use crate::keys::{Spanned, expect_bool, expect_integer, expect_string, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping, Subject};
@@ -53,6 +54,8 @@ struct RawSubField {
     description: Option<Spanned<String>>,
     /// `values:`, `unit:`, `true:` and `false:`, as written.
     mappings: mapping::RawMappings,
+    /// `expect:`, the values the sub-Field should hold (spec §3.10).
+    expect: Option<RawExpect>,
 }
 
 impl RawBit {
@@ -142,6 +145,8 @@ pub(crate) struct Bit {
     pub(crate) display: Option<Display>,
     /// Its labels, when it has any (spec §3.4.7).
     pub(crate) mapping: Option<Mapping>,
+    /// The values it should hold, when it has `expect:` (spec §3.10).
+    pub(crate) expect: Option<Expect>,
 }
 
 impl Bit {
@@ -196,13 +201,7 @@ fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawBit> {
         Some(Spanned { value: width, span: value.span.clone() })
     });
     let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
-    if let Some(key) = keys.key_of("expect") {
-        errors.push(Diagnostic::new(
-            Name::NotSupportedYet,
-            key.span.clone(),
-            "`expect` is not supported by this version of Wirdigen yet",
-        ));
-    }
+    let expect = expect::read(&keys, errors);
     let mappings = mapping::read(&keys, errors);
     let mut string_value =
         |key: &str, invalid: Name| keys.get(key).and_then(|value| record(expect_string(value, key, invalid), errors));
@@ -212,7 +211,8 @@ fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawBit> {
     let description = string_value("description", Name::InvalidDescription);
     match (name, width) {
         (Some(name), Some(width)) if errors.len() == before => {
-            Some(RawBit::SubField(Box::new(RawSubField { name, width, display, hidden, label, description, mappings })))
+            let sub = RawSubField { name, width, display, hidden, label, description, mappings, expect };
+            Some(RawBit::SubField(Box::new(sub)))
         }
         _ => None,
     }
@@ -269,12 +269,17 @@ pub(crate) fn check(
             (Some(value), false) => record(Display::check(value, ty, container), diagnostics).map(Some),
             (None, false) => Some(container.displays().first().copied()),
         };
-        let mapping = u32::try_from(sub.width.value).ok().filter(|w| (1..=64).contains(w)).and_then(|width| {
+        let width = u32::try_from(sub.width.value).ok().filter(|w| (1..=64).contains(w));
+        let mapping = width.and_then(|width| {
             let subject = Subject::sub_field(&sub.name.span, width, boolean);
             mapping::check(&sub.mappings, &subject, enums, diagnostics).ok()
         });
+        let expect = width.map(|width| {
+            let subject = expect::Subject::sub_field(&sub.name.span, width);
+            sub.expect.as_ref().map(|raw| expect::check(raw, &subject, diagnostics))
+        });
         field::check_text(sub.label.as_ref(), sub.description.as_ref(), diagnostics);
-        checked.push((display, mapping));
+        checked.push((display, mapping, expect));
     }
     if diagnostics[start..].iter().any(|d| d.severity() == Severity::Error) {
         return None;
@@ -286,7 +291,7 @@ pub(crate) fn check(
         .iter()
         .zip(checked)
         .zip(located)
-        .map(|((sub, (display, mapping)), (_, (shift, width)))| Bit {
+        .map(|((sub, (display, mapping, expect)), (_, (shift, width)))| Bit {
             name: sub.name.value.clone(),
             label: sub.label.as_ref().map(|l| l.value.clone()),
             description: sub.description.as_ref().map(|d| d.value.clone()),
@@ -295,6 +300,7 @@ pub(crate) fn check(
             width,
             display: display.expect("a sub-Field without errors has a display"),
             mapping: mapping.expect("a sub-Field without errors has its mappings"),
+            expect: expect.expect("a sub-Field without errors has a width"),
         })
         .collect();
     Some(bits)

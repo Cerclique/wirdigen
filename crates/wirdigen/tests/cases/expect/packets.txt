@@ -1,0 +1,8 @@
+# Every value expected: magic=0xcafe version=6 delta=-1 big=2^63 ready=1 secret=0
+# flags=0x2800 (kind=2, on=1) point.x=0
+0000  ca fe 06 ff 80 00 00 00 00 00 00 00 01 00 00 28
+0010  00
+# None expected, and the dissection goes on: magic=0x0001 version=2 delta=0 big=0 ready=0
+# secret=9 flags=0x8000 (kind=8, on=0) point.x=4
+0000  00 01 02 00 00 00 00 00 00 00 00 00 00 09 00 80
+0010  04

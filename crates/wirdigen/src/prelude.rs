@@ -30,6 +30,8 @@ pub(crate) const INVALID: &str = "invalid";
 pub(crate) const NAMES: &str = "names";
 /// Showing the bytes a `switch` with no matching case and no `default` leaves unread.
 pub(crate) const UNMATCHED: &str = "unmatched";
+/// Reporting a value outside a Field's `expect:`.
+pub(crate) const UNEXPECTED: &str = "unexpected";
 
 #[derive(Debug)]
 struct Chunk {

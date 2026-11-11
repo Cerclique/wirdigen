@@ -78,9 +78,9 @@ fields:
       - { name: ttl, width: 8, display: hex, label: Time to live }
 ```
 
-Any other key on a sub-Field is [`unknown-key`](../diagnostics.md#unknown-key), and `expect:`
-is not read by this version yet
-([`not-supported-yet`](../diagnostics.md#not-supported-yet)).
+A sub-Field also takes [`expect:`](fields.md#expect), checked against the values its width
+holds: `0` to `3` for a 2-bit sub-Field, `0` or `1` for a 1-bit one. Any other key on a
+sub-Field is [`unknown-key`](../diagnostics.md#unknown-key).
 
 ## Hidden bitfields {#hidden}
 
