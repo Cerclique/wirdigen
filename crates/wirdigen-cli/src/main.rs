@@ -64,22 +64,26 @@ impl Verbosity {
 #[derive(Subcommand)]
 enum Command {
     /// Validate Protocol Descriptions; write nothing.
-    Validate(Inputs),
+    Validate(ValidationArgs),
     /// Validate Protocol Descriptions and write their Dissectors.
     Generate(GenerateArgs),
 }
 
 #[derive(clap::Args)]
-struct Inputs {
+struct ValidationArgs {
     /// Protocol Description files; `-` reads standard input.
     #[arg(required = true)]
     inputs: Vec<PathBuf>,
+
+    /// Treat warnings as errors, so a file with warnings fails and is not written.
+    #[arg(long)]
+    deny_warnings: bool,
 }
 
 #[derive(clap::Args)]
 struct GenerateArgs {
     #[command(flatten)]
-    inputs: Inputs,
+    validation: ValidationArgs,
 
     /// Write the Dissector of the only input to this file, or to standard output for `-`.
     #[arg(short = 'o', value_name = "FILE|-", conflicts_with = "out_dir")]
@@ -103,15 +107,17 @@ fn main() -> ExitCode {
         std::io::stderr().is_terminal(),
     );
     let verbosity = Verbosity::from_flags(cli.quiet, cli.verbose);
-    let mut options = RenderOptions::default();
-    options.color = color;
-    let (subcommand, args, placement, check) = match cli.command {
-        Command::Validate(Inputs { inputs }) => ("validate", inputs, None, false),
-        Command::Generate(GenerateArgs { inputs: Inputs { inputs }, output, out_dir, check }) => {
-            ("generate", inputs, Some(Placement::from_args(output, out_dir)), check)
+    let (subcommand, validation, placement, check) = match cli.command {
+        Command::Validate(validation) => ("validate", validation, None, false),
+        Command::Generate(GenerateArgs { validation, output, out_dir, check }) => {
+            ("generate", validation, Some(Placement::from_args(output, out_dir)), check)
         }
     };
-    let inputs = placement::inputs(args).unwrap_or_else(|message| usage_error(subcommand, &message));
+    let ValidationArgs { inputs: paths, deny_warnings } = validation;
+    let mut options = RenderOptions::default();
+    options.color = color;
+    options.deny_warnings = deny_warnings;
+    let inputs = placement::inputs(paths).unwrap_or_else(|message| usage_error(subcommand, &message));
     let actions = match &placement {
         None => vec![Action::Validate; inputs.len()],
         Some(placement) => {
@@ -198,6 +204,7 @@ impl Run {
         self.report(&source, diagnostics);
         match valid {
             Err(_) => self.failed = true,
+            Ok(valid) if self.options.deny_warnings && !valid.warnings().is_empty() => self.failed = true,
             Ok(valid) => match action {
                 Action::Validate => {}
                 Action::Write(output) => match write(output, &valid.generate()) {
@@ -223,17 +230,18 @@ impl Run {
             return;
         }
         for diagnostic in diagnostics {
-            let shown = diagnostic.severity() == Severity::Error || self.verbosity.shows_warnings();
-            if shown {
+            let is_error = diagnostic.severity() == Severity::Error || self.options.deny_warnings;
+            if is_error || self.verbosity.shows_warnings() {
                 if self.rendered_any {
                     eprintln!();
                 }
                 eprint!("{}", diagnostic.render(source, &self.options));
                 self.rendered_any = true;
             }
-            match diagnostic.severity() {
-                Severity::Error => self.errors += 1,
-                Severity::Warning => self.warnings += 1,
+            if is_error {
+                self.errors += 1;
+            } else {
+                self.warnings += 1;
             }
         }
         self.files_with_diagnostics += 1;

@@ -10,6 +10,7 @@ use tempfile::TempDir;
 
 const MINIMAL: &str = "../wirdigen/tests/valid/minimal.wirdigen.yaml";
 const ERRORS: &str = "../wirdigen/tests/render/several.wirdigen.yaml";
+const WARNINGS: &str = "../wirdigen/tests/diagnostics/unused-type/unused.wirdigen.yaml";
 
 fn wirdigen() -> Command {
     let mut command = Command::cargo_bin("wirdigen").unwrap();
@@ -114,4 +115,21 @@ fn check_writes_nothing() {
     check().code(1);
     assert_eq!(fs::read(&output).unwrap(), b"-- stale\n");
     assert_eq!(mtime(&output), past, "a stale Dissector is not touched");
+}
+
+#[test]
+fn deny_warnings_does_not_write_a_warnings_only_dissector() {
+    let work = tempfile::tempdir().unwrap();
+    let input = Path::new(env!("CARGO_MANIFEST_DIR")).join(WARNINGS);
+    fs::copy(input, work.path().join("unused.wirdigen.yaml")).unwrap();
+    let output = work.path().join("unused.lua");
+    let generate = |deny: &[&str]| {
+        wirdigen().arg("generate").args(deny).arg("unused.wirdigen.yaml").current_dir(work.path()).assert()
+    };
+
+    generate(&["--deny-warnings"]).code(1);
+    assert!(!output.exists(), "a denied warning fails the file");
+
+    generate(&[]).success();
+    assert!(output.exists(), "without the flag, warnings do not stop the write");
 }

@@ -22,12 +22,17 @@ const DIAGNOSTICS_INDEX: &str = "https://cerclique.github.io/wirdigen/diagnostic
 pub struct RenderOptions {
     /// Whether to colour the output with ANSI escape codes. Off by default.
     pub color: bool,
+    /// Whether to render warnings as errors, each with a note saying it is denied, for a caller
+    /// that fails on warnings (the CLI's `--deny-warnings`). Off by default.
+    pub deny_warnings: bool,
 }
 
 /// Renders one Diagnostic as a snippet of `source`, ending with a newline.
 pub(crate) fn render(diagnostic: &Diagnostic, source: &Source, options: &RenderOptions) -> String {
+    let denied = options.deny_warnings && diagnostic.severity() == Severity::Warning;
     let level = match diagnostic.severity() {
         Severity::Error => Level::ERROR,
+        Severity::Warning if denied => Level::ERROR,
         Severity::Warning => Level::WARNING,
     };
     let mut snippet =
@@ -38,6 +43,9 @@ pub(crate) fn render(diagnostic: &Diagnostic, source: &Source, options: &RenderO
             Some(span) => snippet = snippet.annotation(AnnotationKind::Context.span(span).label(note.message())),
             None => footers.push(Level::NOTE.message(note.message())),
         }
+    }
+    if denied {
+        footers.push(Level::NOTE.message("warnings are denied for this run"));
     }
     let link = format!("see {DIAGNOSTICS_INDEX}#{}", diagnostic.name());
     footers.push(Level::NOTE.message(link));

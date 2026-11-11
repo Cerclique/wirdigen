@@ -627,7 +627,7 @@ impl Diagnostic {
 pub enum Severity { Error, Warning }         // exhaustive
 
 #[non_exhaustive] #[derive(Default)]
-pub struct RenderOptions { pub color: bool }
+pub struct RenderOptions { pub color: bool, pub deny_warnings: bool }
 ```
 
 - **No I/O**: the library never touches files or a terminal. `Source`'s name is a label, never resolved. Diagnostics show it whole, and the Lua header keeps its last component.

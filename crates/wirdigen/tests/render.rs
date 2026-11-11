@@ -63,3 +63,27 @@ fn colour_is_opt_in() {
     options.color = true;
     assert!(diagnostics.render(&source, &options).contains('\x1b'));
 }
+
+#[test]
+fn denied_warnings_render_as_errors_with_a_note() {
+    let text = include_str!("diagnostics/unused-type/unused.wirdigen.yaml");
+    let source = Source::new("unused.wirdigen.yaml", text);
+    let valid = wirdigen::validate(&source).unwrap();
+    let warning = &valid.warnings()[0];
+    let mut options = RenderOptions::default();
+    options.deny_warnings = true;
+    let rendered = warning.render(&source, &options);
+    assert!(rendered.starts_with("error[unused-type]:"), "{rendered}");
+    let lines: Vec<&str> = rendered.trim_end().lines().collect();
+    assert_eq!(lines[lines.len() - 2], "  = note: warnings are denied for this run");
+    assert!(lines[lines.len() - 1].ends_with("diagnostics.html#unused-type"));
+}
+
+#[test]
+fn deny_warnings_leaves_errors_alone() {
+    let source = Source::new("x", "name: Demo\nfields: [ {name: a, type: uint8} ]\n");
+    let diagnostics = wirdigen::validate(&source).unwrap_err();
+    let mut options = RenderOptions::default();
+    options.deny_warnings = true;
+    assert_eq!(diagnostics.render(&source, &options), diagnostics.render(&source, &RenderOptions::default()));
+}

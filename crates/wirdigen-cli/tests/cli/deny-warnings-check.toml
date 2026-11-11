@@ -1,0 +1,20 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "--check", "--deny-warnings", "unused.wirdigen.yaml"]
+fs.base = "../../../wirdigen/tests/diagnostics/unused-type"
+fs.sandbox = true
+status.code = 1
+stdout = ""
+stderr = """
+error[unused-type]: the Type `Header` is never used
+ --> unused.wirdigen.yaml:5:3
+  |
+5 |   Header:
+  |   ^^^^^^
+  |
+  = note: use it as `type: Header`, or remove it
+  = note: warnings are denied for this run
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unused-type
+
+error: 1 error in 1 of 1 file
+"""
