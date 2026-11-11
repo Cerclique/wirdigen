@@ -270,11 +270,12 @@ end
 -- it as malformed for the reason `malformed`.
 --
 -- A Message running past the segment asks TCP for more data from its start: the bytes missing
--- once its header gives its length, one more segment before (`DESEGMENT_ONE_MORE_SEGMENT`, the
--- only other request Lua has). When TCP cannot reassemble (its preference is off), the rest of
--- the segment is dissected as one Message, which then reports itself truncated. A length with
--- no value, negative or below the header shows the rest of the segment as one malformed
--- Message.
+-- once its header gives its length, one more segment (`DESEGMENT_ONE_MORE_SEGMENT`) before.
+-- When TCP cannot reassemble (its preference is off), the rest of the segment is dissected as
+-- one Message, which then reports itself truncated. A length with no value, negative or below
+-- the header shows the rest of the segment as one malformed Message.
+--
+-- `pinfo.port_type` of a TCP packet: `PT_TCP` in Wireshark's `port_type` enum.
 local wd_port_type_tcp = 2
 
 local function wd_framed(tvb, pinfo, tree, header, message_length, dissect_message)

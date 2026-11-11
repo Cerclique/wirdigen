@@ -27,6 +27,22 @@ pub(crate) struct RawFraming {
     length: Spanned<RawAmount>,
 }
 
+/// Where a top-level Field lies in every Message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Extent {
+    /// Its offset from the start of the Message.
+    pub(crate) offset: usize,
+    /// The bytes it reads.
+    pub(crate) size: usize,
+}
+
+impl Extent {
+    /// The offset just after it. Placing checked that it does not overflow.
+    fn end(self) -> usize {
+        self.offset + self.size
+    }
+}
+
 /// A checked `framing:`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Framing {
@@ -35,8 +51,8 @@ pub(crate) struct Framing {
     /// The whole Message's length. A constant one is at least `header`; an Expression reads
     /// only top-level Fields, and their sub-Fields, inside the header.
     pub(crate) length: Amount,
-    /// Where each top-level Field the length reads lies: its offset and size, by name.
-    pub(crate) reads: BTreeMap<String, (usize, usize)>,
+    /// Where each top-level Field the length reads lies, by name.
+    pub(crate) reads: BTreeMap<String, Extent>,
 }
 
 /// Stage 2: reads `framing:`, pushing its errors.
@@ -155,7 +171,7 @@ fn check_constant(value: i64, header: usize, span: Range<usize>, diagnostics: &m
 
 /// What resolving a reference of the length gives: its path, what it reads, and where the
 /// top-level Field it reads lies.
-type Resolved<'e> = (&'e Vec<String>, Reference, (usize, usize));
+type Resolved<'e> = (&'e Vec<String>, Reference, Extent);
 
 /// Resolves one reference of the length: a top-level Field or one of its sub-Fields, lying
 /// entirely inside the first `header` bytes (spec §3.13).
@@ -238,9 +254,9 @@ fn resolve<'e>(
         .with_note(why, Some(field.span.clone()))
     };
     match places[field.name.as_str()] {
-        Place::At { offset, size } if offset + size <= header => Ok((segments, resolved, (offset, size))),
-        Place::At { offset, size } => {
-            Err(outside(format!("`{}` is bytes {offset} to {} of the Message", field.name, offset + size)))
+        Place::At(extent) if extent.end() <= header => Ok((segments, resolved, extent)),
+        Place::At(extent) => {
+            Err(outside(format!("`{}` is bytes {} to {} of the Message", field.name, extent.offset, extent.end())))
         }
         Place::Conditional => Err(outside(format!("`{}` is read only when its `if:` holds", field.name))),
         Place::Unknown => {
@@ -249,11 +265,11 @@ fn resolve<'e>(
     }
 }
 
-/// Where a top-level Field lies in every Message.
+/// Where a top-level Field lies, if it lies at the same place in every Message.
 #[derive(Debug, Clone, Copy)]
 enum Place {
-    /// Always at `offset`, `size` bytes long.
-    At { offset: usize, size: usize },
+    /// Always there.
+    At(Extent),
     /// Read only when its `if:` holds.
     Conditional,
     /// After an entry whose size is known only when the Message is read, or of such a size.
@@ -269,7 +285,9 @@ fn places<'t>(top: &'t [Entry], types: &[NamedType]) -> BTreeMap<&'t str, Place>
         if let Entry::Field(field) = entry {
             let place = match (field.condition.is_some(), offset, size) {
                 (true, ..) => Place::Conditional,
-                (false, Some(offset), Some(size)) if offset.checked_add(size).is_some() => Place::At { offset, size },
+                (false, Some(offset), Some(size)) if offset.checked_add(size).is_some() => {
+                    Place::At(Extent { offset, size })
+                }
                 _ => Place::Unknown,
             };
             places.insert(field.name.as_str(), place);

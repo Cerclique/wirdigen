@@ -13,6 +13,7 @@ use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
 use crate::field::{
     self, Amount, Array, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind, Operand, default_label,
 };
+use crate::framing::{Extent, Framing};
 use crate::info::{self, Template};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
@@ -55,12 +56,12 @@ pub(crate) struct Dissector {
     /// What the Info column shows once the Message is read, when it shows anything (spec §3.14).
     pub(crate) info: Option<Info>,
     /// How Messages are found in a TCP stream, when `framing:` is written (spec §3.13).
-    pub(crate) framing: Option<Framing>,
+    pub(crate) framing: Option<FramedMessages>,
 }
 
 /// `framing:` as the Dissector runs it under TCP (spec §3.13).
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Framing {
+pub(crate) struct FramedMessages {
     /// The bytes the length is computed from.
     pub(crate) header: usize,
     /// The header Fields the length reads, each into a local of the length function.
@@ -1245,12 +1246,12 @@ impl<'p> Lowering<'p> {
 
     /// The model of `framing:`: its length is computed in a function of its own, which keeps
     /// each header Field it reads in a local.
-    fn framing(&mut self, framing: &crate::framing::Framing) -> Framing {
+    fn framing(&mut self, framing: &Framing) -> FramedMessages {
         self.use_chunk(prelude::FRAMING);
         self.use_chunk(prelude::INVALID);
         let mut plan = Plan::default();
         let mut reads = Vec::new();
-        for (name, &(offset, size)) in &framing.reads {
+        for (name, &Extent { offset, size }) in &framing.reads {
             let local = format!("v_{name}");
             let field = self.root.iter().filter_map(field::Entry::field).find(|f| &f.name == name);
             let Some(FieldKind::Builtin(builtin)) = field.map(|f| &f.kind) else {
@@ -1271,7 +1272,7 @@ impl<'p> Lowering<'p> {
             Amount::Expression { expr, references } => self.computed(expr, references),
         };
         self.plan = layout;
-        Framing { header: framing.header, reads, length }
+        FramedMessages { header: framing.header, reads, length }
     }
 
     /// How an Expression reads `reference`, using the prelude chunk a sub-Field needs.
