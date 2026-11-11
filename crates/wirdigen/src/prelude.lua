@@ -261,6 +261,60 @@ local function wd_handoff(name, range, pinfo, tree, expert_info, path)
     end
 end
 
+--@chunk framing
+--@requires invalid
+-- Framing (spec §3.13). Under TCP, the Messages of a segment are dissected one after another,
+-- each in a tvb of its own, so that `_offset` and `_remaining` count from its start.
+-- `message_length(tvb, offset)` computes the length of the Message at `offset` from its
+-- `header` bytes; `dissect_message(tvb, pinfo, tree, malformed)` dissects one Message, or shows
+-- it as malformed for the reason `malformed`.
+--
+-- A Message running past the segment asks TCP for more data from its start: the bytes missing
+-- once its header gives its length, one more segment before (`DESEGMENT_ONE_MORE_SEGMENT`, the
+-- only other request Lua has). When TCP cannot reassemble (its preference is off), the rest of
+-- the segment is dissected as one Message, which then reports itself truncated. A length with
+-- no value, negative or below the header shows the rest of the segment as one malformed
+-- Message.
+local WD_PORT_TYPE_TCP = 2
+
+local function wd_framed(tvb, pinfo, tree, header, message_length, dissect_message)
+    local offset, total = 0, tvb:len()
+    while offset < total do
+        local available = total - offset
+        local length, fault
+        if available >= header then
+            length, fault = wd_evaluate(function() return message_length(tvb, offset) end)
+            local malformed
+            if not length then
+                malformed = fault
+            elseif length < 0 then
+                malformed = "length " .. length .. " is negative"
+            elseif length < header then
+                malformed = "length " .. length .. " is below the " .. header .. "-byte header"
+            end
+            if malformed then
+                dissect_message(tvb(offset):tvb(), pinfo, tree, malformed)
+                return total
+            end
+        end
+        if not length or length > available then
+            if pinfo.can_desegment > 0 then
+                local missing = DESEGMENT_ONE_MORE_SEGMENT
+                if length and length - available < missing then
+                    missing = length - available
+                end
+                pinfo.desegment_offset = offset
+                pinfo.desegment_len = missing
+                return total
+            end
+            length = available
+        end
+        dissect_message(tvb(offset, length):tvb(), pinfo, tree)
+        offset = offset + length
+    end
+    return total
+end
+
 --@chunk ports
 -- Registering on the ports of the range preferences (spec §3.12). `ports` lists a
 -- `{ preference, dissector table }` pair per transport with declared ports. The Dissector is

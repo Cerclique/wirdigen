@@ -1,0 +1,5 @@
+error invalid-framing 4:19-4:22
+error invalid-framing 4:25-4:34
+error non-numeric-reference 4:37-4:41
+error invalid-framing 4:44-4:47
+error invalid-framing 4:50-4:57

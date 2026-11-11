@@ -58,6 +58,7 @@ cases! {
     structures => "structures",
     types => "types",
     expressions => "expressions",
+    framing => "framing",
     references => "references",
     runtime => "runtime",
     bitfields => "bitfields",

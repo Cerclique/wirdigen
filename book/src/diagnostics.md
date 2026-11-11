@@ -611,6 +611,40 @@ fields:
 [`display:`](reference/fields.md#display) it should show with. Write `{{` and `}}` for literal
 braces, and reference a Field inside a structure rather than the structure.
 
+## `invalid-framing` {#invalid-framing}
+
+**Severity**: error
+
+[`framing:`](reference/framing.md) cannot find a Message's length from its header alone: its
+`header` is below 1, a constant `length` is shorter than the header, or the `length` Expression
+reads `_offset`, `_remaining`, a Field inside a structure, or a top-level Field that does not lie
+entirely within the first `header` bytes (because it ends after them, is read under `if:`, or
+comes after a Field whose size is known only once it is read).
+
+```yaml,diagnostic=invalid-framing
+name: demo
+framing:
+  header: 2
+  length: "len + 4"
+fields:
+  - { name: kind, type: uint16 }
+  - { name: len, type: uint16 }
+```
+
+**Fix**: make `header` cover every Field `length` reads, and give those Fields a fixed place at
+the start of the Message:
+
+```yaml
+name: demo
+framing:
+  header: 4
+  length: "len + 4"
+fields:
+  - { name: kind, type: uint16 }
+  - { name: len, type: uint16 }
+  - { name: body, type: bytes, size: len }
+```
+
 ## `invalid-array` {#invalid-array}
 
 **Severity**: error

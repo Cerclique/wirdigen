@@ -8,6 +8,12 @@
 //! exception, and attribute every packet to the protocol. A failure reports the seed and the
 //! smallest failing packet, as text2pcap hex ready to become a `packets.txt` regression.
 //!
+//! TCP cases (spec §3.13) are also re-split at random segment boundaries: their valid packets,
+//! as one stream cut at random places, must dissect into the same Messages as
+//! `dissected.json`, and each bad packet is a stream of its own, cut into one to three segments.
+//! A segment TCP keeps for reassembly carries no layer of the protocol, so a TCP packet passes
+//! with the protocol's layer or with its bytes held for a Message still incomplete.
+//!
 //! The seed is fixed unless `WIRDIGEN_BAD_SEED` gives one (a number, or `random`);
 //! `WIRDIGEN_BAD_MUTATIONS` sets the mutations per valid packet and `WIRDIGEN_BAD_RANDOM` the
 //! random packets per case, for the weekly run's larger counts.
@@ -17,7 +23,12 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{Scratch, case_dir, case_options, enabled, own_layer, proto_name};
+use serde_json::Value;
+
+use super::{
+    PORT, Scratch, Transport, case_dir, case_options, case_transport, enabled, expectation, first_error_key, own_layer,
+    proto_name,
+};
 
 /// The seed of PR runs.
 const DEFAULT_SEED: u64 = 0x5749_5244_4947_454e;
@@ -39,8 +50,33 @@ pub(super) fn check(case: &str) {
     let options: Vec<&str> = options.iter().map(String::as_str).collect();
     let valid = parse_packets(&fs::read_to_string(dir.join("packets.txt")).unwrap());
     let scratch = Scratch::new(&format!("bad-{case}"));
-    let target = Target { scratch: &scratch, lua: &lua, proto, options: &options };
-    target.run(&valid, &Config::from_env()).unwrap_or_else(|e| panic!("{case}: {e}"));
+    let transport = case_transport(case);
+    let target = Target { scratch: &scratch, lua: &lua, proto, options: &options, transport };
+    let config = Config::from_env();
+    if transport == Transport::Tcp {
+        let expected = fs::read_to_string(expectation(&dir, &scratch)).unwrap();
+        let expected: Vec<Value> = serde_json::from_str(&expected).unwrap();
+        target.resplit(&valid, &messages(&expected), &config).unwrap_or_else(|e| panic!("{case}: {e}"));
+    }
+    target.run(&valid, &config).unwrap_or_else(|e| panic!("{case}: {e}"));
+}
+
+/// The Messages of the protocol's layers, one per packet: a packet holding several Messages
+/// has an array of them, one with none has `null`.
+fn messages(layers: &[Value]) -> Vec<Value> {
+    layers
+        .iter()
+        .flat_map(|layer| match layer {
+            Value::Array(messages) => messages.clone(),
+            Value::Null => Vec::new(),
+            message => vec![message.clone()],
+        })
+        .collect()
+}
+
+/// Whether TCP holds the bytes of `packet` for a Message still incomplete.
+fn held_for_reassembly(packet: &Value) -> bool {
+    packet.pointer("/_source/layers/tcp/tcp.segment_data").is_some()
 }
 
 /// A Dissector under test: the script `lua` creating `proto`, run in `scratch` with tshark's
@@ -50,6 +86,8 @@ pub(super) struct Target<'a> {
     pub(super) lua: &'a Path,
     pub(super) proto: &'a str,
     pub(super) options: &'a [&'a str],
+    /// What the packets travel over: each a datagram, or each a TCP stream of its own.
+    pub(super) transport: Transport,
 }
 
 impl Target<'_> {
@@ -94,19 +132,138 @@ impl Target<'_> {
     /// Dissects `packets` in one tshark run and returns the index and reason of each failing one,
     /// or why the run as a whole is unusable.
     fn dissect(&self, packets: &[BadPacket]) -> Result<Vec<(usize, String)>, String> {
-        let hex = self.scratch.path("bad-packets.txt");
-        fs::write(&hex, packets.iter().map(|p| text2pcap(&p.bytes)).collect::<String>()).unwrap();
-        let dissected = self.scratch.tshark_json(self.lua, &self.scratch.capture(&hex), self.options)?;
-        if dissected.len() != packets.len() {
-            return Err(format!("tshark dissected {} of {} packets", dissected.len(), packets.len()));
+        let (pcap, origins) = match self.transport {
+            Transport::Udp => {
+                let hex = self.scratch.path("bad-packets.txt");
+                fs::write(&hex, packets.iter().map(|p| text2pcap(&p.bytes)).collect::<String>()).unwrap();
+                (self.scratch.capture(&hex), (0..packets.len()).collect())
+            }
+            Transport::Tcp => {
+                // Each packet is a stream of its own, cut where its bytes say, so that a prefix
+                // of the packets cuts each one alike.
+                let streams: Vec<Vec<&[u8]>> =
+                    packets.iter().map(|p| split(&p.bytes, &mut Rng::new(fingerprint(&p.bytes)), 3)).collect();
+                let origins = streams.iter().enumerate().flat_map(|(i, s)| std::iter::repeat_n(i, s.len())).collect();
+                (self.tcp_capture(&streams), origins)
+            }
+        };
+        let origins: Vec<usize> = origins;
+        let dissected = self.scratch.tshark_json(self.lua, &pcap, self.options)?;
+        if dissected.len() != origins.len() {
+            return Err(format!("tshark dissected {} of {} packets", dissected.len(), origins.len()));
         }
-        let failures = dissected
-            .iter()
-            .enumerate()
-            .filter_map(|(index, packet)| own_layer(packet, index + 1, self.proto).err().map(|reason| (index, reason)))
-            .collect();
+        let mut failures: Vec<(usize, String)> = Vec::new();
+        for (index, packet) in dissected.iter().enumerate() {
+            let Err(reason) = own_layer(packet, index + 1, self.proto) else { continue };
+            let held =
+                self.transport == Transport::Tcp && first_error_key(packet).is_none() && held_for_reassembly(packet);
+            let origin = origins[index];
+            if !held && failures.last().is_none_or(|(last, _)| *last != origin) {
+                failures.push((origin, reason));
+            }
+        }
         Ok(failures)
     }
+
+    /// Writes a capture of `streams`, each a TCP stream to [`PORT`] from a port of its own, one
+    /// segment per frame, and returns its path.
+    fn tcp_capture(&self, streams: &[Vec<&[u8]>]) -> std::path::PathBuf {
+        let path = self.scratch.path("bad-packets.pcap");
+        fs::write(&path, tcp_pcap(streams)).unwrap();
+        path
+    }
+
+    /// Spec §10.6: the valid packets of a TCP case, as one stream cut at random places, dissect
+    /// into the `expected` Messages.
+    fn resplit(&self, valid: &[Vec<u8>], expected: &[Value], config: &Config) -> Result<(), String> {
+        let stream: Vec<u8> = valid.concat();
+        let mut rng = Rng::new(config.seed);
+        for _ in 0..RESPLITS {
+            let segments = split(&stream, &mut rng, stream.len());
+            let lengths: Vec<usize> = segments.iter().map(|s| s.len()).collect();
+            let pcap = self.tcp_capture(std::slice::from_ref(&segments));
+            let dissected = self.scratch.tshark_json(self.lua, &pcap, self.options)?;
+            let replay = format!("WIRDIGEN_BAD_SEED={}, segments of {lengths:?} bytes", config.seed);
+            if let Some(error) = dissected.iter().find_map(first_error_key) {
+                return Err(format!("the valid stream re-split ({replay}) has `{error}`"));
+            }
+            let layers: Vec<Value> = dissected
+                .iter()
+                .map(|p| p.pointer(&format!("/_source/layers/{}", self.proto)).cloned().unwrap_or(Value::Null))
+                .collect();
+            let actual = messages(&layers);
+            if actual != expected {
+                return Err(format!(
+                    "the valid stream re-split ({replay}) dissects into other Messages:\n{:#}",
+                    Value::Array(actual)
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// How many times the valid stream of a TCP case is re-split.
+const RESPLITS: usize = 4;
+
+/// `bytes` cut into 1 to `most` non-empty segments, at places drawn from `rng`.
+fn split<'b>(bytes: &'b [u8], rng: &mut Rng, most: usize) -> Vec<&'b [u8]> {
+    let count = 1 + rng.below(most.min(bytes.len()).max(1));
+    let mut cuts: Vec<usize> = (0..count - 1).map(|_| 1 + rng.below(bytes.len() - 1)).collect();
+    cuts.sort_unstable();
+    cuts.dedup();
+    let mut segments = Vec::new();
+    let mut start = 0;
+    for cut in cuts.into_iter().chain([bytes.len()]) {
+        segments.push(&bytes[start..cut]);
+        start = cut;
+    }
+    segments
+}
+
+/// An FNV-1a hash of `bytes`, the seed of how a bad packet is cut into segments.
+fn fingerprint(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3))
+}
+
+/// A pcap capture of `streams`: each a TCP stream over IPv4 and Ethernet, from port 20000 plus
+/// its index to [`PORT`], one segment per frame. Checksums are left at 0, which Wireshark does
+/// not check by default.
+fn tcp_pcap(streams: &[Vec<&[u8]>]) -> Vec<u8> {
+    let mut pcap = Vec::new();
+    for word in [0xa1b2_c3d4_u32, 0x0004_0002, 0, 0, 0x0004_0000, 1] {
+        // Magic, version 2.4 (minor then major as one little-endian word), zone, accuracy,
+        // snapshot length, Ethernet.
+        pcap.extend_from_slice(&word.to_le_bytes());
+    }
+    let mut frame_number: u32 = 0;
+    for (index, segments) in streams.iter().enumerate() {
+        let source = u16::try_from(20_000 + index % 40_000).expect("a port");
+        let mut seq: u32 = 1;
+        for segment in segments {
+            let mut frame = Vec::new();
+            frame.extend_from_slice(&[0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 0x08, 0x00]);
+            let total = u16::try_from(40 + segment.len()).expect("a short segment");
+            let mut ip = vec![0x45, 0, 0, 0, 0, 0, 0x40, 0, 64, 6, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2];
+            ip[2..4].copy_from_slice(&total.to_be_bytes());
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&source.to_be_bytes());
+            frame.extend_from_slice(&PORT.to_be_bytes());
+            frame.extend_from_slice(&seq.to_be_bytes());
+            frame.extend_from_slice(&1u32.to_be_bytes());
+            // Header of 5 words, PSH and ACK, a full window, no checksum or urgent pointer.
+            frame.extend_from_slice(&[0x50, 0x18, 0xff, 0xff, 0, 0, 0, 0]);
+            frame.extend_from_slice(segment);
+            seq = seq.wrapping_add(u32::try_from(segment.len()).expect("a short segment"));
+            let len = u32::try_from(frame.len()).expect("a short frame");
+            for word in [frame_number, 0, len, len] {
+                pcap.extend_from_slice(&word.to_le_bytes());
+            }
+            pcap.extend_from_slice(&frame);
+            frame_number += 1;
+        }
+    }
+    pcap
 }
 
 /// The failure message: `summary`, how to replay the run, and the smallest failing packet.
@@ -451,6 +608,28 @@ mod tests {
         assert_eq!(bytes, [0x11, 0xff, 0xff, 0xff, 0xff, 0x11]);
         apply(&mut bytes, &Mutation::Set { offset: 0, width: 2, fill: Fill::Zero }, &mut Rng::new(0));
         assert_eq!(bytes, [0x00, 0x00, 0xff, 0xff, 0xff, 0x11]);
+    }
+
+    #[test]
+    fn a_split_keeps_every_byte_in_order_in_non_empty_segments() {
+        let bytes: Vec<u8> = (0..10).collect();
+        let mut rng = Rng::new(3);
+        for most in [1, 3, 10] {
+            for _ in 0..50 {
+                let segments = split(&bytes, &mut rng, most);
+                assert!((1..=most).contains(&segments.len()), "{segments:?}");
+                assert!(segments.iter().all(|s| !s.is_empty()), "{segments:?}");
+                assert_eq!(segments.concat(), bytes);
+            }
+        }
+        assert_eq!(split(&[7], &mut rng, 3), vec![&[7][..]]);
+    }
+
+    #[test]
+    fn a_tcp_capture_has_a_frame_per_segment() {
+        let pcap = tcp_pcap(&[vec![&[1, 2][..], &[3][..]], vec![&[4][..]]]);
+        // A 24-byte header, then per frame a 16-byte record header and 54 bytes of headers.
+        assert_eq!(pcap.len(), 24 + 3 * (16 + 54) + 4);
     }
 
     #[test]

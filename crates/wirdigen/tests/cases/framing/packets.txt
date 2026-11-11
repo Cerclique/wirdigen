@@ -1,0 +1,8 @@
+# Two Messages in one segment: seq=1 body=aa:bb, then seq=2 body=cc trailer=dd:ee
+0000  10 00 06 01 aa bb 12 00 05 02 cc dd ee
+# seq=4 body=ff, then the first 5 of the 7 bytes of seq=3, asking for 2 more
+0000  10 00 05 04 ff 10 00 07 03 01
+# The last 2 bytes of seq=3 (body=01:02:03), then 2 bytes of a header, asking for more
+0000  02 03 10 00
+# The rest of seq=5 (body=ee:ff), then a Message of length 2, below its 3-byte header
+0000  06 05 ee ff 10 00 02 77

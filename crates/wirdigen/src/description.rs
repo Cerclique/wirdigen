@@ -6,6 +6,7 @@ use crate::builtin;
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Endian, Entry, RawEntry};
 use crate::filter;
+use crate::framing::{self, Framing, RawFraming};
 use crate::info::{self, RawInfo, Template};
 use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, RawEnum, Table};
@@ -22,15 +23,14 @@ pub(crate) const KEYS: [&str; 10] =
 
 /// The top level of a Protocol Description, as written.
 ///
-/// Keys typed by later tickets (`framing`) are recognised but not yet read.
 #[derive(Debug, Clone)]
 pub(crate) struct Description {
     pub(crate) name: Spanned<String>,
     pub(crate) title: Option<Spanned<String>>,
     /// The ports of `registration:`, none when it is left out.
     pub(crate) registration: RawRegistration,
-    /// Whether `framing:` is written, which TCP ports need (spec §3.12).
-    pub(crate) framing: bool,
+    /// The `framing:` of TCP Messages, when written (spec §3.13).
+    pub(crate) framing: Option<RawFraming>,
     pub(crate) endian: Option<Spanned<String>>,
     /// The `info:` template, when written (spec §3.14).
     pub(crate) info: Option<RawInfo>,
@@ -49,6 +49,7 @@ impl Description {
     /// and of the `info:` template.
     pub(crate) fn expression_errors(&self) -> Vec<Diagnostic> {
         let mut errors: Vec<Diagnostic> = self.info.iter().filter_map(RawInfo::syntax_error).cloned().collect();
+        errors.extend(self.framing.iter().filter_map(RawFraming::syntax_error).cloned());
         errors.extend(field::expression_errors(&self.fields));
         for ty in &self.types {
             errors.extend(field::expression_errors(ty.fields()));
@@ -77,6 +78,8 @@ pub(crate) struct Protocol {
     /// The `info:` template, when written; without one, the Info column shows the outermost
     /// `switch` Field's case (spec §3.14).
     pub(crate) info: Option<Template>,
+    /// How TCP Messages are found, when `framing:` is written (spec §3.13).
+    pub(crate) framing: Option<Framing>,
 }
 
 /// Stage 2: unknown and duplicate keys, required keys and value kinds.
@@ -115,7 +118,7 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
     let info = keys.get("info").and_then(|node| info::read(node, &mut errors));
     let registration =
         keys.get("registration").map_or_else(RawRegistration::default, |node| registration::read(node, &mut errors));
-    let framing = keys.get("framing").is_some();
+    let framing = keys.get("framing").and_then(|node| framing::read(node, &mut errors));
     let layout = keys.get("fields").and_then(|fields| field::read_structure(fields, &mut errors)).unwrap_or_default();
 
     let types = keys.get("types").map_or_else(Vec::new, |node| types::read(node, &mut errors));
@@ -183,7 +186,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         };
         diagnostics.push(Diagnostic::new(Name::UnknownAllow, entry.span.clone(), message));
     }
-    let ports = registration::check(&description.registration, description.framing, &mut diagnostics);
+    let ports = registration::check(&description.registration, description.framing.is_some(), &mut diagnostics);
     let endian = Endian::resolve(description.endian.as_ref(), Endian::default(), &mut diagnostics);
     let mut enums = Enums::check(&description.enums, &mut diagnostics);
     let (fields, types) = types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
@@ -191,9 +194,11 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
     // Filter names are walked through every use of every Type, which needs Types without cycles.
     // The `info:` template is resolved in the checked layout too, where no Field is in error.
     let mut info = None;
+    let mut framing = None;
     if !diagnostics.iter().any(|d| d.severity() == Severity::Error) {
         filter::check(&fields, &types, &mut diagnostics);
         info = description.info.as_ref().and_then(|raw| info::check(raw, &fields, &types, &mut diagnostics));
+        framing = description.framing.as_ref().and_then(|raw| framing::check(raw, &fields, &types, &mut diagnostics));
     }
     let has_errors = diagnostics.iter().any(|d| d.severity() == Severity::Error);
     let protocol = (!has_errors).then(|| Protocol {
@@ -204,6 +209,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         types,
         enums,
         info,
+        framing,
     });
     (protocol, diagnostics)
 }

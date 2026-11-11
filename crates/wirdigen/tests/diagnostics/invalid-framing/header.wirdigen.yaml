@@ -1,0 +1,6 @@
+name: demo
+framing:
+  header: 0
+  length: 4
+fields:
+  - { name: len, type: uint16 }

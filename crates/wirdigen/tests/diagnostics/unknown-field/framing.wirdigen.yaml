@@ -1,0 +1,6 @@
+name: demo
+framing:
+  header: 2
+  length: "lenght + 2 + len.x"
+fields:
+  - { name: len, type: uint16 }

@@ -38,8 +38,12 @@ const SOURCE_PORT: u16 = 40000;
 /// The cases that declare [`PORT`] under `registration:`, decoded by it without Decode As.
 const BY_DECLARED_PORT: [&str; 1] = ["registration"];
 
+/// The cases whose packets are the segments of one TCP stream to [`PORT`], decoded as the
+/// protocol over TCP: the cases of `framing:` (spec §3.13).
+const OVER_TCP: [&str; 1] = ["framing"];
+
 /// How the harness wraps each packet: text2pcap's flag for it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Transport {
     Udp,
     Tcp,
@@ -246,14 +250,22 @@ fn expectation(dir: &Path, scratch: &Scratch) -> PathBuf {
     dir.join("dissected.json")
 }
 
-/// tshark's options decoding the case's packets as `proto`: Decode As, unless the case is one of
-/// [`BY_DECLARED_PORT`].
+/// The transport a case's packets travel over: TCP for the cases of [`OVER_TCP`].
+fn case_transport(case: &str) -> Transport {
+    if OVER_TCP.contains(&case) { Transport::Tcp } else { Transport::Udp }
+}
+
+/// tshark's options decoding the case's packets as `proto`: Decode As on the case's transport,
+/// unless the case is one of [`BY_DECLARED_PORT`].
 fn case_options(case: &str, proto: &str) -> Vec<String> {
     if BY_DECLARED_PORT.contains(&case) {
-        Vec::new()
-    } else {
-        vec!["-d".to_owned(), format!("udp.port=={PORT},{proto}")]
+        return Vec::new();
     }
+    let table = match case_transport(case) {
+        Transport::Udp => "udp.port",
+        Transport::Tcp => "tcp.port",
+    };
+    vec!["-d".to_owned(), format!("{table}=={PORT},{proto}")]
 }
 
 fn check(case: &str) {
@@ -269,7 +281,7 @@ fn check(case: &str) {
     assert!(expected_count > 0, "{}: no packets", packets.display());
 
     let scratch = Scratch::new(case);
-    let pcap = scratch.capture(&packets);
+    let pcap = scratch.capture_over(case_transport(case), PORT, &packets);
     let options = case_options(case, proto);
     let options: Vec<&str> = options.iter().map(String::as_str).collect();
     let options = options.as_slice();
@@ -337,6 +349,7 @@ cases! {
     structures => "structures",
     types => "types",
     expressions => "expressions",
+    framing => "framing",
     references => "references",
     runtime => "runtime",
     bitfields => "bitfields",
@@ -562,8 +575,13 @@ mod harness {
         let valid = bad_input::parse_packets(&fs::read_to_string(case_dir("uints").join("packets.txt")).unwrap());
         let config = bad_input::Config { seed: 42, mutations: 4, random: 2 };
         let decode_as = format!("udp.port=={PORT},uints");
-        let target =
-            bad_input::Target { scratch: &scratch, lua: &script, proto: "uints", options: &["-d", &decode_as] };
+        let target = bad_input::Target {
+            scratch: &scratch,
+            lua: &script,
+            proto: "uints",
+            options: &["-d", &decode_as],
+            transport: Transport::Udp,
+        };
         target.run(&valid, &config)
     }
 

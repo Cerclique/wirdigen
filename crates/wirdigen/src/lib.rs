@@ -41,6 +41,7 @@ mod expect;
 mod expr;
 mod field;
 mod filter;
+mod framing;
 mod info;
 mod keys;
 mod lower;

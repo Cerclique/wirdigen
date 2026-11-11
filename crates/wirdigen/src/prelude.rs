@@ -34,6 +34,8 @@ pub(crate) const UNMATCHED: &str = "unmatched";
 pub(crate) const UNEXPECTED: &str = "unexpected";
 /// Handing a `bytes` Field's bytes to a Wireshark Dissector by name.
 pub(crate) const HANDOFF: &str = "handoff";
+/// Framing (spec §3.13): finding the Messages of a TCP segment and asking for more data.
+pub(crate) const FRAMING: &str = "framing";
 /// Registering on the ports of the range preferences, and moving when they change.
 pub(crate) const PORTS: &str = "ports";
 /// Showing a Field in the Info column as Wireshark displays it.

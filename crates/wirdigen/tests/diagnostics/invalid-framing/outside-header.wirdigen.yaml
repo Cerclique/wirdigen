@@ -1,0 +1,17 @@
+name: demo
+framing:
+  header: 4
+  length: "kind + len + flags.ext + body + opt + hdr.len"
+fields:
+  - { name: kind, type: uint16 }
+  - { name: len, type: uint32 }
+  - { name: body, type: bytes, size: kind }
+  - name: flags
+    type: uint8
+    bits:
+      - { name: ext, width: 1 }
+      - { name: rest, width: 7 }
+  - { name: opt, type: uint8, if: kind }
+  - name: hdr
+    fields:
+      - { name: len, type: uint8 }
