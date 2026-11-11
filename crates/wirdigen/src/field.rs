@@ -1179,9 +1179,10 @@ fn check_array<'a>(
     scope: Scope<'a, '_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Array> {
-    if let RawKind::Type { name, .. } = &field.kind
-        && Builtin::from_name(&name.value).is_some()
-    {
+    if let Some(name) = match &field.kind {
+        RawKind::Type { name, .. } if Builtin::from_name(&name.value).is_some() => Some(name),
+        RawKind::Type { .. } | RawKind::Structure { .. } => None,
+    } {
         diagnostics.push(
             Diagnostic::new(
                 Name::InvalidArray,
