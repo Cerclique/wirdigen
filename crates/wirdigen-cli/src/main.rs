@@ -3,7 +3,7 @@
 mod color;
 
 use std::fs;
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -104,12 +104,11 @@ impl Run {
         if diagnostics.is_empty() {
             return;
         }
-        let mut stderr = std::io::stderr().lock();
         for diagnostic in diagnostics {
             if self.errors + self.warnings > 0 {
-                let _ = writeln!(stderr);
+                eprintln!();
             }
-            let _ = write!(stderr, "{}", diagnostic.render(source, &self.options));
+            eprint!("{}", diagnostic.render(source, &self.options));
             match diagnostic.severity() {
                 Severity::Error => self.errors += 1,
                 Severity::Warning => self.warnings += 1,

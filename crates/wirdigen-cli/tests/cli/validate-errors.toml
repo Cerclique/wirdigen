@@ -1,4 +1,5 @@
 bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
 args = ["validate", "several.wirdigen.yaml"]
 fs.cwd = "../../../wirdigen/tests/render"
 status.code = 1
