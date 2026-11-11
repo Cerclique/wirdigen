@@ -87,6 +87,7 @@ names! {
     InvalidRepeat => "invalid-repeat", Error;
     InvalidCount => "invalid-count", Error;
     InvalidArray => "invalid-array", Error;
+    InvalidPadding => "invalid-padding", Error;
     ExpressionSyntax => "expression-syntax", Error;
     LeadingZeroLiteral => "leading-zero-literal", Error;
     ChainedComparison => "chained-comparison", Error;

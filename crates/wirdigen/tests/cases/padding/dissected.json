@@ -1,0 +1,66 @@
+[
+  {
+    "padding.kind": "1",
+    "_ws.lua.text": [
+      "",
+      "",
+      ""
+    ],
+    "padding.length": "2",
+    "padding.text": "hi",
+    "padding.inner": {
+      "_ws.lua.text": "",
+      "padding.inner.a": "7"
+    },
+    "padding.rec": {
+      "padding.rec.n": "1",
+      "_ws.lua.text": "",
+      "padding.rec.v": "9"
+    },
+    "padding.body": {
+      "_ws.lua.text": "",
+      "padding.body.b": "5"
+    },
+    "padding.skip": "0",
+    "padding.tail": "238"
+  },
+  {
+    "padding.kind": "2",
+    "_ws.lua.text": [
+      "",
+      ""
+    ],
+    "padding.length": "4",
+    "padding.text": "abcd",
+    "padding.inner": {
+      "_ws.lua.text": "",
+      "padding.inner.a": "7"
+    },
+    "padding.rec": {
+      "padding.rec.n": "0",
+      "_ws.lua.text": "",
+      "padding.rec.v": "9"
+    },
+    "padding.body": {
+      "padding.body.c": "3"
+    },
+    "padding.skip": "-1",
+    "_ws.expert": {
+      "padding._malformed.expression": "",
+      "_ws.expert.message": "Malformed: padding -1 is negative: Padding",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "padding.kind": "1",
+    "_ws.expert": {
+      "padding._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: Padding",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

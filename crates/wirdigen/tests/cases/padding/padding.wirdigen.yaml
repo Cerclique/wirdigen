@@ -1,0 +1,29 @@
+# Padding (spec §3.10): `{ padding: n | expr }` skips bytes as one "Padding" item with no filter
+# name, in any structure: top level, inline, a Type, a `switch` case. An Expression reads earlier
+# Fields; a negative one is malformed (§4.4), and padding past the end is truncated.
+name: padding
+fields:
+  - { name: kind, type: uint8 }
+  - { padding: 3 }
+  - { name: length, type: uint8 }
+  - { name: text, type: string, size: length }
+  - { padding: "(4 - length % 4) % 4" }            # up to a multiple of 4
+  - name: inner
+    fields:
+      - { padding: 1 }
+      - { name: a, type: uint8 }
+  - { name: rec, type: Record }
+  - name: body
+    switch: kind
+    cases:
+      1: [ { padding: 2 }, { name: b, type: uint8 } ]
+    default: [ { name: c, type: uint8 } ]
+  - { name: skip, type: int8 }
+  - { padding: skip }                              # negative: malformed
+  - { name: tail, type: uint8 }
+types:
+  Record:
+    fields:
+      - { name: n, type: uint8 }
+      - { padding: n }
+      - { name: v, type: uint8 }

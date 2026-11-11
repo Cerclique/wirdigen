@@ -1,0 +1,4 @@
+name: demo
+fields:
+  - { padding: len }
+  - { name: len, type: uint8 }

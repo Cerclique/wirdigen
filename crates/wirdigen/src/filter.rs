@@ -11,7 +11,7 @@ use std::ops::Range;
 
 use crate::bits::Bit;
 use crate::diagnostic::{Diagnostic, Name};
-use crate::field::{self, Builtin, Display, Field, FieldKind, Length};
+use crate::field::{self, Builtin, Display, Entry, Field, FieldKind, Length};
 use crate::mapping::Mapping;
 use crate::switch::Body;
 use crate::types::NamedType;
@@ -65,7 +65,7 @@ type Seen<'a> = BTreeMap<String, (Declaration<'a>, Range<usize>)>;
 
 /// Stage 4: reports each Field reaching the filter name of an earlier one with a `ProtoField`
 /// that does not match, given the checked layout and Types of a description without errors.
-pub(crate) fn check(layout: &[Field], types: &[NamedType], diagnostics: &mut Vec<Diagnostic>) {
+pub(crate) fn check(layout: &[Entry], types: &[NamedType], diagnostics: &mut Vec<Diagnostic>) {
     let mut walk = Walk { types, seen: Seen::new(), reported: BTreeSet::new(), diagnostics };
     walk.fields(layout, "");
 }
@@ -80,9 +80,10 @@ struct Walk<'a, 'd> {
 }
 
 impl<'a> Walk<'a, '_> {
-    /// Walks `fields`, whose paths extend `parent` (empty at the top level).
-    fn fields(&mut self, fields: &'a [Field], parent: &str) {
-        for field in fields {
+    /// Walks the Fields of `entries`, whose paths extend `parent` (empty at the top level).
+    /// Padding has no filter name (spec §5.2).
+    fn fields(&mut self, entries: &'a [Entry], parent: &str) {
+        for field in entries.iter().filter_map(Entry::field) {
             let path = if parent.is_empty() { field.name.clone() } else { format!("{parent}.{}", field.name) };
             self.field(field, &path);
         }

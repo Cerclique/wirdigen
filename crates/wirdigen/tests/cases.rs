@@ -65,4 +65,6 @@ cases! {
     arrays => "arrays",
     conditionals => "conditionals",
     switch => "switch",
+    hidden => "hidden",
+    padding => "padding",
 }

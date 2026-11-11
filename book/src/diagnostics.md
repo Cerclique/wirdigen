@@ -556,6 +556,23 @@ fields:
 
 **Fix**: write the number of elements, zero or more.
 
+## `invalid-padding` {#invalid-padding}
+
+**Severity**: error
+
+A constant [`padding:`](reference/fields.md#padding) is a negative number of bytes, or an
+Expression that has no value: it divides by zero, or shifts by a count outside 0 to 63. The
+error points at the dividing or shifting operator.
+
+```yaml,diagnostic=invalid-padding
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - { padding: -2 }
+```
+
+**Fix**: write the number of bytes to skip, zero or more.
+
 ## `invalid-array` {#invalid-array}
 
 **Severity**: error
@@ -901,13 +918,14 @@ fields:
 **Severity**: error
 
 The description uses part of the format that this version of Wirdigen does not read yet:
-`hidden:` on a Field that is not a [bitfield](reference/bitfields.md), or `expect:` on a
-bitfield sub-Field. A newer Wirdigen will accept it.
+`expect:` on a [bitfield](reference/bitfields.md) sub-Field. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo
 fields:
-  - { name: id, type: uint8, hidden: true }
+  - name: flags
+    type: uint8
+    bits: [ { name: version, width: 8, expect: 1 } ]
 ```
 
 **Fix**: upgrade Wirdigen, or describe the layout with what this version supports.

@@ -1,0 +1,6 @@
+# len=2 data=aa:bb sized=cc:dd:ee label="hi" text="ok" flags=1 header.version=1 point x=2 y=3
+# body: one=4; items: id=5, id=6; extra=0x0708
+0000  02 aa bb cc dd ee 02 68 69 6f 6b 00 01 01 02 03
+0010  04 05 06 07 08
+# flags=0, so no extra; version=2, so body reads a Point x=0 y=8; no items (x=0).
+0000  01 aa cc dd 00 00 00 02 00 08 00 08

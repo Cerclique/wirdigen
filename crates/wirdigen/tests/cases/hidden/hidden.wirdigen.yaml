@@ -1,0 +1,36 @@
+# Hidden Fields (spec §3.10): `hidden: true` reads a Field without adding it to the tree, on any
+# kind of Field. A hidden Field is still filtered, so tshark's JSON shows it, and Expressions
+# read it. Hiding a subtree hides what is in it.
+name: hidden
+fields:
+  - { name: len, type: uint8, hidden: true }                       # read by `data`'s size
+  - { name: data, type: bytes, size: len }
+  - { name: sized, type: bytes, size: "len + 1", hidden: true }    # a size Expression
+  - { name: label, type: string, prefix: uint8, hidden: true }
+  - { name: text, type: string, terminator: 0, hidden: true }
+  - { name: flags, type: uint8, hidden: false }
+  - name: header                                                   # an inline structure
+    hidden: true
+    fields:
+      - { name: version, type: uint8 }
+  - { name: point, type: Point, hidden: true }                     # a Field of a Type
+  - name: body
+    switch: header.version
+    hidden: true
+    cases:
+      1: [ { name: one, type: uint8 } ]
+      2: Point
+  - name: items                                                    # each element is hidden
+    count: point.x
+    hidden: true
+    fields:
+      - { name: id, type: uint8 }
+  - name: extra
+    type: uint16
+    if: "flags & 1"
+    hidden: true
+types:
+  Point:
+    fields:
+      - { name: x, type: uint8 }
+      - { name: y, type: uint8, hidden: true }

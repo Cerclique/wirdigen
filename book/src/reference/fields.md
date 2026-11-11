@@ -28,6 +28,8 @@ A Field is a mapping with a `name:` and exactly one key saying what it is. This 
   Anything else is [`invalid-field-name`](../diagnostics.md#invalid-field-name).
 - Two Fields of one structure cannot share a name
   ([`duplicate-field-name`](../diagnostics.md#duplicate-field-name)).
+- The only entry of a structure without a `name:` is `{ padding: n }`, bytes to skip (see
+  [Padding](#padding)).
 
 The tree shows a Field under a label derived from its name: `_` becomes a space and the first
 letter is capitalised, so `msg_type` is shown as "Msg type". `label:` replaces it (see
@@ -387,7 +389,8 @@ fields:
 ```
 
 A structure takes `name:`, `label:`, `description:`, `count:` or `repeat:` to make it an
-[array](arrays.md), [`if:`](conditionals.md) to read it only under a condition, and `endian:`, which is the byte order of the Fields inside it unless they
+[array](arrays.md), [`if:`](conditionals.md) to read it only under a condition,
+[`hidden:`](#hidden), and `endian:`, which is the byte order of the Fields inside it unless they
 set their own (see [Byte order](#byte-order)). The keys that
 say how a value is read or shown belong on the Fields inside: a length key on a structure is
 [`unexpected-length`](../diagnostics.md#unexpected-length), and `display:`, `encoding:`,
@@ -428,8 +431,8 @@ types:
   so the two never clash.
 - A Type is read in its own byte order: its `endian:`, else the top-level `endian:`, whatever
   structure the Field using it is in. A Field of a Type takes `name:`, `label:`,
-  `description:`, `count:` or `repeat:` to make it an [array](arrays.md), and
-  [`if:`](conditionals.md), only: `endian:`
+  `description:`, `count:` or `repeat:` to make it an [array](arrays.md),
+  [`if:`](conditionals.md) and [`hidden:`](#hidden) only: `endian:`
   on it is [`invalid-endian`](../diagnostics.md#invalid-endian),
   a length key [`unexpected-length`](../diagnostics.md#unexpected-length), and a display or
   value-mapping key [`incompatible-display`](../diagnostics.md#incompatible-display).
@@ -443,6 +446,51 @@ Type names never appear in filter names: each Field of a Type is filtered under 
 Field using it, so the example above gives `demo.req_hdr.length`, `demo.req_hdr.sent.secs`,
 `demo.resp_hdr.length` and `demo.resp_hdr.sent.secs`, and a request header can be filtered
 apart from a response header.
+
+## Padding {#padding}
+
+`{ padding: n }` in place of a Field skips `n` bytes. It can stand anywhere in a structure,
+top-level, inline, in a Type or in a `switch` case, and takes no other key: no `name:`, so no
+filter name, and nothing an Expression can read. The tree shows the bytes as one item,
+"Padding".
+
+```yaml
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - { padding: 3 }                           # align `length` on 4 bytes
+  - { name: length, type: uint16 }
+  - { name: text, type: string, size: length }
+  - { padding: "(4 - length % 4) % 4" }      # up to the next multiple of 4
+  - { name: crc, type: uint32 }
+```
+
+`n` is a number of bytes or an [Expression](expressions.md), like a `size:`. A negative
+constant is [`invalid-padding`](../diagnostics.md#invalid-padding), and so is a constant
+Expression that is negative or has no value. An Expression whose value turns out negative, or
+has none, when a packet is read is reported as "Malformed" and the dissection stops; padding
+past the end of the packet is "Malformed: truncated". Any key beside `padding:` is
+[`unknown-key`](../diagnostics.md#unknown-key).
+
+## Hidden Fields {#hidden}
+
+`hidden: true` reads a Field without adding it to the tree. Expressions can still read it, and
+display filters still match it: a hidden Field keeps its [filter name](#filter-names). Hiding a
+structure, a Field of a Type, a [`switch`](conditionals.md#switch) Field or an
+[array](arrays.md) hides everything in it; for a [bitfield](bitfields.md#hidden), the sub-Fields
+can also be hidden one by one. `hidden: false` is the default.
+
+```yaml
+name: demo
+fields:
+  - { name: length, type: uint16, hidden: true }   # shown only through `data`
+  - { name: data, type: bytes, size: length }
+  - name: reserved
+    hidden: true
+    fields:
+      - { name: a, type: uint32 }
+      - { name: b, type: uint32 }
+```
 
 ## Filter names {#filter-names}
 

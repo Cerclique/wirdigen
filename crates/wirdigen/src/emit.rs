@@ -339,11 +339,11 @@ fn site_ref(model: &Dissector, r: &Ref) -> String {
 /// truncated one covers what is left of it. An array element's item also shows the element's
 /// index, the Lua local `index` (spec §3.4.8).
 fn subtree(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope, index: Option<&str>) {
-    let (Stmt::Structure { field, .. } | Stmt::Call { field, .. }) = stmt else {
+    let (Stmt::Structure { field, hidden, .. } | Stmt::Call { field, hidden, .. }) = stmt else {
         unreachable!("only structures and Fields of Types have a subtree")
     };
     w.line("local start = offset");
-    w.line(&format!("local tree = tree:add({}, tvb(offset, tvb:len() - offset))", field_ref(model, field)));
+    open_subtree(w, model, field, *hidden);
     if let Some(index) = index {
         w.line(&format!("tree:append_text(\" [\" .. {index} .. \"]\")"));
     }
@@ -354,11 +354,20 @@ fn subtree(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope, index: 
             }
         }
         Stmt::Call { ty, site, context, result, .. } => call(w, model, ty, site, context, result.as_deref()),
-        Stmt::Read { .. } | Stmt::Array { .. } | Stmt::If { .. } | Stmt::Switch { .. } => {
+        Stmt::Read { .. } | Stmt::Array { .. } | Stmt::If { .. } | Stmt::Switch { .. } | Stmt::Padding { .. } => {
             unreachable!("matched above")
         }
     }
     w.line("tree:set_len(offset - start)");
+}
+
+/// Adds the subtree item of `field`, which shadows `tree` and spans the rest of the packet until
+/// its length is known, hiding it when `hidden` (spec §3.10): what it holds is hidden with it.
+fn open_subtree(w: &mut Writer, model: &Dissector, field: &Ref, hidden: bool) {
+    w.line(&format!("local tree = tree:add({}, tvb(offset, tvb:len() - offset))", field_ref(model, field)));
+    if hidden {
+        w.line("tree:set_hidden(true)");
+    }
 }
 
 /// Calls the dissect function of the Type `ty` into `tree`, passing the site table of this use
@@ -379,6 +388,7 @@ fn call(w: &mut Writer, model: &Dissector, ty: &str, site: &Ref, context: &[(Str
 /// The fields of [`Stmt::Switch`] other than its path.
 struct SwitchStmt<'s> {
     field: &'s Ref,
+    hidden: bool,
     subject: &'s Computed,
     names: Option<usize>,
     cases: &'s [(Vec<(i64, i64)>, Branch)],
@@ -402,10 +412,7 @@ fn switch(w: &mut Writer, model: &Dissector, path: &str, stmt: &SwitchStmt<'_>, 
         |w| {
             evaluate(w, "subject", "subject", stmt.subject, &invalid);
             w.line("local start = offset");
-            w.line(&format!(
-                "local tree = tree:add({}, tvb(offset, tvb:len() - offset))",
-                field_ref(model, stmt.field)
-            ));
+            open_subtree(w, model, stmt.field, stmt.hidden);
             let name = stmt.names.map_or_else(
                 || "subject".to_owned(),
                 |index| format!("wd_case_name({}, subject)", model.names[index].local),
@@ -541,11 +548,48 @@ fn array(w: &mut Writer, model: &Dissector, path: &str, repeat: &Repeat, element
     );
 }
 
+/// Writes a padding in the structure at `parent` (spec §3.10): the bytes are skipped and shown
+/// as one text item, "Padding", which has no `ProtoField` and so no filter name. Having no path
+/// of its own, it is reported as the padding of its structure.
+fn padding(w: &mut Writer, parent: &str, length: &Length, scope: Scope) {
+    let reported = match (scope, parent.is_empty()) {
+        (Scope::Top, true) => lua_string("Padding"),
+        (Scope::Top, false) => lua_string(&format!("Padding in {parent}")),
+        (Scope::Type, true) => "\"Padding in \" .. site.path".to_owned(),
+        (Scope::Type, false) => format!("\"Padding in \" .. site.path .. {}", lua_string(&format!(".{parent}"))),
+    };
+    let truncated = |w: &mut Writer| {
+        w.line(&format!("wd_truncated(tree, wd_ei_truncated, {reported})"));
+        w.line("return nil");
+    };
+    let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
+    w.line(if parent.is_empty() { "-- Padding".to_owned() } else { format!("-- Padding in {parent}") }.as_str());
+    match length {
+        Length::Fixed(size) => {
+            w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
+            w.line(&format!("tree:add(tvb(offset, {size}), \"Padding\")"));
+            w.line(&format!("offset = offset + {size}"));
+        }
+        Length::Expression(size) => w.block(
+            "do",
+            |w| {
+                evaluate(w, "len", "padding", size, &invalid);
+                w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
+                w.line("tree:add(tvb(offset, len), \"Padding\")");
+                w.line("offset = offset + len");
+            },
+            "end",
+        ),
+        Length::Prefix { .. } | Length::Terminator { .. } => unreachable!("padding is a number of bytes"),
+    }
+}
+
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
+        Stmt::Padding { parent, length } => padding(w, parent, length, scope),
         Stmt::If { path, condition, body } => conditional(w, model, path, condition, body, scope),
-        Stmt::Switch { field, path, subject, names, cases, default } => {
-            let stmt = SwitchStmt { field, subject, names: *names, cases, default: default.as_ref() };
+        Stmt::Switch { field, path, hidden, subject, names, cases, default } => {
+            let stmt = SwitchStmt { field, hidden: *hidden, subject, names: *names, cases, default: default.as_ref() };
             switch(w, model, path, &stmt, scope);
         }
         Stmt::Structure { path, .. } | Stmt::Call { path, .. } => {
@@ -570,6 +614,8 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 }
                 Decode::Lua(method) => format!("tree:add({local}, {range}, {range}:{method}())"),
             };
+            // Only a fixed-size read can be a bitfield, whose item `add_item` keeps.
+            let add_line = |range: &str| if *hidden { format!("{}:set_hidden(true)", add(range)) } else { add(range) };
             w.line(&format!("-- Field: {path}"));
             // A variable length goes in a `len` local, scoped by `do` so locals never pile up
             // against Lua's limit of 200 per function.
@@ -588,7 +634,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                     |w| {
                         evaluate(w, "len", "size", size, &invalid);
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
-                        w.line(&add("tvb(offset, len)"));
+                        w.line(&add_line("tvb(offset, len)"));
                         w.line("offset = offset + len");
                     },
                     "end",
@@ -600,7 +646,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         w.line(&format!("local len = tvb(offset, {size}):{read}"));
                         w.line(&format!("offset = offset + {size}"));
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
-                        w.line(&add("tvb(offset, len)"));
+                        w.line(&add_line("tvb(offset, len)"));
                         w.line("offset = offset + len");
                     },
                     "end",
@@ -610,7 +656,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                     |w| {
                         w.line(&format!("local len = wd_terminated(tvb, offset, {terminator}, {width})"));
                         w.block("if not len then", truncated, "end");
-                        w.line(&add("tvb(offset, len)"));
+                        w.line(&add_line("tvb(offset, len)"));
                         w.line(&format!("offset = offset + len + {width}"));
                     },
                     "end",
@@ -625,8 +671,9 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
 /// §3.8): the item is then kept in a local scoped by `do`, so locals never pile up against Lua's
 /// limit of 200 per function.
 fn add_item(w: &mut Writer, model: &Dissector, add: &str, range: &str, hidden: bool, bits: &[BitItem]) {
-    if bits.is_empty() && !hidden {
-        w.line(add);
+    if bits.is_empty() {
+        let hide = if hidden { ":set_hidden(true)" } else { "" };
+        w.line(&format!("{add}{hide}"));
         return;
     }
     w.block(

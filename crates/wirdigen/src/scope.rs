@@ -12,7 +12,7 @@ use std::ops::Range;
 
 use crate::bits::Lookup;
 use crate::diagnostic::{Diagnostic, Name};
-use crate::field::{Builtin, RawField, Shape};
+use crate::field::{self, Builtin, RawEntry, RawField, Shape};
 use crate::keys::closest;
 use crate::switch::{RawBody, RawSwitch};
 use crate::types::Types;
@@ -30,11 +30,24 @@ pub(crate) enum Reference {
     Context(String),
 }
 
-/// One structure enclosing a reference: its Fields, and the index of the Field being read.
+/// One structure enclosing a reference: its entries, and the index of the entry being read.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Level<'a> {
-    pub(crate) fields: &'a [RawField],
+    pub(crate) fields: &'a [RawEntry],
     pub(crate) at: usize,
+}
+
+impl<'a> Level<'a> {
+    /// The Fields read before the entry being read.
+    fn earlier(&self) -> impl DoubleEndedIterator<Item = &'a RawField> + use<'a> {
+        self.fields[..self.at].iter().filter_map(RawEntry::field)
+    }
+
+    /// The Field being read, which encloses the reference when the level is not the innermost:
+    /// only a Field has entries to enclose it.
+    fn enclosing(&self) -> &'a RawField {
+        self.fields[self.at].field().expect("only a Field encloses entries")
+    }
 }
 
 /// Where a path is read from.
@@ -103,10 +116,10 @@ enum Resolution {
 fn resolve<'a>(segments: &[String], scope: Scope<'a, '_>, types: &Types<'a>) -> Resolution {
     let first = segments[0].as_str();
     for (depth, level) in scope.levels.iter().enumerate().rev() {
-        let Some(field) = level.fields[..level.at].iter().rev().find(|f| f.name().value == first) else {
+        let Some(field) = level.earlier().rev().find(|f| f.name().value == first) else {
             continue;
         };
-        let mut path: Vec<String> = scope.levels[..depth].iter().map(|l| l.fields[l.at].name().value.clone()).collect();
+        let mut path: Vec<String> = scope.levels[..depth].iter().map(|l| l.enclosing().name().value.clone()).collect();
         path.push(first.to_owned());
         return descend(field, &segments[1..], path, types);
     }
@@ -119,7 +132,7 @@ fn resolve<'a>(segments: &[String], scope: Scope<'a, '_>, types: &Types<'a>) -> 
         .rev()
         .find_map(|(depth, l)| {
             let from = if depth == innermost { l.at } else { l.at + 1 };
-            l.fields[from..].iter().find(|f| f.name().value == first)
+            field::fields(&l.fields[from..]).find(|f| f.name().value == first)
         })
         .map(|f| f.name().span.clone());
     if scope.ty.is_some() {
@@ -128,10 +141,10 @@ fn resolve<'a>(segments: &[String], scope: Scope<'a, '_>, types: &Types<'a>) -> 
     if let Some(later) = later {
         return Resolution::Miss(Miss::Forward(later));
     }
-    if scope.levels[..scope.levels.len() - 1].iter().any(|l| l.fields[l.at].name().value == first) {
+    if scope.levels[..scope.levels.len() - 1].iter().any(|l| l.enclosing().name().value == first) {
         return Resolution::Miss(Miss::Enclosing);
     }
-    let earlier = scope.levels.iter().flat_map(|l| &l.fields[..l.at]).map(|f| f.name().value.clone()).collect();
+    let earlier = scope.levels.iter().flat_map(Level::earlier).map(|f| f.name().value.clone()).collect();
     Resolution::Miss(Miss::Unknown(earlier))
 }
 
@@ -170,8 +183,8 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
                 };
             }
         };
-        let Some(child) = children.iter().find(|f| f.name().value == *segment) else {
-            let candidates = children.iter().map(|f| f.name().value.clone()).collect();
+        let Some(child) = field::fields(children).find(|f| f.name().value == *segment) else {
+            let candidates = field::fields(children).map(|f| f.name().value.clone()).collect();
             let (parent, member) = (field.name().value.clone(), segment.clone());
             return Resolution::Miss(Miss::NoMember { parent, member, candidates });
         };
@@ -205,11 +218,11 @@ fn into_case(field: &RawField, switch: &RawSwitch, segment: &str, types: &Types<
                 None => continue,
             },
         };
-        if fields.iter().any(|f| f.name().value == segment) {
+        if field::fields(fields).any(|f| f.name().value == segment) {
             let (switch, member) = (field.name().value.clone(), segment.to_owned());
             return Resolution::Miss(Miss::InCase { switch, member, case: case.clone() });
         }
-        candidates.extend(fields.iter().map(|f| f.name().value.clone()));
+        candidates.extend(field::fields(fields).map(|f| f.name().value.clone()));
     }
     let (parent, member) = (field.name().value.clone(), segment.to_owned());
     Resolution::Miss(Miss::NoMember { parent, member, candidates })
@@ -410,25 +423,25 @@ fn add_free(found: &mut Vec<FreeRef>, free: FreeRef) {
 }
 
 fn collect_free<'a>(
-    fields: &'a [RawField],
+    fields: &'a [RawEntry],
     ty: &str,
     levels: &mut Vec<Level<'a>>,
     types: &mut Types<'a>,
     found: &mut Vec<FreeRef>,
 ) {
-    for (at, field) in fields.iter().enumerate() {
+    for (at, entry) in fields.iter().enumerate() {
         levels.push(Level { fields, at });
         let scope = Scope { ty: Some(ty), levels };
-        for (segments, span) in field.paths() {
+        for (segments, span) in entry.paths() {
             if let Resolution::Free { later } = resolve(segments, scope, types) {
                 let (key, segments) = (segments.join("."), segments.to_vec());
                 add_free(found, FreeRef { key, segments, origin: span, ty: ty.to_owned(), later });
             }
         }
-        match field.shape(types) {
-            Shape::Structure(children) => collect_free(children, ty, levels, types, found),
-            Shape::Type { name, .. } => collect_type(name, ty, levels, types, found),
-            Shape::Switch(switch) => {
+        match entry.field().map(|f| f.shape(types)) {
+            Some(Shape::Structure(children)) => collect_free(children, ty, levels, types, found),
+            Some(Shape::Type { name, .. }) => collect_type(name, ty, levels, types, found),
+            Some(Shape::Switch(switch)) => {
                 for (_, body) in switch.bodies() {
                     match body {
                         RawBody::Fields(children) => collect_free(children, ty, levels, types, found),
@@ -436,7 +449,7 @@ fn collect_free<'a>(
                     }
                 }
             }
-            Shape::Value(..) | Shape::Unknown => {}
+            Some(Shape::Value(..) | Shape::Unknown) | None => {}
         }
         levels.pop();
     }

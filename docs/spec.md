@@ -331,6 +331,9 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 | `expect: <value \| "low-high" \| list>` | A mismatch adds an expert info **warning** and dissection goes on. A list may mix values and ranges. An `expect:` that can never match is a validation warning. |
 | `dissector: <name>` | On a bytes Field: passes the bytes to an existing Wireshark Dissector by name (static handoff). |
 
+- `{ padding: … }` takes no other key. Its amount follows the rules of a `size:` (§3.6): a negative constant, or a constant Expression that is negative or has no value, is `invalid-padding`; at runtime, a negative or faulting Expression is malformed (§4.4).
+- A padding after a Field that reads to the end is the warning `unreachable-field`, as a Field would be.
+
 There is no `align:` in v1.
 
 ### 3.11 Byte order
@@ -515,7 +518,7 @@ Errors:
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - `overlapping-cases`: overlapping `switch` cases (§3.9);
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
-- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7);
+- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding` (§3.10);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - invalid ports and port ranges (§3.12);
