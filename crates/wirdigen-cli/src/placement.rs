@@ -110,6 +110,25 @@ pub fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Ve
     Ok(outputs)
 }
 
+/// The file of each output under `generate --check`, which compares files, rejecting any Dissector
+/// bound for standard output.
+pub fn output_files(inputs: &[Input], placement: &Placement, outputs: Vec<Output>) -> Result<Vec<PathBuf>, String> {
+    inputs
+        .iter()
+        .zip(outputs)
+        .map(|(input, output)| match output {
+            Output::File(path) => Ok(path),
+            Output::Stdout if matches!(placement, Placement::Single(_)) => {
+                Err("`--check` compares files, so it cannot be used with `-o -`".to_owned())
+            }
+            Output::Stdout => Err(format!(
+                "`--check` compares files, but the Dissector of `{}` goes to standard output; give `-o <FILE>`",
+                input.name()
+            )),
+        })
+        .collect()
+}
+
 /// Whether an argument is `-`, standing for standard input or output.
 fn is_dash(arg: &Path) -> bool {
     arg.as_os_str() == "-"

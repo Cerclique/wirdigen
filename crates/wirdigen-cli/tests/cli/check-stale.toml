@@ -1,0 +1,9 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "--check", "-o", "custom.lua", "one.wirdigen.yaml"]
+fs.sandbox = true
+status.code = 1
+stdout = ""
+stderr = """
+error: `custom.lua` is stale
+"""

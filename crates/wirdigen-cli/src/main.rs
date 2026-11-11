@@ -88,6 +88,10 @@ struct GenerateArgs {
     /// Write each Dissector into this directory instead of next to its input.
     #[arg(long, value_name = "DIR")]
     out_dir: Option<PathBuf>,
+
+    /// Write nothing; fail if a Dissector on disk differs from what would be written.
+    #[arg(long)]
+    check: bool,
 }
 
 fn main() -> ExitCode {
@@ -101,22 +105,17 @@ fn main() -> ExitCode {
     let verbosity = Verbosity::from_flags(cli.quiet, cli.verbose);
     let mut options = RenderOptions::default();
     options.color = color;
-    let (subcommand, args, placement) = match cli.command {
-        Command::Validate(Inputs { inputs }) => ("validate", inputs, None),
-        Command::Generate(GenerateArgs { inputs: Inputs { inputs }, output, out_dir }) => {
-            ("generate", inputs, Some(Placement::from_args(output, out_dir)))
+    let (subcommand, args, placement, check) = match cli.command {
+        Command::Validate(Inputs { inputs }) => ("validate", inputs, None, false),
+        Command::Generate(GenerateArgs { inputs: Inputs { inputs }, output, out_dir, check }) => {
+            ("generate", inputs, Some(Placement::from_args(output, out_dir)), check)
         }
     };
     let inputs = placement::inputs(args).unwrap_or_else(|message| usage_error(subcommand, &message));
-    let outputs: Vec<Option<Output>> = match &placement {
-        None => vec![None; inputs.len()],
+    let actions = match &placement {
+        None => vec![Action::Validate; inputs.len()],
         Some(placement) => {
-            let cwd = std::env::current_dir().unwrap_or_default();
-            placement::outputs(&inputs, placement, &cwd)
-                .unwrap_or_else(|message| usage_error(subcommand, &message))
-                .into_iter()
-                .map(Some)
-                .collect()
+            actions(&inputs, placement, check).unwrap_or_else(|message| usage_error(subcommand, &message))
         }
     };
 
@@ -129,11 +128,33 @@ fn main() -> ExitCode {
         warnings: 0,
         files_with_diagnostics: 0,
     };
-    for (input, output) in inputs.iter().zip(&outputs) {
-        run.process(input, output.as_ref());
+    for (input, action) in inputs.iter().zip(&actions) {
+        run.process(input, action);
     }
     run.print_summary(inputs.len());
     if run.failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+/// What happens to one input once it is valid.
+#[derive(Debug, Clone)]
+enum Action {
+    /// `validate`: nothing more.
+    Validate,
+    /// `generate`: write its Dissector.
+    Write(Output),
+    /// `generate --check`: compare its Dissector with this file.
+    Check(PathBuf),
+}
+
+/// The `generate` action of each input, in order, from where its Dissector goes.
+fn actions(inputs: &[Input], placement: &Placement, check: bool) -> Result<Vec<Action>, String> {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let outputs = placement::outputs(inputs, placement, &cwd)?;
+    Ok(if check {
+        placement::output_files(inputs, placement, outputs)?.into_iter().map(Action::Check).collect()
+    } else {
+        outputs.into_iter().map(Action::Write).collect()
+    })
 }
 
 /// Exits with clap's usage error (code 2) for a mistake clap cannot see on its own.
@@ -157,8 +178,8 @@ struct Run {
 }
 
 impl Run {
-    /// Validates one input and, under `generate`, writes its Dissector to `output`.
-    fn process(&mut self, input: &Input, output: Option<&Output>) {
+    /// Validates one input and, if it is valid, carries out its `action`.
+    fn process(&mut self, input: &Input, action: &Action) {
         let name = input.name();
         let text = match input {
             Input::Stdin => io::read_to_string(io::stdin()),
@@ -177,14 +198,22 @@ impl Run {
         self.report(&source, diagnostics);
         match valid {
             Err(_) => self.failed = true,
-            Ok(valid) => {
-                if let Some(output) = output {
-                    match write(output, &valid.generate()) {
-                        Ok(outcome) => self.report_outcome(output, outcome),
-                        Err(message) => self.fail(&message),
+            Ok(valid) => match action {
+                Action::Validate => {}
+                Action::Write(output) => match write(output, &valid.generate()) {
+                    Ok(outcome) => self.report_outcome(output, outcome),
+                    Err(message) => self.fail(&message),
+                },
+                Action::Check(path) => {
+                    let display = path.display();
+                    match check(path, &valid.generate()) {
+                        Ok(Freshness::Fresh) => self.report_verbose(&format!("unchanged `{display}`")),
+                        Ok(Freshness::Stale) => self.fail(&format!("`{display}` is stale")),
+                        Ok(Freshness::Missing) => self.fail(&format!("`{display}` is stale (missing)")),
+                        Err(err) => self.fail(&format!("cannot read `{display}`: {err}")),
                     }
                 }
-            }
+            },
         }
     }
 
@@ -212,16 +241,20 @@ impl Run {
 
     /// Under `-v`, the line saying what happened to one Dissector.
     fn report_outcome(&self, output: &Output, outcome: WriteOutcome) {
-        if self.verbosity != Verbosity::Verbose {
-            return;
-        }
         let status = match outcome {
             WriteOutcome::Written => "written",
             WriteOutcome::Unchanged => "unchanged",
         };
         match output {
-            Output::Stdout => eprintln!("{status} to standard output"),
-            Output::File(path) => eprintln!("{status} `{}`", path.display()),
+            Output::Stdout => self.report_verbose(&format!("{status} to standard output")),
+            Output::File(path) => self.report_verbose(&format!("{status} `{}`", path.display())),
+        }
+    }
+
+    /// Prints `line` to stderr under `-v` only.
+    fn report_verbose(&self, line: &str) {
+        if self.verbosity == Verbosity::Verbose {
+            eprintln!("{line}");
         }
     }
 
@@ -256,6 +289,35 @@ enum WriteOutcome {
     Unchanged,
 }
 
+/// What `--check` found in the file a Dissector would be written to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Freshness {
+    /// The file holds the Dissector's bytes.
+    Fresh,
+    /// The file holds other bytes.
+    Stale,
+    /// There is no file, which counts as stale.
+    Missing,
+}
+
+/// Compares a Dissector with the file at `path`, writing nothing.
+fn check(path: &Path, lua: &str) -> io::Result<Freshness> {
+    Ok(match read_existing(path)? {
+        Some(existing) if existing == lua.as_bytes() => Freshness::Fresh,
+        Some(_) => Freshness::Stale,
+        None => Freshness::Missing,
+    })
+}
+
+/// The bytes of the file at `path`, or `None` when there is none.
+fn read_existing(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(existing) => Ok(Some(existing)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 /// Writes a Dissector to its output, creating missing parent directories of a file.
 fn write(output: &Output, lua: &str) -> Result<WriteOutcome, String> {
     match output {
@@ -284,11 +346,7 @@ fn write_file(path: &Path, bytes: &[u8]) -> io::Result<WriteOutcome> {
     } else {
         path
     };
-    let existing = match fs::read(path) {
-        Ok(existing) => Some(existing),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
-        Err(err) => return Err(err),
-    };
+    let existing = read_existing(path)?;
     if existing.as_deref() == Some(bytes) {
         return Ok(WriteOutcome::Unchanged);
     }
