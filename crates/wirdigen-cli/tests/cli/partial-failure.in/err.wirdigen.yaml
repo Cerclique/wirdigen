@@ -1,0 +1,4 @@
+name: Demo
+title: ""
+fields: [ {name: a, type: uint8} ]
+allow: [unknown-key]

@@ -1,0 +1,10 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "minimal.wirdigen.yaml", "-o", "minimal.wirdigen.yaml/out.lua"]
+fs.base = "../../../wirdigen/tests/valid"
+fs.sandbox = true
+status.code = 1
+stdout = ""
+stderr = """
+error: cannot write `minimal.wirdigen.yaml/out.lua`: [..]
+"""

@@ -1,0 +1,25 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["validate", "-q", "warn.wirdigen.yaml", "err.wirdigen.yaml"]
+fs.base = "inputs-argument-order.in"
+fs.sandbox = true
+status.code = 1
+stdout = ""
+stderr = """
+error[invalid-protocol-name]: `Demo` is not a valid protocol name
+ --> err.wirdigen.yaml:1:7
+  |
+1 | name: Demo
+  |       ^^^^
+  |
+  = note: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, at most 32 characters
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-name
+
+error[invalid-protocol-title]: a title must be a non-empty single line
+ --> err.wirdigen.yaml:2:8
+  |
+2 | title: ""
+  |        ^^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-title
+"""

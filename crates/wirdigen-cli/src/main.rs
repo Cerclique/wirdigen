@@ -5,7 +5,7 @@ mod placement;
 
 use std::fs;
 use std::io::{self, IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::error::ErrorKind;
@@ -25,6 +25,40 @@ struct Cli {
     /// When to colour Diagnostics on stderr.
     #[arg(long, value_enum, default_value_t, global = true)]
     color: ColorChoice,
+
+    /// Hide warnings and the summary line; errors are still shown.
+    #[arg(short, long, global = true, conflicts_with = "verbose")]
+    quiet: bool,
+
+    /// List each Dissector as written or unchanged.
+    #[arg(short, long, global = true)]
+    verbose: bool,
+}
+
+/// How much `validate` and `generate` say on stderr besides errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verbosity {
+    /// `-q`: errors only.
+    Quiet,
+    /// Diagnostics and the summary line.
+    Normal,
+    /// `-v`: also each Dissector written or unchanged.
+    Verbose,
+}
+
+impl Verbosity {
+    fn from_flags(quiet: bool, verbose: bool) -> Self {
+        match (quiet, verbose) {
+            (true, _) => Verbosity::Quiet,
+            (false, true) => Verbosity::Verbose,
+            (false, false) => Verbosity::Normal,
+        }
+    }
+
+    /// Whether warnings and the summary line are shown.
+    fn shows_warnings(self) -> bool {
+        self != Verbosity::Quiet
+    }
 }
 
 #[derive(Subcommand)]
@@ -64,6 +98,7 @@ fn main() -> ExitCode {
         std::env::var_os("CLICOLOR_FORCE").as_deref(),
         std::io::stderr().is_terminal(),
     );
+    let verbosity = Verbosity::from_flags(cli.quiet, cli.verbose);
     let mut options = RenderOptions::default();
     options.color = color;
     let (subcommand, args, placement) = match cli.command {
@@ -85,7 +120,15 @@ fn main() -> ExitCode {
         }
     };
 
-    let mut run = Run { options, failed: false, errors: 0, warnings: 0, files_with_diagnostics: 0 };
+    let mut run = Run {
+        options,
+        verbosity,
+        failed: false,
+        rendered_any: false,
+        errors: 0,
+        warnings: 0,
+        files_with_diagnostics: 0,
+    };
     for (input, output) in inputs.iter().zip(&outputs) {
         run.process(input, output.as_ref());
     }
@@ -104,7 +147,10 @@ fn usage_error(subcommand: &str, message: &str) -> ! {
 /// The state of one `validate` or `generate` run across its inputs.
 struct Run {
     options: RenderOptions,
+    verbosity: Verbosity,
     failed: bool,
+    /// Whether a Diagnostic was rendered yet, so the next one is set apart by a blank line.
+    rendered_any: bool,
     errors: usize,
     warnings: usize,
     files_with_diagnostics: usize,
@@ -133,8 +179,9 @@ impl Run {
             Err(_) => self.failed = true,
             Ok(valid) => {
                 if let Some(output) = output {
-                    if let Err(message) = write(output, &valid.generate()) {
-                        self.fail(&message);
+                    match write(output, &valid.generate()) {
+                        Ok(outcome) => self.report_outcome(output, outcome),
+                        Err(message) => self.fail(&message),
                     }
                 }
             }
@@ -147,10 +194,14 @@ impl Run {
             return;
         }
         for diagnostic in diagnostics {
-            if self.errors + self.warnings > 0 {
-                eprintln!();
+            let shown = diagnostic.severity() == Severity::Error || self.verbosity.shows_warnings();
+            if shown {
+                if self.rendered_any {
+                    eprintln!();
+                }
+                eprint!("{}", diagnostic.render(source, &self.options));
+                self.rendered_any = true;
             }
-            eprint!("{}", diagnostic.render(source, &self.options));
             match diagnostic.severity() {
                 Severity::Error => self.errors += 1,
                 Severity::Warning => self.warnings += 1,
@@ -159,14 +210,30 @@ impl Run {
         self.files_with_diagnostics += 1;
     }
 
+    /// Under `-v`, the line saying what happened to one Dissector.
+    fn report_outcome(&self, output: &Output, outcome: WriteOutcome) {
+        if self.verbosity != Verbosity::Verbose {
+            return;
+        }
+        let status = match outcome {
+            WriteOutcome::Written => "written",
+            WriteOutcome::Unchanged => "unchanged",
+        };
+        match output {
+            Output::Stdout => eprintln!("{status} to standard output"),
+            Output::File(path) => eprintln!("{status} `{}`", path.display()),
+        }
+    }
+
     fn fail(&mut self, message: &str) {
         eprintln!("error: {message}");
         self.failed = true;
     }
 
-    /// The `error: 2 errors, 1 warning in 1 of 3 files` line, only when there were Diagnostics.
+    /// The `error: 2 errors, 1 warning in 1 of 3 files` line, only when there were Diagnostics
+    /// and not under `-q`.
     fn print_summary(&self, files: usize) {
-        if self.errors + self.warnings == 0 {
+        if self.errors + self.warnings == 0 || !self.verbosity.shows_warnings() {
             return;
         }
         let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
@@ -180,24 +247,70 @@ impl Run {
     }
 }
 
+/// What writing a Dissector did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WriteOutcome {
+    /// New bytes went to the output.
+    Written,
+    /// The file already held these bytes and was left untouched.
+    Unchanged,
+}
+
 /// Writes a Dissector to its output, creating missing parent directories of a file.
-fn write(output: &Output, lua: &str) -> Result<(), String> {
+fn write(output: &Output, lua: &str) -> Result<WriteOutcome, String> {
     match output {
         Output::Stdout => {
             let mut stdout = io::stdout().lock();
             stdout
                 .write_all(lua.as_bytes())
                 .and_then(|()| stdout.flush())
+                .map(|()| WriteOutcome::Written)
                 .map_err(|err| format!("cannot write to standard output: {err}"))
         }
         Output::File(path) => {
-            let created = match path.parent() {
-                Some(parent) if !parent.as_os_str().is_empty() => fs::create_dir_all(parent),
-                _ => Ok(()),
-            };
-            created
-                .and_then(|()| fs::write(path, lua))
-                .map_err(|err| format!("cannot write `{}`: {err}", path.display()))
+            write_file(path, lua.as_bytes()).map_err(|err| format!("cannot write `{}`: {err}", path.display()))
         }
     }
+}
+
+/// Replaces `path` atomically with `bytes`, through a temporary file in the same directory, unless
+/// it already holds them. A replaced file keeps its permissions, and a symlink is followed so the
+/// link itself stays in place.
+fn write_file(path: &Path, bytes: &[u8]) -> io::Result<WriteOutcome> {
+    let resolved;
+    let path = if path.is_symlink() {
+        resolved = fs::canonicalize(path)?;
+        resolved.as_path()
+    } else {
+        path
+    };
+    let existing = match fs::read(path) {
+        Ok(existing) => Some(existing),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err),
+    };
+    if existing.as_deref() == Some(bytes) {
+        return Ok(WriteOutcome::Unchanged);
+    }
+    let dir = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    fs::create_dir_all(dir)?;
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".wirdigen-").suffix(".tmp");
+    // tempfile creates its files 0600; ask for 0666 so a new Dissector follows the umask.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(fs::Permissions::from_mode(0o666));
+    }
+    let mut temp = builder.tempfile_in(dir)?;
+    temp.write_all(bytes)?;
+    temp.as_file().sync_all()?;
+    if existing.is_some() {
+        fs::set_permissions(temp.path(), fs::metadata(path)?.permissions())?;
+    }
+    temp.persist(path).map_err(|err| err.error)?;
+    Ok(WriteOutcome::Written)
 }

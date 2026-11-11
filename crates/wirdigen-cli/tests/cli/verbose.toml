@@ -1,0 +1,9 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "-v", "one.wirdigen.yaml", "two.wirdigen.yaml"]
+fs.sandbox = true
+stdout = ""
+stderr = """
+unchanged `one.lua`
+written `two.lua`
+"""
