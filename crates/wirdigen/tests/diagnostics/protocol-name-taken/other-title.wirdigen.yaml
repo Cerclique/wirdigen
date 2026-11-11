@@ -1,0 +1,4 @@
+name: btp-a
+title: Demo Protocol
+fields:
+  - { name: a, type: uint8 }

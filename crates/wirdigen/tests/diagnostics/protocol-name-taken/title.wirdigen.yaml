@@ -1,0 +1,4 @@
+name: demo
+title: Domain Name System
+fields:
+  - { name: a, type: uint8 }

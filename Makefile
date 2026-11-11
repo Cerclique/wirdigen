@@ -3,7 +3,8 @@ export RUSTFLAGS := -D warnings
 export RUSTDOCFLAGS := -D warnings
 
 .PHONY: lint test test-lua test-tshark book docker-test-lua docker-test-tshark \
-	docker-test-tshark-4.4 docker-test-tshark-stable docker-bless-tshark
+	docker-test-tshark-4.4 docker-test-tshark-stable docker-bless-tshark \
+	refresh-protocols docker-refresh-protocols
 
 lint:
 	cargo fmt --all --check
@@ -22,6 +23,11 @@ test-lua:
 # skips -X lua_script as root (spec §10.5); fails when one is missing.
 test-tshark:
 	WIRDIGEN_TSHARK=1 cargo test -p wirdigen --locked --test tshark
+
+# Rewrites src/builtin_protocols.tsv, the snapshot behind `protocol-name-taken`, from the tshark
+# on PATH, which must be the latest stable Wireshark (spec §3.3, §10.9).
+refresh-protocols:
+	WIRDIGEN_TSHARK=1 WIRDIGEN_BLESS=1 cargo test -p wirdigen --locked --test tshark builtin_protocols::
 
 # Needs mdbook 0.5.4 (the version CI uses). Snippets are checked by `make test`.
 book:
@@ -53,3 +59,8 @@ docker-test-tshark-4.4 docker-test-tshark-stable: docker-test-tshark-%: docker-i
 docker-bless-tshark: docker-image-tshark-4.4 docker-image-tshark-stable
 	$(call docker_run,tshark-4.4,env WIRDIGEN_BLESS=1 make test-tshark)
 	$(call docker_run,tshark-stable,make test-tshark)
+
+# Rewrites the built-in protocols snapshot from the tshark-stable image.
+docker-refresh-protocols: docker-image-tshark-stable
+	$(call docker_run,tshark-stable,tshark --version)
+	$(call docker_run,tshark-stable,make refresh-protocols)

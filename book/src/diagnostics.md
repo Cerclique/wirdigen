@@ -1119,6 +1119,33 @@ fields:
 allow: [tcp-without-framing]
 ```
 
+## `protocol-name-taken` {#protocol-name-taken}
+
+**Severity**: warning
+
+Wireshark already has a protocol with one of the names the description gives its own: the
+filter name `name:`, the short name (`name:` in uppercase) or the full name (`title:`, or the
+short name without one). Wireshark refuses to load a Dissector whose protocol names are taken.
+
+```yaml,diagnostic=protocol-name-taken
+name: dns
+fields:
+  - { name: id, type: uint16 }
+```
+
+The built-in protocols are those of the latest stable Wireshark when this Wirdigen was
+released. They vary with the Wireshark version and build, which is why this is a warning.
+
+**Fix**: pick a name and a title of your own, such as `name: mydns`. When the Wireshark you
+target lacks the built-in protocol, allow the warning:
+
+```yaml
+name: dns
+fields:
+  - { name: id, type: uint16 }
+allow: [protocol-name-taken]
+```
+
 ## `unused-enum` {#unused-enum}
 
 **Severity**: warning

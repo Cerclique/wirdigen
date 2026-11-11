@@ -22,6 +22,7 @@ make docker-test-tshark          # make test-tshark in tshark-4.4, then in tshar
 make docker-test-tshark-4.4      # make test-tshark in tshark-4.4 only
 make docker-test-tshark-stable   # make test-tshark in tshark-stable only
 make docker-bless-tshark         # rewrite dissected.json in tshark-4.4, then check tshark-stable
+make docker-refresh-protocols    # rewrite the built-in protocols snapshot in tshark-stable
 ```
 
 Each target builds the images it needs first; an unchanged image builds from Docker's cache
@@ -47,3 +48,8 @@ image with `docker/build-push-action`, caching the layers across workflow runs, 
   `docker build --no-cache -t wirdigen-tshark-stable -f docker/tshark-stable/Dockerfile .`
   CI starts a fresh layer cache for the stable image each week, so it picks up a release
   within a week.
+- `crates/wirdigen/src/builtin_protocols.tsv`, the snapshot of Wireshark's built-in protocols
+  behind the warning `protocol-name-taken` (spec §3.3), comes from the stable image. The
+  `tshark-stable` job fails once the image's Wireshark lists other protocols or is newer than
+  the snapshot; a tshark older than the snapshot, such as 4.4, is not compared. Refresh it
+  with `make docker-refresh-protocols` after rebuilding the stable image, and commit the file.
