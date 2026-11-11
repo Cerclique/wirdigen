@@ -6,5 +6,5 @@ status.code = 1
 stdout = ""
 stderr = """
 unchanged `one.lua`
-error: `two.lua` is missing
+error: `two.lua` is stale (missing)
 """

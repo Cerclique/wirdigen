@@ -112,34 +112,49 @@ fn main() -> ExitCode {
         }
     };
     let inputs = placement::inputs(args).unwrap_or_else(|message| usage_error(subcommand, &message));
-    let outputs: Vec<Option<Output>> = match &placement {
-        None => vec![None; inputs.len()],
+    let actions = match &placement {
+        None => vec![Action::Validate; inputs.len()],
         Some(placement) => {
-            let cwd = std::env::current_dir().unwrap_or_default();
-            placement::outputs(&inputs, placement, &cwd)
-                .and_then(|outputs| if check { placement::checkable(&inputs, placement, outputs) } else { Ok(outputs) })
-                .unwrap_or_else(|message| usage_error(subcommand, &message))
-                .into_iter()
-                .map(Some)
-                .collect()
+            actions(&inputs, placement, check).unwrap_or_else(|message| usage_error(subcommand, &message))
         }
     };
 
     let mut run = Run {
         options,
         verbosity,
-        check,
         failed: false,
         rendered_any: false,
         errors: 0,
         warnings: 0,
         files_with_diagnostics: 0,
     };
-    for (input, output) in inputs.iter().zip(&outputs) {
-        run.process(input, output.as_ref());
+    for (input, action) in inputs.iter().zip(&actions) {
+        run.process(input, action);
     }
     run.print_summary(inputs.len());
     if run.failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+/// What happens to one input once it is valid.
+#[derive(Debug, Clone)]
+enum Action {
+    /// `validate`: nothing more.
+    Validate,
+    /// `generate`: write its Dissector.
+    Write(Output),
+    /// `generate --check`: compare its Dissector with this file.
+    Check(PathBuf),
+}
+
+/// The `generate` action of each input, in order, from where its Dissector goes.
+fn actions(inputs: &[Input], placement: &Placement, check: bool) -> Result<Vec<Action>, String> {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let outputs = placement::outputs(inputs, placement, &cwd)?;
+    Ok(if check {
+        placement::output_files(inputs, placement, outputs)?.into_iter().map(Action::Check).collect()
+    } else {
+        outputs.into_iter().map(Action::Write).collect()
+    })
 }
 
 /// Exits with clap's usage error (code 2) for a mistake clap cannot see on its own.
@@ -154,8 +169,6 @@ fn usage_error(subcommand: &str, message: &str) -> ! {
 struct Run {
     options: RenderOptions,
     verbosity: Verbosity,
-    /// `generate --check`: compare each Dissector with its file instead of writing it.
-    check: bool,
     failed: bool,
     /// Whether a Diagnostic was rendered yet, so the next one is set apart by a blank line.
     rendered_any: bool,
@@ -165,9 +178,8 @@ struct Run {
 }
 
 impl Run {
-    /// Validates one input and, under `generate`, writes its Dissector to `output`, or compares it
-    /// with `output` under `--check`.
-    fn process(&mut self, input: &Input, output: Option<&Output>) {
+    /// Validates one input and, if it is valid, carries out its `action`.
+    fn process(&mut self, input: &Input, action: &Action) {
         let name = input.name();
         let text = match input {
             Input::Stdin => io::read_to_string(io::stdin()),
@@ -186,16 +198,22 @@ impl Run {
         self.report(&source, diagnostics);
         match valid {
             Err(_) => self.failed = true,
-            Ok(valid) => {
-                if let Some(output) = output {
-                    let lua = valid.generate();
-                    let outcome = if self.check { check(output, &lua) } else { write(output, &lua) };
-                    match outcome {
-                        Ok(outcome) => self.report_outcome(output, outcome),
-                        Err(message) => self.fail(&message),
+            Ok(valid) => match action {
+                Action::Validate => {}
+                Action::Write(output) => match write(output, &valid.generate()) {
+                    Ok(outcome) => self.report_outcome(output, outcome),
+                    Err(message) => self.fail(&message),
+                },
+                Action::Check(path) => {
+                    let display = path.display();
+                    match check(path, &valid.generate()) {
+                        Ok(Freshness::Fresh) => self.report_verbose(&format!("unchanged `{display}`")),
+                        Ok(Freshness::Stale) => self.fail(&format!("`{display}` is stale")),
+                        Ok(Freshness::Missing) => self.fail(&format!("`{display}` is stale (missing)")),
+                        Err(err) => self.fail(&format!("cannot read `{display}`: {err}")),
                     }
                 }
-            }
+            },
         }
     }
 
@@ -221,29 +239,22 @@ impl Run {
         self.files_with_diagnostics += 1;
     }
 
-    /// The line saying what happened to one Dissector: always for a stale or missing one, only
-    /// under `-v` otherwise.
-    fn report_outcome(&mut self, output: &Output, outcome: WriteOutcome) {
-        let path = match output {
-            Output::Stdout => None,
-            Output::File(path) => Some(path.display()),
-        };
-        match (outcome, path) {
-            (WriteOutcome::Stale, Some(path)) => return self.fail(&format!("`{path}` is stale")),
-            (WriteOutcome::Missing, Some(path)) => return self.fail(&format!("`{path}` is missing")),
-            _ => {}
-        }
-        if self.verbosity != Verbosity::Verbose {
-            return;
-        }
+    /// Under `-v`, the line saying what happened to one Dissector.
+    fn report_outcome(&self, output: &Output, outcome: WriteOutcome) {
         let status = match outcome {
             WriteOutcome::Written => "written",
             WriteOutcome::Unchanged => "unchanged",
-            WriteOutcome::Stale | WriteOutcome::Missing => unreachable!("`--check` only compares files"),
         };
         match output {
-            Output::Stdout => eprintln!("{status} to standard output"),
-            Output::File(path) => eprintln!("{status} `{}`", path.display()),
+            Output::Stdout => self.report_verbose(&format!("{status} to standard output")),
+            Output::File(path) => self.report_verbose(&format!("{status} `{}`", path.display())),
+        }
+    }
+
+    /// Prints `line` to stderr under `-v` only.
+    fn report_verbose(&self, line: &str) {
+        if self.verbosity == Verbosity::Verbose {
+            eprintln!("{line}");
         }
     }
 
@@ -269,30 +280,33 @@ impl Run {
     }
 }
 
-/// What writing a Dissector did, or what `--check` found.
+/// What writing a Dissector did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WriteOutcome {
     /// New bytes went to the output.
     Written,
     /// The file already held these bytes and was left untouched.
     Unchanged,
-    /// `--check`: the file holds other bytes.
+}
+
+/// What `--check` found in the file a Dissector would be written to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Freshness {
+    /// The file holds the Dissector's bytes.
+    Fresh,
+    /// The file holds other bytes.
     Stale,
-    /// `--check`: there is no file.
+    /// There is no file, which counts as stale.
     Missing,
 }
 
-/// Compares a Dissector with the file it would be written to, writing nothing.
-fn check(output: &Output, lua: &str) -> Result<WriteOutcome, String> {
-    let Output::File(path) = output else {
-        unreachable!("`placement::checkable` rejects standard output under `--check`")
-    };
-    match read_existing(path) {
-        Ok(Some(existing)) if existing == lua.as_bytes() => Ok(WriteOutcome::Unchanged),
-        Ok(Some(_)) => Ok(WriteOutcome::Stale),
-        Ok(None) => Ok(WriteOutcome::Missing),
-        Err(err) => Err(format!("cannot read `{}`: {err}", path.display())),
-    }
+/// Compares a Dissector with the file at `path`, writing nothing.
+fn check(path: &Path, lua: &str) -> io::Result<Freshness> {
+    Ok(match read_existing(path)? {
+        Some(existing) if existing == lua.as_bytes() => Freshness::Fresh,
+        Some(_) => Freshness::Stale,
+        None => Freshness::Missing,
+    })
 }
 
 /// The bytes of the file at `path`, or `None` when there is none.

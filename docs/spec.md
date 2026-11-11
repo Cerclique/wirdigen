@@ -671,8 +671,8 @@ There is no `check` subcommand. `--version` is clap's default. Completions and m
 ### 9.4 `--check`
 
 - Compares bytes with the path `generate` would write, respecting `-o` and `--out-dir`. A missing file counts as stale.
-- Prints one stderr line per stale file, without a diff in v1 (`--diff` can come later as a minor release).
-- `-o -` is rejected. Diagnostics and `--deny-warnings` still apply.
+- Prints one stderr line per stale file (`` `x.lua` is stale ``, or `` stale (missing) ``), without a diff in v1 (`--diff` can come later as a minor release).
+- `-o -` is rejected, and so is standard input without `-o <file>`, since neither has a file to compare. Diagnostics and `--deny-warnings` still apply.
 
 ### 9.5 Human output
 
