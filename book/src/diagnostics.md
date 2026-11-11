@@ -378,7 +378,7 @@ fields: [ {name: user, type: string} ]
 
 **Fix**: add the length key that matches the wire: `size: 16` for a constant length,
 `prefix: uint8` when a count comes just before the value, or `terminator: 0` for a
-NUL-terminated string. See [Strings and bytes](reference/fields.md#strings-and-bytes).
+NUL-terminated string. See [Sizes](reference/sizes.md).
 
 ## `conflicting-length` {#conflicting-length}
 
