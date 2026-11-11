@@ -40,7 +40,7 @@ const BY_DECLARED_PORT: [&str; 1] = ["registration"];
 
 /// The cases whose packets are the segments of one TCP stream to [`PORT`], decoded as the
 /// protocol over TCP: the cases of `framing:` (spec §3.13).
-const OVER_TCP: [&str; 1] = ["framing"];
+const OVER_TCP: [&str; 2] = ["framing", "info-framing"];
 
 /// How the harness wraps each packet: text2pcap's flag for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -365,6 +365,7 @@ cases! {
     info => "info",
     info_default => "info-default",
     info_empty => "info-empty",
+    info_framing => "info-framing",
 }
 
 /// Registration (spec §3.12): the declared ports follow their range preferences, and TCP ports

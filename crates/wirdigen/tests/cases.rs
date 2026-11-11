@@ -74,4 +74,5 @@ cases! {
     info => "info",
     info_default => "info-default",
     info_empty => "info-empty",
+    info_framing => "info-framing",
 }

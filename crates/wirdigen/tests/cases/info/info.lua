@@ -75,25 +75,41 @@ local function wd_unmatched(tree, field, expert_info, tvb, offset, value, path)
     item:add_proto_expert_info(expert_info, "No case for " .. value .. ": " .. path)
 end
 
--- The Info column (spec §3.14). The last value the field extractor `field` found in the packet,
--- or nil when its Field was not read.
-local function wd_info_found(field)
-    local found = { field() }
-    return found[#found]
+-- The Info column (spec §3.14). A field extractor gives every value its Field took in the
+-- packet, and a packet can hold several Messages under Framing (spec §3.13): the Info column of
+-- a Message shows only the values it read, those found past the counts `wd_info_counts` takes
+-- of each extractor in `fields` before the Message is read. The result is keyed by extractor.
+local function wd_info_counts(fields)
+    local counts = {}
+    for _, field in ipairs(fields) do
+        counts[field] = select("#", field())
+    end
+    return counts
 end
 
--- What Wireshark displays for the value `field` extracts, or "" when its Field was not read.
-local function wd_info_display(field)
-    local info = wd_info_found(field)
+-- The last value the field extractor `field` found in the Message, or nil when its Field was
+-- not read there; `before` is what `wd_info_counts` returned before the Message was read.
+local function wd_info_found(field, before)
+    local found = { field() }
+    if #found > before[field] then
+        return found[#found]
+    end
+    return nil
+end
+
+-- What Wireshark displays for the value `field` extracts, or "" when its Field was not read in
+-- the Message (`before` as for `wd_info_found`).
+local function wd_info_display(field, before)
+    local info = wd_info_found(field, before)
     return info and info.display or ""
 end
 
 -- The label in `names`, a list of `{ low, high, label }`, of the value `field` extracts, or else
--- the number; "" when its Field was not read. A 64-bit value comes as a UInt64 or an Int64,
--- looked up as an Expression reads it, its 64 bits as a signed integer, and shown as Wireshark
--- shows it.
-local function wd_info_label(field, names)
-    local info = wd_info_found(field)
+-- the number; "" when its Field was not read in the Message (`before` as for `wd_info_found`). A
+-- 64-bit value comes as a UInt64 or an Int64, looked up as an Expression reads it, its 64 bits
+-- as a signed integer, and shown as Wireshark shows it.
+local function wd_info_label(field, before, names)
+    local info = wd_info_found(field, before)
     if not info then return "" end
     local key = info.value
     if type(key) == "userdata" then
@@ -344,9 +360,10 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "INFO"
     wd_info_cases = {}
+    local before = wd_info_counts({ x_kind, x_seq, x_flags__urgent, x_flags__prio, x_body__user, x_note, x_hdr__len, x_addr, x_big, x_ok, x_secret })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO")
     dissect_top(tvb, pinfo, root, 0)
-    pinfo.cols.info = wd_info_label(x_kind, names_kind) .. " #" .. wd_info_display(x_seq) .. " [" .. wd_info_display(x_flags__urgent) .. " " .. wd_info_label(x_flags__prio, names_flags__prio) .. "] {" .. (wd_info_cases["body"] or "") .. "} user=" .. wd_info_display(x_body__user) .. " note=" .. wd_info_display(x_note) .. " " .. wd_info_display(x_hdr__len) .. " from " .. wd_info_display(x_addr) .. " " .. wd_info_label(x_big, names_big) .. " ok=" .. wd_info_display(x_ok) .. " " .. wd_info_display(x_secret)
+    pinfo.cols.info = wd_info_label(x_kind, before, names_kind) .. " #" .. wd_info_display(x_seq, before) .. " [" .. wd_info_display(x_flags__urgent, before) .. " " .. wd_info_label(x_flags__prio, before, names_flags__prio) .. "] {" .. (wd_info_cases["body"] or "") .. "} user=" .. wd_info_display(x_body__user, before) .. " note=" .. wd_info_display(x_note, before) .. " " .. wd_info_display(x_hdr__len, before) .. " from " .. wd_info_display(x_addr, before) .. " " .. wd_info_label(x_big, before, names_big) .. " ok=" .. wd_info_display(x_ok, before) .. " " .. wd_info_display(x_secret, before)
     return tvb:len()
 end
 
