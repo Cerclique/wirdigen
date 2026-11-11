@@ -1,0 +1,12 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "proto.yml", "./sub/../proto.yaml"]
+status.code = 2
+stdout = ""
+stderr = """
+error: `proto.yml` and `./sub/../proto.yaml` would both be written to `./sub/../proto.lua`
+
+Usage: wirdigen generate [OPTIONS] <INPUTS>...
+
+For more information, try '--help'.
+"""

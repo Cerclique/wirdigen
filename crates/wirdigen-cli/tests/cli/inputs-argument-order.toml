@@ -1,0 +1,43 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["validate", "warn.wirdigen.yaml", "err.wirdigen.yaml"]
+fs.sandbox = true
+status.code = 1
+stdout = ""
+stderr = """
+warning[unused-type]: the Type `Header` is never used
+ --> warn.wirdigen.yaml:5:3
+  |
+5 |   Header:
+  |   ^^^^^^
+  |
+  = note: use it as `type: Header`, or remove it
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unused-type
+
+error[invalid-protocol-name]: `Demo` is not a valid protocol name
+ --> err.wirdigen.yaml:1:7
+  |
+1 | name: Demo
+  |       ^^^^
+  |
+  = note: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, at most 32 characters
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-name
+
+error[invalid-protocol-title]: a title must be a non-empty single line
+ --> err.wirdigen.yaml:2:8
+  |
+2 | title: ""
+  |        ^^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-title
+
+warning[unknown-allow]: `unknown-key` is an error, and errors cannot be silenced
+ --> err.wirdigen.yaml:4:9
+  |
+4 | allow: [unknown-key]
+  |         ^^^^^^^^^^^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unknown-allow
+
+error: 2 errors, 2 warnings in 2 of 2 files
+"""
