@@ -873,6 +873,7 @@ version = "1.0.0-alpha.0"
 dependencies = [
  "assert_cmd",
  "clap",
+ "serde",
  "serde_json",
  "tempfile",
  "trycmd",

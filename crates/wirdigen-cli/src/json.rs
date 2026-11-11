@@ -5,11 +5,12 @@
 
 use std::ops::Range;
 
-use serde_json::{Map, Value, json};
+use serde::Serialize;
 use wirdigen::{Diagnostic, Severity};
 
 /// What happened to one input, as the `status` of its `file` record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FileStatus {
     /// `generate`: new bytes went to the output.
     Written,
@@ -28,15 +29,64 @@ impl FileStatus {
     pub fn is_failure(self) -> bool {
         matches!(self, FileStatus::Stale | FileStatus::Failed)
     }
+}
 
-    fn as_str(self) -> &'static str {
-        match self {
-            FileStatus::Written => "written",
-            FileStatus::Unchanged => "unchanged",
-            FileStatus::Stale => "stale",
-            FileStatus::Failed => "failed",
-            FileStatus::Valid => "valid",
-        }
+/// One line of output. Struct fields serialize in declaration order, so `type` comes first.
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum Record<'a> {
+    Diagnostic {
+        file: &'a str,
+        name: &'a str,
+        severity: &'a str,
+        message: &'a str,
+        span: Span,
+        notes: Vec<NoteRecord<'a>>,
+        rendered: &'a str,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        denied: bool,
+    },
+    File {
+        input: &'a str,
+        output: Option<&'a str>,
+        status: FileStatus,
+    },
+    Summary {
+        errors: usize,
+        warnings: usize,
+        exit_code: u8,
+    },
+}
+
+#[derive(Serialize)]
+struct NoteRecord<'a> {
+    message: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    span: Option<Span>,
+}
+
+/// A span as byte offsets plus its 1-based start and end lines and columns.
+#[derive(Serialize)]
+struct Span {
+    start: usize,
+    end: usize,
+    line: usize,
+    column: usize,
+    end_line: usize,
+    end_column: usize,
+}
+
+impl Span {
+    fn new(text: &str, span: Range<usize>) -> Self {
+        let (line, column) = line_column(text, span.start);
+        let (end_line, end_column) = line_column(text, span.end);
+        Span { start: span.start, end: span.end, line, column, end_line, end_column }
+    }
+}
+
+impl Record<'_> {
+    fn to_line(&self) -> String {
+        serde_json::to_string(self).expect("records hold only strings, numbers and booleans")
     }
 }
 
@@ -45,64 +95,36 @@ impl FileStatus {
 /// `rendered` is the uncoloured human rendering; `denied` marks a warning promoted by
 /// `--deny-warnings`, which keeps its `warning` severity.
 pub fn diagnostic(file: &str, text: &str, diagnostic: &Diagnostic, rendered: &str, denied: bool) -> String {
-    let notes: Vec<Value> = diagnostic
+    let notes = diagnostic
         .notes()
         .iter()
-        .map(|note| {
-            let mut record = Map::new();
-            record.insert("message".to_owned(), note.message().into());
-            if let Some(span) = note.span() {
-                record.insert("span".to_owned(), span_record(text, span));
-            }
-            Value::Object(record)
-        })
+        .map(|note| NoteRecord { message: note.message(), span: note.span().map(|span| Span::new(text, span)) })
         .collect();
-    let mut record = json!({
-        "type": "diagnostic",
-        "file": file,
-        "name": diagnostic.name(),
-        "severity": severity(diagnostic.severity()),
-        "message": diagnostic.message(),
-        "span": span_record(text, diagnostic.span()),
-        "notes": notes,
-        "rendered": rendered,
-    });
-    if denied {
-        record["denied"] = true.into();
+    Record::Diagnostic {
+        file,
+        name: diagnostic.name(),
+        severity: match diagnostic.severity() {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+        },
+        message: diagnostic.message(),
+        span: Span::new(text, diagnostic.span()),
+        notes,
+        rendered,
+        denied,
     }
-    record.to_string()
+    .to_line()
 }
 
 /// A `file` record: what happened to `input`, whose Dissector goes to `output` (none under
 /// `validate`).
 pub fn file(input: &str, output: Option<&str>, status: FileStatus) -> String {
-    json!({ "type": "file", "input": input, "output": output, "status": status.as_str() }).to_string()
+    Record::File { input, output, status }.to_line()
 }
 
 /// The `summary` record closing a run: the Diagnostics by severity, and the exit code.
 pub fn summary(errors: usize, warnings: usize, exit_code: u8) -> String {
-    json!({ "type": "summary", "errors": errors, "warnings": warnings, "exit_code": exit_code }).to_string()
-}
-
-fn severity(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-    }
-}
-
-/// A span as byte offsets plus its 1-based start and end lines and columns.
-fn span_record(text: &str, span: Range<usize>) -> Value {
-    let (line, column) = line_column(text, span.start);
-    let (end_line, end_column) = line_column(text, span.end);
-    json!({
-        "start": span.start,
-        "end": span.end,
-        "line": line,
-        "column": column,
-        "end_line": end_line,
-        "end_column": end_column,
-    })
+    Record::Summary { errors, warnings, exit_code }.to_line()
 }
 
 /// The 1-based line and column, in characters, of the byte `offset` in `text`.
