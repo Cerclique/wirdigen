@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use crate::description::Protocol;
-use crate::field::{self, Builtin, Display, Encoding, Endian, Field};
+use crate::field::{self, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
 
@@ -136,6 +136,16 @@ pub(crate) enum Stmt {
         /// The Field's path, for the comment and the truncation report.
         path: String,
     },
+    /// An inline structure: a subtree item holding the statements of its Fields, as long as
+    /// the bytes they read.
+    Structure {
+        /// Index into [`Dissector::proto_fields`].
+        field: usize,
+        /// The Field's path, for the comment.
+        path: String,
+        /// The statements of its Fields, inside the subtree.
+        body: Vec<Stmt>,
+    },
 }
 
 /// Where the value of a read ends.
@@ -167,32 +177,18 @@ pub(crate) enum Decode {
 }
 
 pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
-    let filter_name = protocol.name.clone();
-    let mut proto_fields = Vec::new();
-    let mut tables = Vec::new();
-    let mut layout = Vec::new();
-    let mut chunks = vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS];
-    for field in &protocol.fields {
-        proto_fields.push(ProtoField {
-            local: format!("f_{}", field.name),
-            abbrev: format!("{filter_name}.{}", field.name),
-            label: field.label.clone().unwrap_or_else(|| default_label(&field.name)),
-            description: field.description.clone(),
-            field_type: field_type(field),
-            strings: field.mapping.as_ref().and_then(|m| strings(m, field.ty, &protocol.enums, &mut tables)),
-        });
-        let length = length(field);
-        if matches!(length, Length::Terminator { .. }) && !chunks.contains(&prelude::TERMINATED) {
-            chunks.push(prelude::TERMINATED);
-        }
-        layout.push(Stmt::Read {
-            field: proto_fields.len() - 1,
-            length,
-            decode: decode(field),
-            path: field.name.clone(),
-        });
-    }
+    let mut lowering = Lowering {
+        filter_name: &protocol.name,
+        enums: &protocol.enums,
+        proto_fields: Vec::new(),
+        tables: Vec::new(),
+        // The layout is never empty, so every Dissector reads something and checks bounds.
+        chunks: vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS],
+    };
+    let layout = lowering.structure(&protocol.fields, &[]);
+    let Lowering { proto_fields, tables, chunks, .. } = lowering;
 
+    let filter_name = protocol.name.clone();
     let short_name = filter_name.to_ascii_uppercase();
     Dissector {
         source_name: source_name.rsplit(['/', '\\']).next().unwrap_or(source_name).to_owned(),
@@ -202,13 +198,80 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         tables,
         proto_fields,
         layout,
-        // The layout is never empty, so every Dissector reads something and checks bounds.
         chunks,
     }
 }
 
+/// What lowering has built so far, while it walks the layout.
+struct Lowering<'p> {
+    /// The protocol's filter name, the first segment of every `ProtoField`'s.
+    filter_name: &'p str,
+    enums: &'p BTreeMap<String, Table>,
+    proto_fields: Vec<ProtoField>,
+    tables: Vec<SharedTable>,
+    chunks: Vec<&'static str>,
+}
+
+impl Lowering<'_> {
+    /// The statements of a structure whose Fields' paths start with `parent`.
+    fn structure(&mut self, fields: &[Field], parent: &[&str]) -> Vec<Stmt> {
+        fields.iter().map(|field| self.field(field, parent)).collect()
+    }
+
+    /// Registers the `ProtoField` of a Field whose path starts with `parent`, and returns the
+    /// statement that reads it.
+    fn field(&mut self, field: &Field, parent: &[&str]) -> Stmt {
+        let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
+        let path = segments.join(".");
+        let (field_type, strings) = match &field.kind {
+            FieldKind::Builtin(value) => (
+                field_type(value),
+                value.mapping.as_ref().and_then(|m| strings(m, value.ty, self.enums, &mut self.tables)),
+            ),
+            FieldKind::Structure(_) => (FieldType::new("none", Args::Plain), None),
+        };
+        self.proto_fields.push(ProtoField {
+            local: self.local(&segments),
+            abbrev: format!("{}.{path}", self.filter_name),
+            label: field.label.clone().unwrap_or_else(|| default_label(&field.name)),
+            description: field.description.clone(),
+            field_type,
+            strings,
+        });
+        let index = self.proto_fields.len() - 1;
+        match &field.kind {
+            FieldKind::Builtin(value) => {
+                let length = length(value);
+                if matches!(length, Length::Terminator { .. }) && !self.chunks.contains(&prelude::TERMINATED) {
+                    self.chunks.push(prelude::TERMINATED);
+                }
+                Stmt::Read { field: index, length, decode: decode(value), path }
+            }
+            FieldKind::Structure(fields) => {
+                Stmt::Structure { field: index, body: self.structure(fields, &segments), path }
+            }
+        }
+    }
+
+    /// The Lua local of the `ProtoField` at a path: `f_` then the segments joined by `__`
+    /// (`f_options__ttl`). A Field name can itself hold `__`, so a local already taken gets the
+    /// first free `_<n>` suffix; filter names are never changed this way.
+    fn local(&self, segments: &[&str]) -> String {
+        let base = format!("f_{}", segments.join("__"));
+        let taken = |name: &str| self.proto_fields.iter().any(|f| f.local == name);
+        if !taken(&base) {
+            return base;
+        }
+        // Of these `len + 1` names, at most `len` are taken.
+        (2..=self.proto_fields.len() + 2)
+            .map(|n| format!("{base}_{n}"))
+            .find(|name| !taken(name))
+            .expect("some suffix is free")
+    }
+}
+
 /// The Wireshark field type a Field is shown as (spec §3.4.4, §3.4.6).
-fn field_type(field: &Field) -> FieldType {
+fn field_type(field: &BuiltinField) -> FieldType {
     match field.ty {
         Builtin::Int { signed, bytes } => {
             let constructor = match (signed, bytes) {
@@ -354,7 +417,7 @@ fn base(display: Display) -> &'static str {
 /// Where a Field's value ends, with the Lua call that reads a `prefix:` count in its width
 /// and byte order. A `prefix:` beyond 2^53 loses precision in `tonumber()`, but no packet is
 /// that long, so the bounds check still fails it.
-fn length(field: &Field) -> Length {
+fn length(field: &BuiltinField) -> Length {
     match field.length {
         field::Length::Constant(size) => Length::Fixed(size),
         field::Length::Prefix(size) => {
@@ -397,7 +460,7 @@ fn enc_endian(endian: Endian) -> &'static str {
     }
 }
 
-fn decode(field: &Field) -> Decode {
+fn decode(field: &BuiltinField) -> Decode {
     if let Some(enc) = field.encoding {
         let endian = enc.has_byte_order().then(|| enc_endian(field.endian));
         return Decode::Encoded { encoding: enc_value(enc), endian };
@@ -431,6 +494,17 @@ mod tests {
         let root = yaml::parse(text).unwrap();
         let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
         lower(&protocol.unwrap_or_else(|| panic!("{diagnostics:?}")), source_name)
+    }
+
+    /// How each top-level read ends and is decoded, for a layout of reads only.
+    fn reads(d: &Dissector) -> Vec<(Length, Decode)> {
+        d.layout
+            .iter()
+            .map(|stmt| match stmt {
+                Stmt::Read { length, decode, .. } => (*length, *decode),
+                Stmt::Structure { path, .. } => panic!("{path} is a structure"),
+            })
+            .collect()
     }
 
     fn tables(d: &Dissector) -> Vec<LuaTable> {
@@ -515,7 +589,11 @@ mod tests {
         .unwrap();
         let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
         let protocol = protocol.unwrap_or_else(|| panic!("{diagnostics:?}"));
-        assert_eq!(protocol.fields[0].mapping, protocol.fields[1].mapping);
+        let mapping = |field: &Field| match &field.kind {
+            FieldKind::Builtin(value) => value.mapping.clone(),
+            FieldKind::Structure(_) => None,
+        };
+        assert_eq!(mapping(&protocol.fields[0]), mapping(&protocol.fields[1]));
         let d = lower(&protocol, "x");
         let locals: Vec<&str> = d.tables.iter().map(|t| t.local.as_str()).collect();
         assert_eq!(locals, ["enum_Kind", "enum_Kind_2"]);
@@ -543,6 +621,52 @@ mod tests {
         );
     }
 
+    /// Spec §5.2: every shown Field, structures included, is filtered by its path.
+    #[test]
+    fn filter_names_follow_field_paths() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: id, type: uint8}\n  - name: options\n    fields:\n      - {name: ttl, type: uint8}\n      - name: inner\n        fields: [ {name: id, type: uint16} ]\n",
+            "x",
+        );
+        let abbrevs: Vec<&str> = d.proto_fields.iter().map(|f| f.abbrev.as_str()).collect();
+        assert_eq!(
+            abbrevs,
+            ["demo.id", "demo.options", "demo.options.ttl", "demo.options.inner", "demo.options.inner.id"]
+        );
+    }
+
+    /// A path `a.b` and a Field named `a__b` would both mangle to `f_a__b`.
+    #[test]
+    fn locals_stay_unique_when_paths_mangle_alike() {
+        let d = lowered(
+            "name: demo\nfields:\n  - name: a\n    fields: [ {name: b, type: uint8} ]\n  - {name: a__b, type: uint8}\n",
+            "x",
+        );
+        let names: Vec<(&str, &str)> = d.proto_fields.iter().map(|f| (f.local.as_str(), f.abbrev.as_str())).collect();
+        assert_eq!(names, [("f_a", "demo.a"), ("f_a__b", "demo.a.b"), ("f_a__b_2", "demo.a__b")]);
+    }
+
+    /// Spec §3.11: a structure's `endian:` is the default of the Fields inside it.
+    #[test]
+    fn a_structure_sets_the_byte_order_inside_it() {
+        let d = lowered(
+            "name: demo\nfields:\n  - name: s\n    endian: little\n    fields:\n      - {name: a, type: uint16}\n      - {name: b, type: uint16, endian: big}\n      - name: t\n        fields: [ {name: c, type: uint16} ]\n  - {name: d, type: uint16}\n",
+            "x",
+        );
+        assert_eq!(all_decodes(&d.layout), [Decode::Little, Decode::Big, Decode::Little, Decode::Big]);
+    }
+
+    /// How every read is decoded, structures included, in layout order.
+    fn all_decodes(stmts: &[Stmt]) -> Vec<Decode> {
+        stmts
+            .iter()
+            .flat_map(|stmt| match stmt {
+                Stmt::Read { decode, .. } => vec![*decode],
+                Stmt::Structure { body, .. } => all_decodes(body),
+            })
+            .collect()
+    }
+
     #[test]
     fn labels_come_from_names() {
         assert_eq!(default_label("msg_type"), "Msg type");
@@ -565,7 +689,7 @@ mod tests {
             "name: demo\nendian: little\nfields:\n  - {name: a, type: uint16}\n  - {name: b, type: uint16, endian: big}\n  - {name: c, type: uint8}\n  - {name: d, type: ether}\n  - {name: e, type: int48}\n  - {name: f, type: uint40, endian: big}\n",
             "x",
         );
-        let decodes: Vec<Decode> = d.layout.iter().map(|Stmt::Read { decode, .. }| *decode).collect();
+        let decodes: Vec<Decode> = reads(&d).into_iter().map(|(_, decode)| decode).collect();
         assert_eq!(
             decodes,
             [Decode::Little, Decode::Big, Decode::Big, Decode::Big, Decode::Lua("le_int64"), Decode::Lua("uint64")]
@@ -578,7 +702,7 @@ mod tests {
             "name: demo\nendian: little\nfields:\n  - {name: a, type: string, prefix: uint8}\n  - {name: b, type: bytes, prefix: uint16}\n  - {name: c, type: bytes, prefix: uint16, endian: big}\n  - {name: d, type: string, prefix: uint64}\n",
             "x",
         );
-        let lengths: Vec<Length> = d.layout.iter().map(|Stmt::Read { length, .. }| *length).collect();
+        let lengths: Vec<Length> = reads(&d).into_iter().map(|(length, _)| length).collect();
         assert_eq!(
             lengths,
             [
@@ -599,7 +723,7 @@ mod tests {
             "x",
         );
         assert!(d.chunks.contains(&prelude::TERMINATED));
-        let lengths: Vec<Length> = d.layout.iter().map(|Stmt::Read { length, .. }| *length).collect();
+        let lengths: Vec<Length> = reads(&d).into_iter().map(|(length, _)| length).collect();
         assert_eq!(
             lengths,
             [Length::Terminator { terminator: 0, width: 2 }, Length::Terminator { terminator: 255, width: 1 }]
@@ -622,8 +746,7 @@ mod tests {
             "name: demo\nendian: little\nfields:\n  - {name: a, type: abs_time}\n  - {name: b, type: rel_time, encoding: nsecs, endian: big}\n  - {name: c, type: string, size: 2, encoding: latin1}\n",
             "x",
         );
-        let reads: Vec<(Length, Decode)> =
-            d.layout.iter().map(|Stmt::Read { length, decode, .. }| (*length, *decode)).collect();
+        let reads: Vec<(Length, Decode)> = reads(&d);
         assert_eq!(
             reads,
             [

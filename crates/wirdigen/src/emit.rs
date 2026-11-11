@@ -180,6 +180,24 @@ fn lua_integer(value: i64) -> String {
 
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
     match stmt {
+        Stmt::Structure { field, path, body } => {
+            let local = &model.proto_fields[*field].local;
+            w.line(&format!("-- Field: {path}"));
+            // The subtree shadows `tree` for its Fields. It spans the rest of the packet until
+            // they are read, so a truncated structure covers what is left of it.
+            w.block(
+                "do",
+                |w| {
+                    w.line("local start = offset");
+                    w.line(&format!("local tree = tree:add({local}, tvb(offset, tvb:len() - offset))"));
+                    for stmt in body {
+                        statement(w, model, stmt);
+                    }
+                    w.line("tree:set_len(offset - start)");
+                },
+                "end",
+            );
+        }
         Stmt::Read { field, length, decode, path } => {
             let local = &model.proto_fields[*field].local;
             let truncated = |w: &mut Writer| {

@@ -1,0 +1,4 @@
+# id=1, header.id=0x0302 (little), header.flags.kind=1, header.flags.extra.id=0x0405 (big), name="ab".
+0000  01 02 03 01 04 05 02 61 62
+# Truncated inside header.flags.extra: one byte of its uint16.
+0000  01 02 03 02 04

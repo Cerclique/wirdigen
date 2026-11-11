@@ -161,7 +161,8 @@ fields: [ {name: a, type: uint8} ]
 
 **Severity**: error
 
-The top-level `fields:` list is empty: a protocol must declare at least one Field.
+The top-level `fields:` list is empty: a protocol must declare at least one Field. The same
+holds for the `fields:` of an inline structure.
 
 ```yaml,diagnostic=empty-fields
 name: demo
@@ -316,7 +317,7 @@ fields: [ {name: id, type: unit8} ]
 
 A Field of a fixed-size type has a length key (`size:`, `prefix:` or `terminator:`). Its size
 already follows from its type, or for a timestamp (`abs_time`, `rel_time`) from its
-`encoding:`.
+`encoding:`. An inline structure takes no length key either: it is as long as its Fields.
 
 ```yaml,diagnostic=unexpected-length
 name: demo
@@ -408,7 +409,8 @@ key its type does not take. Unsigned integers take `dec`, `hex`, `oct`, `dec_hex
 `bool`, the floats and the address types take no `display:` at all. Only `string`, `abs_time`
 and `rel_time` take `encoding:`, each its own values: `ntp` is an `abs_time` encoding only.
 Only integers take `values:`, only `bool` takes `true:` and `false:`, and only integers and
-floats take `unit:`.
+floats take `unit:`. An inline structure takes none of these keys: they belong on the Fields
+inside it.
 
 ```yaml,diagnostic=incompatible-display
 name: demo
@@ -527,17 +529,17 @@ values of this Field only, write the table inline: `values: { 1: Request }`.
 **Severity**: error
 
 The description uses part of the format that this version of Wirdigen does not read yet: a
-Field made of inline `fields:` or a `switch:`, or a `size:` given as an Expression (including
-`"_remaining"`) rather than a constant. A newer Wirdigen will accept it.
+`switch:` Field, or a `size:` given as an Expression (including `"_remaining"`) rather than a
+constant. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo
 fields:
-  - { name: header, fields: [ {name: id, type: uint8} ] }
+  - { name: data, type: bytes, size: "_remaining" }
 ```
 
 **Fix**: upgrade Wirdigen, or describe the layout with what this version supports, here by
-listing the Fields at the top level.
+giving the size as a constant.
 
 ## `unreachable-value` {#unreachable-value}
 

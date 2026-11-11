@@ -486,11 +486,25 @@ impl Endian {
     }
 }
 
+/// The keys only a Field read as a value takes, in documentation order: an inline structure
+/// takes none of them (spec §3.4.3).
+const VALUE_KEYS: [&str; 9] =
+    ["size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit"];
+
+/// What a Field is, as written.
+#[derive(Debug, Clone)]
+enum RawKind {
+    /// `type:` with a type name.
+    Type(Spanned<String>),
+    /// `fields:` with an inline structure, and the keys present that only a value takes.
+    Structure { fields: Vec<RawField>, value_keys: Vec<Spanned<&'static str>> },
+}
+
 /// A Field as written, after stage 2: its keys are known and of the right kinds.
 #[derive(Debug, Clone)]
 pub(crate) struct RawField {
     name: Spanned<String>,
-    ty: Spanned<String>,
+    kind: RawKind,
     endian: Option<Spanned<String>>,
     encoding: Option<Spanned<String>>,
     display: Option<Spanned<String>>,
@@ -505,6 +519,25 @@ pub(crate) struct RawField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Field {
     pub(crate) name: String,
+    /// The tree text, when `label:` gives one (spec §3.4.8).
+    pub(crate) label: Option<String>,
+    /// The `ProtoField` blurb, when `description:` gives one.
+    pub(crate) description: Option<String>,
+    pub(crate) kind: FieldKind,
+}
+
+/// What a validated Field is (spec §3.4.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FieldKind {
+    /// A value of a built-in type.
+    Builtin(BuiltinField),
+    /// An inline structure: its Fields, in order, shown as a subtree.
+    Structure(Vec<Field>),
+}
+
+/// How a Field of a built-in type is read and shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BuiltinField {
     pub(crate) ty: Builtin,
     /// The byte order in effect: the Field's own, else the top level's.
     pub(crate) endian: Endian,
@@ -514,10 +547,6 @@ pub(crate) struct Field {
     pub(crate) encoding: Option<Encoding>,
     /// The `display:` value, or the type's default; `None` for a type that takes none.
     pub(crate) display: Option<Display>,
-    /// The tree text, when `label:` gives one (spec §3.4.8).
-    pub(crate) label: Option<String>,
-    /// The `ProtoField` blurb, when `description:` gives one.
-    pub(crate) description: Option<String>,
     /// The labels of values, states or the unit, when the Field has any (spec §3.4.7).
     pub(crate) mapping: Option<Mapping>,
 }
@@ -536,7 +565,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
     }
     let name = keys.get("name").and_then(|value| record(expect_string(value, "name", Name::InvalidFieldName), errors));
 
-    let ty = read_kind(node, &keys, errors);
+    let kind = read_kind(node, &keys, errors);
 
     let mut string_value =
         |key: &str, invalid: Name| keys.get(key).and_then(|value| record(expect_string(value, key, invalid), errors));
@@ -558,17 +587,37 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
         .collect();
     let mappings = mapping::read(&keys, errors);
 
-    match (name, ty) {
-        (Some(name), Some(ty)) if errors.len() == before => {
-            Some(RawField { name, ty, endian, encoding, display, label, description, lengths, mappings })
+    match (name, kind) {
+        (Some(name), Some(kind)) if errors.len() == before => {
+            Some(RawField { name, kind, endian, encoding, display, label, description, lengths, mappings })
         }
         _ => None,
     }
 }
 
-/// Reads what a Field is: its `type:` when that is its one kind key (spec §3.4.3). A missing,
-/// conflicting or not yet supported kind is pushed as an error.
-fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<Spanned<String>> {
+/// Stage 2: reads a structure, the value of a `fields:` key, pushing its errors (spec §3.4.1).
+/// `None` when it is not a non-empty list.
+pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawField>> {
+    match &node.value {
+        Value::Sequence(items) if items.is_empty() => {
+            errors.push(Diagnostic::new(
+                Name::EmptyFields,
+                node.span.clone(),
+                "`fields` must declare at least one Field",
+            ));
+            None
+        }
+        Value::Sequence(items) => Some(items.iter().filter_map(|item| read(item, errors)).collect()),
+        _ => {
+            errors.push(wrong_type(node.span.clone(), "`fields` must be a list of Fields"));
+            None
+        }
+    }
+}
+
+/// Reads what a Field is from its one kind key (spec §3.4.3). A missing, conflicting or not yet
+/// supported kind is pushed as an error.
+fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<RawKind> {
     let kinds: Vec<(&str, &Node)> = KIND_KEYS.iter().filter_map(|k| keys.key_of(k).map(|key| (*k, key))).collect();
     match kinds.as_slice() {
         [] => {
@@ -582,7 +631,15 @@ fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Opti
         }
         [("type", _)] => {
             let value = keys.get("type").expect("the key was found");
-            record(expect_string(value, "type", Name::WrongValueType), errors)
+            record(expect_string(value, "type", Name::WrongValueType), errors).map(RawKind::Type)
+        }
+        [("fields", _)] => {
+            let fields = read_structure(keys.get("fields").expect("the key was found"), errors)?;
+            let value_keys = VALUE_KEYS
+                .iter()
+                .filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() }))
+                .collect();
+            Some(RawKind::Structure { fields, value_keys })
         }
         [(kind, key)] => {
             errors.push(Diagnostic::new(
@@ -641,54 +698,84 @@ pub(crate) fn check(
                 .with_note("first defined here", Some(first.name.span.clone())),
             );
         }
-        let ty = Builtin::from_name(&field.ty.value);
-        if ty.is_none() {
-            diagnostics.push(unresolved_type(&field.ty));
-        }
-        let encoding = match (ty, &field.encoding) {
-            (Some(ty), Some(value)) => record(Encoding::check(value, &field.ty, ty), diagnostics).map(Some),
-            (Some(ty), None) => Some(ty.encodings().first().copied()),
-            (None, _) => Some(None),
-        };
-        let length = ty.zip(encoding).and_then(|(ty, encoding)| check_length(field, ty, encoding, diagnostics));
         let endian = match &field.endian {
             Some(value) => record(Endian::check(value), diagnostics),
             None => Some(endian),
         };
-        let display = match (ty, &field.display) {
-            (Some(ty), Some(value)) => record(Display::check(value, &field.ty, ty), diagnostics).map(Some),
-            (Some(ty), None) => Some(ty.displays().first().copied()),
-            (None, _) => None,
-        };
+        // A Field naming an Enum uses it, whatever else is wrong with the Field (spec §3.4.7).
         enums.mark_used(&field.mappings);
-        let mapping = ty.and_then(|ty| mapping::check(&field.mappings, &field.ty, ty, enums, diagnostics).ok());
+        let kind = match &field.kind {
+            RawKind::Type(ty) => check_builtin(field, ty, endian, enums, diagnostics).map(FieldKind::Builtin),
+            RawKind::Structure { fields, value_keys } => {
+                for key in value_keys {
+                    diagnostics.push(value_key_on_structure(key));
+                }
+                // An invalid byte order is an error already, so any stand-in will do.
+                let fields = check(fields, endian.unwrap_or_default(), enums, diagnostics);
+                Some(FieldKind::Structure(fields))
+            }
+        };
         check_tree_text(field, diagnostics);
-        if let (Some(ty), Some(endian), Some(length), Some(encoding), Some(display), Some(mapping)) =
-            (ty, endian, length, encoding, display, mapping)
-        {
+        if let Some(kind) = kind {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
-            let (label, description) = (text(&field.label), text(&field.description));
             layout.push(Field {
                 name: name.value.clone(),
-                ty,
-                endian,
-                length,
-                encoding,
-                display,
-                label,
-                description,
-                mapping,
+                label: text(&field.label),
+                description: text(&field.description),
+                kind,
             });
         }
     }
     layout
 }
 
-/// The length of a Field of type `ty` encoded as `encoding`: a fixed-size type's own or a
-/// timestamp's encoding's, which take no length key, or the one length key a `string` or
-/// `bytes` needs (spec §3.4.5, §3.6).
+/// Checks a Field of type `ty` read with the byte order `endian` (`None` when its own is
+/// invalid), returning how it is read when nothing is wrong.
+fn check_builtin(
+    field: &RawField,
+    ty_name: &Spanned<String>,
+    endian: Option<Endian>,
+    enums: &mut Enums<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<BuiltinField> {
+    let ty = Builtin::from_name(&ty_name.value);
+    if ty.is_none() {
+        diagnostics.push(unresolved_type(ty_name));
+    }
+    let encoding = match (ty, &field.encoding) {
+        (Some(ty), Some(value)) => record(Encoding::check(value, ty_name, ty), diagnostics).map(Some),
+        (Some(ty), None) => Some(ty.encodings().first().copied()),
+        (None, _) => Some(None),
+    };
+    let length = ty.zip(encoding).and_then(|(ty, encoding)| check_length(field, ty_name, ty, encoding, diagnostics));
+    let display = match (ty, &field.display) {
+        (Some(ty), Some(value)) => record(Display::check(value, ty_name, ty), diagnostics).map(Some),
+        (Some(ty), None) => Some(ty.displays().first().copied()),
+        (None, _) => None,
+    };
+    let mapping = ty.and_then(|ty| mapping::check(&field.mappings, ty_name, ty, enums, diagnostics).ok());
+    let (ty, endian, length, encoding, display, mapping) = (ty?, endian?, length?, encoding?, display?, mapping?);
+    Some(BuiltinField { ty, endian, length, encoding, display, mapping })
+}
+
+/// A key that only a value takes, on an inline structure: a length key is `unexpected-length`,
+/// any other `incompatible-display` (spec §3.4.3, §3.4.6).
+fn value_key_on_structure(key: &Spanned<&'static str>) -> Diagnostic {
+    let name = if LENGTH_KEYS.iter().any(|(k, _)| *k == key.value) {
+        Name::UnexpectedLength
+    } else {
+        Name::IncompatibleDisplay
+    };
+    Diagnostic::new(name, key.span.clone(), format!("an inline structure takes no `{}`", key.value))
+        .with_note(format!("remove `{}`, or give it to a Field inside the structure", key.value), None)
+}
+
+/// The length of a Field of type `ty`, written `ty_name`, encoded as `encoding`: a fixed-size
+/// type's own or a timestamp's encoding's, which take no length key, or the one length key a
+/// `string` or `bytes` needs (spec §3.4.5, §3.6).
 fn check_length(
     field: &RawField,
+    ty_name: &Spanned<String>,
     ty: Builtin,
     encoding: Option<Encoding>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -699,7 +786,7 @@ fn check_length(
                 Diagnostic::new(
                     Name::UnexpectedLength,
                     key.span.clone(),
-                    format!("`{}` has a fixed size and takes no `{}`", field.ty.value, key.value),
+                    format!("`{}` has a fixed size and takes no `{}`", ty_name.value, key.value),
                 )
                 .with_note(format!("remove `{}`", key.value), None),
             );
@@ -708,7 +795,7 @@ fn check_length(
     }
     let [length, rest @ ..] = field.lengths.as_slice() else {
         diagnostics.push(
-            Diagnostic::new(Name::MissingLength, field.ty.span.clone(), format!("`{}` needs a length", field.ty.value))
+            Diagnostic::new(Name::MissingLength, ty_name.span.clone(), format!("`{}` needs a length", ty_name.value))
                 .with_note("give exactly one of `size`, `prefix` or `terminator`", None),
         );
         return None;

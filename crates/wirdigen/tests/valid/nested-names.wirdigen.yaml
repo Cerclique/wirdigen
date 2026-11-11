@@ -1,0 +1,12 @@
+# Field names need only differ between siblings: each path is distinct.
+name: demo
+fields:
+  - {name: id, type: uint8}
+  - name: header
+    endian: little
+    label: Header
+    description: The fixed header
+    fields:
+      - {name: id, type: uint16}
+      - name: header
+        fields: [ {name: id, type: uint32} ]

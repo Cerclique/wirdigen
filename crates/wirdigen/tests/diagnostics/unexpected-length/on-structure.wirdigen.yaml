@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - name: options
+    size: 4
+    fields: [ {name: ttl, type: uint8} ]

@@ -1,0 +1,18 @@
+# Inline structures nested to three levels, filtered by their Field paths.
+name: structures
+fields:
+  - { name: id, type: uint8 }
+  - name: header
+    label: Fixed header
+    description: The header before every body
+    endian: little
+    fields:
+      - { name: id, type: uint16 }
+      - name: flags
+        fields:
+          - { name: kind, type: uint8, values: { 1: Request, 2: Response } }
+          - name: extra
+            endian: big
+            fields:
+              - { name: id, type: uint16 }
+  - { name: name, type: string, prefix: uint8 }
