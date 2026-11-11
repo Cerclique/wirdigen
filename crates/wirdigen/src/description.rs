@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::builtin;
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Endian, Entry, RawEntry};
 use crate::filter;
@@ -168,6 +169,11 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
                 "a title must be a non-empty single line",
             ));
         }
+    }
+    // Only a well-formed name and title are compared with Wireshark's: the Diagnostics so far
+    // are their errors.
+    if diagnostics.is_empty() {
+        builtin::check(name, description.title.as_ref(), &mut diagnostics);
     }
     for entry in &description.allow {
         let message = match Name::from_token(&entry.value) {

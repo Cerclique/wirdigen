@@ -98,7 +98,7 @@ Wireshark needs three names per protocol. Wirdigen asks for one and derives the 
 | Short name (`DNS`, Protocol column) | uppercase of `name:` | Always derived. A `short_name:` override can come later as a minor release. |
 | Full name (tree root) | `title:` | Optional, non-empty, single line, defaults to the short name. Error `invalid-protocol-title`. |
 
-A `name:` or `title:` equal to a protocol built into Wireshark is the warning `protocol-name-taken`, checked against a `tshark -G protocols` snapshot from the latest supported stable Wireshark, embedded in the library and kept current by a CI job. It is a warning because built-ins vary by Wireshark version and build. Clashes between two Wirdigen Dissectors are not detected.
+A `name:` or `title:` equal to a protocol built into Wireshark is the warning `protocol-name-taken`, checked against a `tshark -G protocols` snapshot from the latest supported stable Wireshark, embedded in the library and kept current by a CI job. Each of the three derived names is compared with the same name of every built-in protocol, as Wireshark refuses a second protocol with any of them; a clash on the default full name is reported on `name:`. It is a warning because built-ins vary by Wireshark version and build. Clashes between two Wirdigen Dissectors are not detected.
 
 Changing `name:` renames every filter of the protocol, so it breaks that protocol's users.
 
@@ -793,7 +793,7 @@ Shrunk failures become corpus cases.
 | `tshark-stable` | ubuntu-24.04 + PPA | yes |
 | weekly: large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions | ubuntu | n/a; a failure opens or updates one issue with the seed |
 
-The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date.
+The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date: `tshark-stable`, whose tshark is at least the snapshot's version, compares its `tshark -G protocols` with it. `make docker-refresh-protocols` rewrites the snapshot.
 
 ## 11. Documentation
 

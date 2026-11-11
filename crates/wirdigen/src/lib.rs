@@ -33,6 +33,7 @@
 mod bits;
 #[cfg(test)]
 mod book;
+mod builtin;
 mod description;
 mod diagnostic;
 mod emit;

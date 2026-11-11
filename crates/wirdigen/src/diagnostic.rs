@@ -107,6 +107,7 @@ names! {
     UnusedType => "unused-type", Warning;
     UnknownAllow => "unknown-allow", Warning;
     TcpWithoutFraming => "tcp-without-framing", Warning;
+    ProtocolNameTaken => "protocol-name-taken", Warning;
 }
 
 impl Name {

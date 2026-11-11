@@ -1,5 +1,9 @@
 [files]
-# Corpus cases that misspell keys on purpose.
-extend-exclude = ["crates/wirdigen/tests/diagnostics/*/misspelt-*"]
+extend-exclude = [
+  # Corpus cases that misspell keys on purpose.
+  "crates/wirdigen/tests/diagnostics/*/misspelt-*",
+  # The snapshot of Wireshark's protocol names, written as Wireshark spells them.
+  "crates/wirdigen/src/builtin_protocols.tsv",
+]
 
 [default.extend-words]

@@ -55,6 +55,11 @@ fn enabled() -> bool {
     std::env::var_os("WIRDIGEN_TSHARK").is_some_and(|v| v == "1")
 }
 
+/// Whether expectations are rewritten from tshark's output (`WIRDIGEN_BLESS=1`).
+fn blessing() -> bool {
+    std::env::var_os("WIRDIGEN_BLESS").is_some_and(|v| v == "1")
+}
+
 /// A per-test scratch directory, also the tools' `WIRESHARK_CONFIG_DIR`, removed on drop.
 struct Scratch(PathBuf);
 
@@ -152,15 +157,20 @@ impl Scratch {
         String::from_utf8(output.stdout).map_err(|e| format!("tshark's Info column is not UTF-8 ({e})"))
     }
 
-    /// The running tshark's `major.minor`.
-    fn tshark_version(&self) -> String {
+    /// The running tshark's full version, such as `4.6.9`, from `TShark (Wireshark) 4.6.9.`.
+    fn tshark_full_version(&self) -> String {
         let output = self.run("tshark", &["--version"]);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let version = stdout.split_whitespace().nth(2).unwrap_or_default();
+        stdout.split_whitespace().nth(2).unwrap_or_default().trim_end_matches('.').to_owned()
+    }
+
+    /// The running tshark's `major.minor`.
+    fn tshark_version(&self) -> String {
+        let version = self.tshark_full_version();
         let mut parts = version.split('.');
         match (parts.next(), parts.next()) {
             (Some(major), Some(minor)) if !major.is_empty() => format!("{major}.{minor}"),
-            _ => panic!("cannot read the tshark version from {stdout:?}"),
+            _ => panic!("cannot read the tshark version from {version:?}"),
         }
     }
 }
@@ -249,7 +259,7 @@ fn check(case: &str) {
 
     let actual = serde_json::to_string_pretty(&layers).unwrap() + "\n";
     let golden = expectation(&dir, &scratch);
-    if std::env::var_os("WIRDIGEN_BLESS").is_some_and(|v| v == "1") {
+    if blessing() {
         fs::write(&golden, &actual).unwrap();
     }
     let expected = fs::read_to_string(&golden)
@@ -259,7 +269,7 @@ fn check(case: &str) {
     let info = dir.join("info.txt");
     if info.exists() {
         let actual = scratch.info_column(&lua, &pcap, options).unwrap_or_else(|e| panic!("{case}: {e}"));
-        if std::env::var_os("WIRDIGEN_BLESS").is_some_and(|v| v == "1") {
+        if blessing() {
             fs::write(&info, &actual).unwrap();
         }
         let expected = fs::read_to_string(&info).unwrap();
@@ -371,6 +381,95 @@ mod registration {
         assert!(undeclared.contains("packet 1 has no `registration` layer"), "{undeclared}");
         let ports = format!("registration.tcp_ports:{PORT}");
         dissect("moved-to", Transport::Tcp, PORT, &["-o", &ports]).unwrap();
+    }
+}
+
+/// The snapshot of Wireshark's built-in protocols behind `protocol-name-taken` (spec §3.3,
+/// §10.9), `src/builtin_protocols.tsv`, must match the latest stable tshark.
+///
+/// A tshark older than the snapshot's (the 4.4 floor) is not compared. The same version must
+/// list the same protocols; a newer one means the snapshot is out of date. `WIRDIGEN_BLESS=1`
+/// rewrites it (`make docker-refresh-protocols`).
+mod builtin_protocols {
+    use super::*;
+
+    fn snapshot_path() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/builtin_protocols.tsv")
+    }
+
+    /// The snapshot's first line, before its version.
+    const HEADER: &str = "# tshark -G protocols, Wireshark ";
+
+    /// A `major.minor.patch` version, as numbers so that 4.10 sorts after 4.9.
+    fn parse_version(text: &str) -> [u32; 3] {
+        let parts: Option<Vec<u32>> = text.split('.').map(|p| p.parse().ok()).collect();
+        parts.and_then(|p| p.try_into().ok()).unwrap_or_else(|| panic!("cannot read a version from {text:?}"))
+    }
+
+    /// The Wireshark version in the snapshot's header.
+    fn snapshot_version(snapshot: &str) -> &str {
+        let header = snapshot.lines().next().unwrap_or_default();
+        let rest = header.strip_prefix(HEADER).unwrap_or_else(|| panic!("unexpected snapshot header {header:?}"));
+        rest.split(':').next().unwrap_or_default()
+    }
+
+    /// The snapshot `tshark -G protocols` gives: a header with the version, then the full name,
+    /// short name and filter name of each protocol.
+    fn render(version: &str, protocols: &str) -> String {
+        let mut snapshot = format!("{HEADER}{version}: full name, short name, filter name\n");
+        for line in protocols.lines() {
+            let columns: Vec<&str> = line.split('\t').take(3).collect();
+            assert_eq!(columns.len(), 3, "unexpected `tshark -G protocols` line {line:?}");
+            snapshot.push_str(&columns.join("\t"));
+            snapshot.push('\n');
+        }
+        snapshot
+    }
+
+    #[test]
+    fn the_snapshot_is_current() {
+        if !enabled() {
+            return;
+        }
+        let scratch = Scratch::new("builtin-protocols");
+        let version = scratch.tshark_full_version();
+        let path = snapshot_path();
+        let committed = fs::read_to_string(&path).unwrap();
+        if parse_version(&version) < parse_version(snapshot_version(&committed)) {
+            return;
+        }
+        let output = scratch.run("tshark", &["-G", "protocols"]);
+        assert!(output.status.success(), "tshark -G protocols failed: {}", String::from_utf8_lossy(&output.stderr));
+        let actual = render(&version, &String::from_utf8(output.stdout).unwrap());
+        if blessing() {
+            fs::write(&path, &actual).unwrap();
+            return;
+        }
+        // Not assert_eq!, which would print both 3000-line snapshots.
+        assert!(
+            actual == committed,
+            "{} is out of date for Wireshark {version}: run `make docker-refresh-protocols`",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn versions_compare_as_numbers() {
+        assert!(parse_version("4.10.0") > parse_version("4.9.2"));
+        assert_eq!(parse_version("4.6.9"), [4, 6, 9]);
+    }
+
+    #[test]
+    fn the_snapshot_keeps_three_columns_under_a_versioned_header() {
+        let protocols = "29West Protocol\t29West\t29west\tT\tT\tT\n";
+        let snapshot = render("4.6.9", protocols);
+        assert_eq!(snapshot_version(&snapshot), "4.6.9");
+        assert_eq!(snapshot.lines().nth(1), Some("29West Protocol\t29West\t29west"));
+    }
+
+    #[test]
+    fn the_committed_snapshot_has_a_version() {
+        parse_version(snapshot_version(&fs::read_to_string(snapshot_path()).unwrap()));
     }
 }
 

@@ -1,0 +1,3 @@
+name: btp-a
+fields:
+  - { name: a, type: uint8 }

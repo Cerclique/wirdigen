@@ -1,0 +1,5 @@
+name: dns
+title: Domain Name System
+fields:
+  - { name: a, type: uint8 }
+allow: [protocol-name-taken]
