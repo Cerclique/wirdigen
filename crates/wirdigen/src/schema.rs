@@ -128,6 +128,20 @@ struct Registration {
     ports: Option<Ports>,
 }
 
+/// How each Message is found in a TCP stream: a header of constant size, and the whole
+/// Message's length computed from it.
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+struct Framing {
+    /// The number of bytes `length` is computed from, at least 1.
+    #[schemars(range(min = 1))]
+    header: u64,
+    /// The whole Message's length, header included: a constant, or an Expression over top-level
+    /// Fields, and their sub-Fields, within the first `header` bytes. `_offset` and `_remaining`
+    /// are not allowed.
+    length: Expression,
+}
+
 /// Ports per transport.
 #[derive(JsonSchema)]
 #[schemars(deny_unknown_fields)]
@@ -365,19 +379,6 @@ macro_rules! inline_schema {
 }
 
 inline_schema! {
-    /// `framing:`, with the keys of spec §3.13 offered for completion. Its value is not read yet,
-    /// so any value is accepted: the schema must accept every description Wirdigen does.
-    Framing => json_schema!({
-        "properties": {
-            "header": { "description": "The number of bytes needed to compute `length`: a constant." },
-            "length": {
-                "description": "The total length of a Message: an Expression over top-level Fields within the first `header` bytes."
-            }
-        }
-    })
-}
-
-inline_schema! {
     /// A constant, or an Expression written as a string.
     Expression => json_schema!({ "type": ["integer", "string"] })
 }
@@ -571,19 +572,30 @@ mod tests {
             (Some("Type"), &crate::types::KEYS[..]),
             (Some("Registration"), &crate::registration::KEYS[..]),
             (Some("Ports"), &transports[..]),
+            (Some("Framing"), &crate::framing::KEYS[..]),
         ] {
             assert_eq!(keys(&schema, definition), expected, "{definition:?}");
         }
     }
 
     #[test]
-    fn any_framing_value_passes_while_framing_is_not_read() {
+    fn framing_needs_a_header_and_a_length_and_nothing_else() {
         let validator = jsonschema::draft7::new(&schema()).expect("a draft-07 schema");
-        for framing in ["true", "", "{ foo: 1 }", "{ header: 4, length: \"len + 4\" }"] {
+        let passes = |framing: &str| {
             let text = format!("name: demo\nframing: {framing}\nfields:\n  - {{ name: len, type: uint32 }}\n");
-            assert!(crate::validate(&Source::new("case", text.as_str())).is_ok(), "{text}");
-            let root = yaml::parse(&text).expect("valid YAML").expect("not empty");
-            assert!(validator.is_valid(&to_json(&root)), "{text}");
+            validator.is_valid(&to_json(&yaml::parse(&text).expect("valid YAML").expect("not empty")))
+        };
+        assert!(passes("{ header: 4, length: \"len + 4\" }"));
+        assert!(passes("{ header: 4, length: 8 }"));
+        for rejected in [
+            "true",
+            "{}",
+            "{ header: 4 }",
+            "{ length: 8 }",
+            "{ header: 0, length: 8 }",
+            "{ header: 4, length: 8, foo: 1 }",
+        ] {
+            assert!(!passes(rejected), "{rejected}");
         }
     }
 }

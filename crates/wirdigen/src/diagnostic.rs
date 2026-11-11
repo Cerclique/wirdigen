@@ -90,6 +90,7 @@ names! {
     InvalidPadding => "invalid-padding", Error;
     InvalidDissector => "invalid-dissector", Error;
     InvalidInfo => "invalid-info", Error;
+    InvalidFraming => "invalid-framing", Error;
     InvalidPort => "invalid-port", Error;
     OverlappingPorts => "overlapping-ports", Error;
     ExpressionSyntax => "expression-syntax", Error;

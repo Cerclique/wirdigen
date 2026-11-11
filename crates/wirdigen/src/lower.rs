@@ -13,6 +13,7 @@ use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
 use crate::field::{
     self, Amount, Array, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind, Operand, default_label,
 };
+use crate::framing::{Extent, Framing};
 use crate::info::{self, Template};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
@@ -54,6 +55,33 @@ pub(crate) struct Dissector {
     pub(crate) extractors: Vec<Extractor>,
     /// What the Info column shows once the Message is read, when it shows anything (spec §3.14).
     pub(crate) info: Option<Info>,
+    /// How Messages are found in a TCP stream, when `framing:` is written (spec §3.13).
+    pub(crate) framing: Option<FramedMessages>,
+}
+
+/// `framing:` as the Dissector runs it under TCP (spec §3.13).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct FramedMessages {
+    /// The bytes the length is computed from.
+    pub(crate) header: usize,
+    /// The header Fields the length reads, each into a local of the length function.
+    pub(crate) reads: Vec<HeaderRead>,
+    /// The length of the Message, from those locals. Its sign and its size against the header
+    /// are checked by the prelude.
+    pub(crate) length: Computed,
+}
+
+/// A top-level Field of the header, read for the Message's length.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct HeaderRead {
+    /// The local of the length function its value is kept in.
+    pub(crate) local: String,
+    /// Its offset from the start of the Message.
+    pub(crate) offset: usize,
+    /// The bytes it reads.
+    pub(crate) size: usize,
+    /// How its value is read.
+    pub(crate) read: ValueRead,
 }
 
 /// A field extractor (`Field.new`): the values a `ProtoField` took in the packet being read.
@@ -587,6 +615,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     if !protocol.ports.is_empty() {
         lowering.use_chunk(prelude::PORTS);
     }
+    let framing = protocol.framing.as_ref().map(|framing| lowering.framing(framing));
     let Lowering { proto_fields, tables, names, sites, chunks, extractors, .. } = lowering;
 
     let filter_name = protocol.name.clone();
@@ -608,6 +637,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         port_preferences,
         extractors,
         info,
+        framing,
     }
 }
 
@@ -1212,6 +1242,37 @@ impl<'p> Lowering<'p> {
         let result = self.plan.results.get(&owned(segments)).cloned();
         let (path, ty, hidden) = (segments.join("."), name.clone(), field.hidden);
         Stmt::Call { field: proto_field, path, hidden, ty, site, context, result }
+    }
+
+    /// The model of `framing:`: its length is computed in a function of its own, which keeps
+    /// each header Field it reads in a local.
+    fn framing(&mut self, framing: &Framing) -> FramedMessages {
+        self.use_chunk(prelude::FRAMING);
+        self.use_chunk(prelude::INVALID);
+        let mut plan = Plan::default();
+        let mut reads = Vec::new();
+        for (name, &Extent { offset, size }) in &framing.reads {
+            let local = format!("v_{name}");
+            let field = self.root.iter().filter_map(field::Entry::field).find(|f| &f.name == name);
+            let Some(FieldKind::Builtin(builtin)) = field.map(|f| &f.kind) else {
+                unreachable!("validation reads only Fields of built-in types in the header")
+            };
+            let read = value_read(builtin);
+            if read == ValueRead::Bool {
+                self.use_chunk(prelude::LOGIC);
+            }
+            plan.values.insert(vec![name.clone()], local.clone());
+            reads.push(HeaderRead { local, offset, size, read });
+        }
+        let layout = std::mem::replace(&mut self.plan, plan);
+        let length = match &framing.length {
+            Amount::Constant(length) => {
+                Computed::checked_already(LuaExpr::Int(u64::try_from(*length).expect("a length fits 64 bits")))
+            }
+            Amount::Expression { expr, references } => self.computed(expr, references),
+        };
+        self.plan = layout;
+        FramedMessages { header: framing.header, reads, length }
     }
 
     /// How an Expression reads `reference`, using the prelude chunk a sub-Field needs.

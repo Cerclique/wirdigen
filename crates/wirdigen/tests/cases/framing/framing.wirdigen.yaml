@@ -1,0 +1,17 @@
+# Framing (spec §3.13): under TCP, each Message is found from its 3-byte header, several in one
+# segment or one across segments. `len` counts the Message without its trailer, whose size is
+# the `extra` sub-Field; `_offset` and `_remaining` count from the start of each Message.
+name: framing
+framing:
+  header: 3
+  length: "len + flags.extra"
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: version, width: 4 }
+      - { name: extra, width: 4 }
+  - { name: len, type: uint16 }
+  - { name: seq, type: uint8, if: "_offset == 3" }
+  - { name: body, type: bytes, size: "len - _offset" }
+  - { name: trailer, type: bytes, size: "_remaining" }

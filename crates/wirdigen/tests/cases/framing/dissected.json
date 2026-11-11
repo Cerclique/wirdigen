@@ -1,0 +1,70 @@
+[
+  [
+    {
+      "framing.flags": "16",
+      "framing.flags_tree": {
+        "framing.flags.version": "1",
+        "framing.flags.extra": "0"
+      },
+      "framing.len": "6",
+      "framing.seq": "1",
+      "framing.body": "aa:bb",
+      "framing.trailer": ""
+    },
+    {
+      "framing.flags": "18",
+      "framing.flags_tree": {
+        "framing.flags.version": "1",
+        "framing.flags.extra": "2"
+      },
+      "framing.len": "5",
+      "framing.seq": "2",
+      "framing.body": "cc",
+      "framing.trailer": "dd:ee"
+    }
+  ],
+  {
+    "framing.flags": "16",
+    "framing.flags_tree": {
+      "framing.flags.version": "1",
+      "framing.flags.extra": "0"
+    },
+    "framing.len": "5",
+    "framing.seq": "4",
+    "framing.body": "ff",
+    "framing.trailer": ""
+  },
+  {
+    "framing.flags": "16",
+    "framing.flags_tree": {
+      "framing.flags.version": "1",
+      "framing.flags.extra": "0"
+    },
+    "framing.len": "7",
+    "framing.seq": "3",
+    "framing.body": "01:02:03",
+    "framing.trailer": ""
+  },
+  [
+    {
+      "framing.flags": "16",
+      "framing.flags_tree": {
+        "framing.flags.version": "1",
+        "framing.flags.extra": "0"
+      },
+      "framing.len": "6",
+      "framing.seq": "5",
+      "framing.body": "ee:ff",
+      "framing.trailer": ""
+    },
+    {
+      "_ws.expert": {
+        "framing._malformed.expression": "",
+        "_ws.expert.message": "Malformed: length 2 is below the 3-byte header: framing",
+        "_ws.expert.severity": "8388608",
+        "_ws.expert.group": "117440512"
+      },
+      "_ws.malformed": "Malformed Packet"
+    }
+  ]
+]

@@ -179,7 +179,9 @@ types:
 | `_offset` | the number of bytes from the start of the message to the Field being read |
 | `_remaining` | the number of bytes left in the message from the Field being read |
 
-`size: "_remaining"` reads everything left (see [Sizes](sizes.md#remaining)).
+`size: "_remaining"` reads everything left (see [Sizes](sizes.md#remaining)). Under
+[Framing](framing.md), the message is the one Framing cut out of the TCP stream, so both count
+from its start.
 
 ```yaml
 name: demo

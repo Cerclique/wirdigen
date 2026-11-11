@@ -432,7 +432,7 @@ pub(crate) enum RawAmount {
 
 impl RawAmount {
     /// The Expression, when it parsed.
-    fn expression(&self) -> Option<&Expr> {
+    pub(crate) fn expression(&self) -> Option<&Expr> {
         match self {
             Self::Expression(Ok(expr)) => Some(expr),
             Self::Constant(_) | Self::Expression(Err(_)) => None,
@@ -440,7 +440,7 @@ impl RawAmount {
     }
 
     /// The syntax error of the Expression, if any.
-    fn syntax_error(&self) -> Option<&Diagnostic> {
+    pub(crate) fn syntax_error(&self) -> Option<&Diagnostic> {
         match self {
             Self::Expression(Err(error)) => Some(error),
             Self::Constant(_) | Self::Expression(Ok(_)) => None,

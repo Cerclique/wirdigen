@@ -161,24 +161,88 @@ pub(crate) fn emit(model: &Dissector) -> String {
 }
 
 /// The Dissector's entry point: it sets the columns and reads the Message into the protocol's
-/// tree.
+/// tree. Under `framing:` and TCP, it reads each Message of the segment (spec §3.13).
 fn dissector(w: &mut Writer, model: &Dissector) {
+    let Some(framing) = &model.framing else {
+        w.block(
+            "function wd_proto.dissector(tvb, pinfo, tree)",
+            |w| {
+                w.line(&format!("pinfo.cols.protocol = {}", lua_string(&model.short_name)));
+                message(w, model);
+                w.line("return tvb:len()");
+            },
+            "end",
+        );
+        return;
+    };
+    w.line(&format!("-- Framing: the length of the Message at `offset`, from its {}-byte header", framing.header));
+    w.block(
+        "local function wd_message_length(tvb, offset)",
+        |w| {
+            for read in &framing.reads {
+                let at = format!("offset + {}", read.offset);
+                w.line(&format!("local {} = {}", read.local, read_value_at(&read.read, &at, read.size)));
+            }
+            // The prelude evaluates it under `wd_evaluate`, which catches its faults.
+            w.line(&format!("return {}", lua_expr(&framing.length.value)));
+        },
+        "end",
+    );
+    w.line("");
+    w.block(
+        "local function wd_dissect_message(tvb, pinfo, tree, malformed)",
+        |w| {
+            w.block(
+                "if malformed then",
+                |w| {
+                    w.line(&root_line(model));
+                    w.line("wd_invalid(root, wd_ei_invalid, malformed, \"framing\")");
+                    w.line("return");
+                },
+                "end",
+            );
+            message(w, model);
+        },
+        "end",
+    );
+    w.line("");
     w.block(
         "function wd_proto.dissector(tvb, pinfo, tree)",
         |w| {
             w.line(&format!("pinfo.cols.protocol = {}", lua_string(&model.short_name)));
-            if model.chunks.contains(&prelude::INFO_CASES) {
-                w.line("wd_info_cases = {}");
-            }
-            w.line(&format!("local root = tree:add(wd_proto, tvb(0, tvb:len()), {})", lua_string(&model.full_name)));
-            w.line("dissect_top(tvb, pinfo, root, 0)");
-            if let Some(info) = &model.info {
-                info_column(w, model, info);
-            }
+            w.block(
+                "if pinfo.port_type == wd_port_type_tcp then",
+                |w| {
+                    let header = framing.header;
+                    w.line(&format!(
+                        "return wd_framed(tvb, pinfo, tree, {header}, wd_message_length, wd_dissect_message)"
+                    ));
+                },
+                "end",
+            );
+            w.line("wd_dissect_message(tvb, pinfo, tree)");
             w.line("return tvb:len()");
         },
         "end",
     );
+}
+
+/// The line adding the protocol's tree root over the whole of `tvb`.
+fn root_line(model: &Dissector) -> String {
+    format!("local root = tree:add(wd_proto, tvb(0, tvb:len()), {})", lua_string(&model.full_name))
+}
+
+/// The lines reading one Message, the whole of `tvb`, under its own tree root, then setting the
+/// Info column.
+fn message(w: &mut Writer, model: &Dissector) {
+    if model.chunks.contains(&prelude::INFO_CASES) {
+        w.line("wd_info_cases = {}");
+    }
+    w.line(&root_line(model));
+    w.line("dissect_top(tvb, pinfo, root, 0)");
+    if let Some(info) = &model.info {
+        info_column(w, model, info);
+    }
 }
 
 /// Sets the Info column once the Message is read, however far it was read (spec §3.14).
@@ -563,9 +627,14 @@ fn evaluate(w: &mut Writer, local: &str, noun: &str, computed: &Computed, invali
 
 /// The Lua expression of the value of a `size`-byte read at `offset`, read as `read` says.
 fn read_value(read: &ValueRead, size: usize) -> String {
+    read_value_at(read, "offset", size)
+}
+
+/// The Lua expression of the value of a `size`-byte read at the Lua expression `at`.
+fn read_value_at(read: &ValueRead, at: &str, size: usize) -> String {
     match read {
-        ValueRead::Integer(format) => format!("string.unpack({}, tvb:raw(offset, {size}))", lua_string(format)),
-        ValueRead::Bool => format!("wd_bool(tvb(offset, {size}):uint() ~= 0)"),
+        ValueRead::Integer(format) => format!("string.unpack({}, tvb:raw({at}, {size}))", lua_string(format)),
+        ValueRead::Bool => format!("wd_bool(tvb({at}, {size}):uint() ~= 0)"),
     }
 }
 

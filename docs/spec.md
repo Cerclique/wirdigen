@@ -367,7 +367,7 @@ framing:
 
 - Applies under TCP Registration and TCP Decode As.
 - `header` is a constant. `length` may reference only top-level Fields (and their bitfield sub-Fields) lying entirely inside the first `header` bytes; `_offset` and `_remaining` are not allowed. Breaking this rule is an error.
-- The Dissector loops over the PDUs in a segment and asks for more data through `pinfo.desegment_offset` / `desegment_len` (only `DESEGMENT_ONE_MORE_SEGMENT` is available from Lua).
+- The Dissector loops over the Messages in a segment and asks for more data through `pinfo.desegment_offset` / `desegment_len`: the exact missing bytes once the header gives the length, `DESEGMENT_ONE_MORE_SEGMENT` while the header is incomplete. Under TCP it is detected by `pinfo.port_type`; over UDP, `framing:` is ignored and each datagram is one Message.
 - A computed length below `header`, or negative, is malformed (§5.3).
 
 ### 3.14 Info column
@@ -377,7 +377,7 @@ framing:
 - A reference renders the Field's `values:` (or `true:`/`false:`) label if it has one (the number if unmatched), otherwise the Field's display form. Any Field type is allowed.
 - Conditional Fields may be referenced; an absent one renders as an empty string. Unresolvable paths, array internals and forward references are errors. Paths resolve from the top-level layout once the Message is read, so no reference is forward; one that resolves to no Field or goes into an array is `unknown-field`.
 - A reference names a Field of a built-in type, a bitfield sub-Field, or a `switch` Field, which renders its case name as in §3.9. A template that does not parse (a lone brace, an Expression, a format specifier, more than one line) or a reference to an inline structure, a Field of a Type or an array is `invalid-info`.
-- The Dissector sets the column once the Message is read, however far it got. Built-in Fields and sub-Fields are rendered from Wireshark's field extractors (`Field.new`), so their display form is Wireshark's own.
+- The Dissector sets the column once the Message is read, however far it got. With several Messages in a packet (Framing, §3.13), the column shows the last one's. Built-in Fields and sub-Fields are rendered from Wireshark's field extractors (`Field.new`), so their display form is Wireshark's own.
 - Without `info:`, the Info column shows the label of the outermost `switch` Field, as in §3.9: the one fewest structures and Fields of Types from the top level, first in layout order among them, never inside an array. When it is not read, the column keeps the transport's text.
 - The Protocol column always shows the short name (§3.3).
 
@@ -762,7 +762,7 @@ Backs the "never raises a Lua error" promise (§5.3):
 
 - From each valid packet, the harness derives every truncation, seeded mutations (bit flips, a length or count set to 0, max or huge, inserted or removed bytes, garbage) and a few random packets.
 - They go into one pcap and one tshark run per case. The test asserts no `_ws.lua.error`, no Lua stderr, and every packet attributed to the protocol.
-- TCP cases are also re-split at random segment boundaries.
+- TCP cases are also re-split at random segment boundaries: the valid stream, cut at random, must dissect into the same Messages as `dissected.json`, and each bad packet is a stream of its own. A TCP packet whose bytes TCP holds for a Message still incomplete carries no layer of the protocol, which passes.
 - PRs use a fixed seed. The weekly run uses a random seed with large counts and reports the seed and the smallest failing packet, which then becomes a `packets.txt` regression.
 
 ### 10.7 Generation and validation

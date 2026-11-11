@@ -2,7 +2,7 @@ fields: [ {name: a, type: uint8} ]
 registration: {}
 name: "on"
 title: On title
-framing: {}
+framing: { header: 1, length: 1 }
 endian: big
 info: x
 types: {}

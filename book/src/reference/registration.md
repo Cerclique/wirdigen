@@ -50,7 +50,7 @@ fields:
 ## TCP and Framing {#tcp}
 
 On TCP, a message can be split across segments, and a segment can hold several messages.
-`framing:` tells the Dissector where each message ends. TCP ports without `framing:` are the
+[`framing:`](framing.md) tells the Dissector where each message ends. TCP ports without `framing:` are the
 warning [`tcp-without-framing`](../diagnostics.md#tcp-without-framing): each segment is then
 dissected as one message, which is right only when every message travels in a segment of its
 own.
