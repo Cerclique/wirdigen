@@ -63,4 +63,5 @@ cases! {
     bitfields => "bitfields",
     bitfield_references => "bitfield-references",
     arrays => "arrays",
+    conditionals => "conditionals",
 }

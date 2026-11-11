@@ -386,7 +386,7 @@ fields:
 ```
 
 A structure takes `name:`, `label:`, `description:`, `count:` or `repeat:` to make it an
-[array](arrays.md), and `endian:`, which is the byte order of the Fields inside it unless they
+[array](arrays.md), [`if:`](conditionals.md) to read it only under a condition, and `endian:`, which is the byte order of the Fields inside it unless they
 set their own (see [Byte order](#byte-order)). The keys that
 say how a value is read or shown belong on the Fields inside: a length key on a structure is
 [`unexpected-length`](../diagnostics.md#unexpected-length), and `display:`, `encoding:`,
@@ -427,7 +427,8 @@ types:
   so the two never clash.
 - A Type is read in its own byte order: its `endian:`, else the top-level `endian:`, whatever
   structure the Field using it is in. A Field of a Type takes `name:`, `label:`,
-  `description:`, and `count:` or `repeat:` to make it an [array](arrays.md), only: `endian:`
+  `description:`, `count:` or `repeat:` to make it an [array](arrays.md), and
+  [`if:`](conditionals.md), only: `endian:`
   on it is [`invalid-endian`](../diagnostics.md#invalid-endian),
   a length key [`unexpected-length`](../diagnostics.md#unexpected-length), and a display or
   value-mapping key [`incompatible-display`](../diagnostics.md#incompatible-display).

@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - { name: flags, type: uint8 }
+  - { name: len, type: uint8, if: flags }
+  - { name: data, type: bytes, size: len, if: flags }

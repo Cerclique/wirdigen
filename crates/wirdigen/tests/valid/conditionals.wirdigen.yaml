@@ -1,0 +1,27 @@
+# `if:` on every Field kind (spec §3.9), C truthiness, and references inside the same
+# conditional scope: an inline structure carrying the `if:` (§4.3). A conditional Field that
+# reads to the end leaves the next one reachable.
+name: demo
+fields:
+  - { name: flags, type: uint8 }
+  - { name: id, type: uint16, if: "flags & 1" }
+  - { name: always, type: uint8, if: 1 }
+  - name: ext
+    if: "flags & 2"
+    fields:
+      - { name: len, type: uint8 }
+      - { name: data, type: bytes, size: len }
+      - name: nested
+        fields: [ {name: more, type: bytes, size: "len + 1", if: len} ]
+  - { name: point, type: Point, if: "flags & 4 && 1" }
+  - name: items
+    if: flags
+    count: 2
+    fields: [ {name: x, type: uint8} ]
+  - { name: rest, type: bytes, size: "_remaining", if: "!(flags & 8)" }
+  - { name: trailer, type: uint8 }
+types:
+  Point:
+    fields:
+      - { name: n, type: uint8 }
+      - { name: m, type: uint8, if: "n > 1" }

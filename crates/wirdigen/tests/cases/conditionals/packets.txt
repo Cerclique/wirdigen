@@ -1,0 +1,11 @@
+# flags=0x0f: id=0x0102 ext=[len=2 data=aa:bb] point=[n=2 m=7] items=[1, 2]; tail's condition
+# is -1, true: tail=9 last=5.
+0000  0f 01 02 02 aa bb 02 07 01 02 09 05
+# flags=0x10: tail's condition is 0, so only last=5 is read.
+0000  10 05
+# flags=0x04: point=[n=1], so m is skipped; tail=9 last=5.
+0000  04 01 09 05
+# flags=0x20: tail=9, then last's condition divides by zero.
+0000  20 09
+# flags=0x01: id is truncated.
+0000  01 01

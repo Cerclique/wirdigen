@@ -1,0 +1,26 @@
+# Conditional Fields (spec §3.9): `if:` on a built-in Field, an inline structure, a Field of a
+# Type, an array and inside a Type, read only when the condition is not zero (C truthiness, so
+# -1 is true). Fields inside a conditional inline structure read each other (§4.3). A condition
+# with no value stops the dissection as malformed (§4.4); a skipped Field adds nothing.
+name: conditionals
+fields:
+  - { name: flags, type: uint8 }
+  - { name: id, type: uint16, if: "flags & 0x01" }
+  - name: ext
+    if: "flags & 0x02"
+    fields:
+      - { name: len, type: uint8 }
+      - { name: data, type: bytes, size: len }
+  - { name: point, type: Point, if: "flags & 0x04" }
+  - name: items
+    if: "flags & 0x08"
+    count: 2
+    fields: [ {name: x, type: uint8} ]
+  - { name: never, type: uint8, if: 0 }
+  - { name: tail, type: uint8, if: "((flags & 0x10) >> 4) - 1" }
+  - { name: last, type: uint8, if: "1 / (1 - ((flags & 0x20) >> 5))" }
+types:
+  Point:
+    fields:
+      - { name: n, type: uint8 }
+      - { name: m, type: uint8, if: "n > 1" }

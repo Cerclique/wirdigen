@@ -15,7 +15,7 @@
 - [Sizes]()
 - [Arrays](reference/arrays.md)
 - [Bitfields](reference/bitfields.md)
-- [`if` and `switch`]()
+- [`if` and `switch`](reference/conditionals.md)
 - [Registration]()
 - [Framing]()
 - [Expressions](reference/expressions.md)

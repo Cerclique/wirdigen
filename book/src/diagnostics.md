@@ -819,6 +819,35 @@ fields:
 **Fix**: read an integer Field, or go into the structure for one: `header.length` rather than
 `header`.
 
+## `conditional-reference` {#conditional-reference}
+
+**Severity**: error
+
+An Expression reads a Field that is read only under an [`if:`](reference/conditionals.md), or a
+Field inside one, from outside that `if:`. When the condition is false the Field has no value.
+Two `if:` with the same condition still count as different: conditions are never compared.
+
+```yaml,diagnostic=conditional-reference
+name: demo
+fields:
+  - { name: flags, type: uint8 }
+  - { name: len, type: uint8, if: "flags & 1" }
+  - { name: data, type: bytes, size: len, if: "flags & 1" }
+```
+
+**Fix**: put the Field and everything that reads it in one inline structure carrying the `if:`:
+
+```yaml
+name: demo
+fields:
+  - { name: flags, type: uint8 }
+  - name: ext
+    if: "flags & 1"
+    fields:
+      - { name: len, type: uint8 }
+      - { name: data, type: bytes, size: len }
+```
+
 ## `not-supported-yet` {#not-supported-yet}
 
 **Severity**: error

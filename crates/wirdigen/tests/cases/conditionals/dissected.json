@@ -1,0 +1,57 @@
+[
+  {
+    "conditionals.flags": "15",
+    "conditionals.id": "258",
+    "conditionals.ext": {
+      "conditionals.ext.len": "2",
+      "conditionals.ext.data": "aa:bb"
+    },
+    "conditionals.point": {
+      "conditionals.point.n": "2",
+      "conditionals.point.m": "7"
+    },
+    "conditionals.items": [
+      {
+        "conditionals.items.x": "1"
+      },
+      {
+        "conditionals.items.x": "2"
+      }
+    ],
+    "conditionals.tail": "9",
+    "conditionals.last": "5"
+  },
+  {
+    "conditionals.flags": "16",
+    "conditionals.last": "5"
+  },
+  {
+    "conditionals.flags": "4",
+    "conditionals.point": {
+      "conditionals.point.n": "1"
+    },
+    "conditionals.tail": "9",
+    "conditionals.last": "5"
+  },
+  {
+    "conditionals.flags": "32",
+    "conditionals.tail": "9",
+    "_ws.expert": {
+      "conditionals._malformed.expression": "",
+      "_ws.expert.message": "Malformed: division by zero: last",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "conditionals.flags": "1",
+    "_ws.expert": {
+      "conditionals._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: id",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

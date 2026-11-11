@@ -1,0 +1,15 @@
+name: demo
+fields:
+  - { name: flags, type: uint8 }
+  - name: ext
+    if: "flags & 1"
+    fields:
+      - name: inner
+        fields: [ {name: len, type: uint8} ]
+  - { name: data, type: bytes, size: ext.inner.len }
+  - name: opts
+    fields:
+      - { name: n, type: uint8, if: flags }
+  - { name: more, type: bytes, size: "opts.n + 1" }
+  - { name: bits, type: uint8, if: flags, bits: [ {name: hi, width: 4}, {name: lo, width: 4} ] }
+  - { name: tail, type: bytes, size: bits.lo }

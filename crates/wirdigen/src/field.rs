@@ -19,7 +19,7 @@ use crate::types::Types;
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-const KEYS: [&str; 20] = [
+const KEYS: [&str; 21] = [
     "name",
     "type",
     "fields",
@@ -40,6 +40,7 @@ const KEYS: [&str; 20] = [
     "label",
     "description",
     "hidden",
+    "if",
 ];
 
 /// The keys that say what a Field is; exactly one is required (spec §3.4.3).
@@ -743,6 +744,8 @@ pub(crate) struct RawField {
     array: Option<Spanned<RawArray>>,
     /// `hidden:`, which leaves the Field out of the tree; only a bitfield takes it in this version.
     hidden: Option<Spanned<bool>>,
+    /// `if:`, the condition the Field is read under (spec §3.9): a constant or an Expression.
+    condition: Option<Spanned<RawAmount>>,
 }
 
 /// What a Field written in a description is, as references see it (spec §4.3).
@@ -785,12 +788,12 @@ impl RawField {
         self.expressions().flat_map(paths).collect()
     }
 
-    /// The Expressions the Field evaluates before reading itself: its `size:` and `count:`.
+    /// The Expressions the Field evaluates before reading itself: its `if:`, `size:` and `count:`.
     fn expressions(&self) -> impl Iterator<Item = &Expr> {
         self.amounts().filter_map(RawAmount::expression)
     }
 
-    /// The values of the Field's `size:` and `count:`.
+    /// The values of the Field's `if:`, `size:` and `count:`.
     fn amounts(&self) -> impl Iterator<Item = &RawAmount> {
         let sizes = self.lengths.iter().filter_map(|l| match &l.value.value {
             RawLength::Size(amount) => Some(amount),
@@ -800,7 +803,12 @@ impl RawField {
             Some(RawArray::Count(count)) => Some(&count.value),
             Some(RawArray::ToEnd) | None => None,
         };
-        sizes.chain(count)
+        self.condition.iter().map(|c| &c.value).chain(sizes).chain(count)
+    }
+
+    /// Where the `if:` value is written, when the Field is read under one (spec §3.9).
+    pub(crate) fn condition_span(&self) -> Option<&Range<usize>> {
+        self.condition.as_ref().map(|c| &c.span)
     }
 
     /// Whether the Field is an array (spec §3.7), whose Fields only its elements can read.
@@ -809,8 +817,12 @@ impl RawField {
     }
 
     /// Why the Field reads up to the end of its structure or the message, if it does:
-    /// `size: "_remaining"` (spec §3.6) or `repeat: to_end` (§3.7).
+    /// `size: "_remaining"` (spec §3.6) or `repeat: to_end` (§3.7). A Field under `if:` may not be
+    /// read, which leaves the bytes to the Fields after it.
     fn reads_to_end(&self) -> Option<&'static str> {
+        if self.condition.is_some() {
+            return None;
+        }
         if matches!(self.array.as_ref().map(|a| &a.value), Some(RawArray::ToEnd)) {
             return Some("`repeat: to_end` leaves no bytes for the Fields after it");
         }
@@ -837,6 +849,22 @@ pub(crate) struct Field {
     pub(crate) kind: FieldKind,
     /// How the Field repeats, when it is an array of its kind (spec §3.7).
     pub(crate) array: Option<Array>,
+    /// The condition the Field is read under, when it has `if:` (spec §3.9).
+    pub(crate) condition: Option<Condition>,
+}
+
+/// A validated `if:`: the Field is read only when its value is not zero (spec §3.9, §4.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Condition {
+    /// A constant, written as an integer.
+    Constant(i64),
+    /// An Expression, evaluated when the packet is read: a fault, even in a constant one, is
+    /// reported then (spec §4.4).
+    Expression {
+        expr: Expr,
+        /// What each Field path of the Expression reads, by its segments.
+        references: BTreeMap<Vec<String>, Reference>,
+    },
 }
 
 /// How a validated array repeats its element (spec §3.7).
@@ -920,6 +948,10 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
     let bits = keys.key_of("bits").zip(keys.get("bits")).and_then(|(key, value)| bits::read(key, value, errors));
     let array = read_array(&keys, errors);
     let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
+    let condition = keys.get("if").and_then(|value| {
+        let amount = record(read_amount(value, "if"), errors)?;
+        Some(Spanned { value: amount, span: value.span.clone() })
+    });
     if let (Some(key), None) = (keys.key_of("hidden"), keys.get("bits")) {
         errors.push(
             Diagnostic::new(
@@ -945,6 +977,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
             bits,
             array,
             hidden,
+            condition,
         }),
         _ => None,
     }
@@ -1108,8 +1141,12 @@ pub(crate) fn check<'a>(
             None => Some(None),
             Some(array) => check_array(field, array, types, scope, diagnostics).map(Some),
         };
+        let condition = match &field.condition {
+            None => Some(None),
+            Some(condition) => check_condition(&condition.value, scope, types, diagnostics).map(Some),
+        };
         check_text(field.label.as_ref(), field.description.as_ref(), diagnostics);
-        if let (Some(kind), Some(array)) = (kind, array) {
+        if let (Some(kind), Some(array), Some(condition)) = (kind, array, condition) {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
             layout.push(Field {
                 name: name.value.clone(),
@@ -1118,6 +1155,7 @@ pub(crate) fn check<'a>(
                 hidden: field.hidden.as_ref().is_some_and(|h| h.value),
                 kind,
                 array,
+                condition,
             });
         }
     }
@@ -1200,6 +1238,22 @@ fn check_array<'a>(
             record(amount, diagnostics).flatten().map(Array::Count)
         }
     }
+}
+
+/// Checks an `if:` (spec §3.9): an Expression's paths are resolved from `scope` like a `size:`'s.
+/// Any value is a condition, so a constant is never wrong.
+fn check_condition<'a>(
+    condition: &RawAmount,
+    scope: Scope<'a, '_>,
+    types: &Types<'a>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Condition> {
+    let expr = match condition {
+        RawAmount::Constant(value) => return Some(Condition::Constant(*value)),
+        RawAmount::Expression(expr) => expr.as_ref().expect("stage 3 reported every syntax error"),
+    };
+    let references = scope::resolve_paths(&paths(expr), scope, types, diagnostics)?;
+    Some(Condition::Expression { expr: expr.clone(), references })
 }
 
 /// `bits:` on a Field that is not a fixed-size unsigned integer, saying why in `message`.
