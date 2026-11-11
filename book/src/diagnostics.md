@@ -622,7 +622,7 @@ fields: [ {name: offset, type: int16, display: hex} ]
 `display:` to use the type's default. A signed value shown in hex needs an unsigned type. The
 encodings are listed in [Strings and bytes](reference/fields.md#strings-and-bytes) and
 [Timestamps](reference/fields.md#timestamps), and the value mappings in
-[Value labels and units](reference/fields.md#value-mappings).
+[Value mappings](reference/fields.md#value-mappings).
 
 ## `invalid-label` {#invalid-label}
 

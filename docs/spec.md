@@ -41,19 +41,9 @@ A WASM/npm surface comes after v1, as a third crate on top of the library (§14)
 
 ## 2. Domain model
 
-| Term | Meaning |
-|---|---|
-| **Protocol Description** | The document a user writes to describe one protocol: its identity, its Registration, and the layout of its payload. |
-| **Registration** | How a Dissector attaches to traffic in Wireshark: the ports it claims by default, and its availability in Decode As. |
-| **Field** | One named element of the payload layout, with a built-in type or a Type, and display settings. |
-| **Type** | A named, reusable group of Fields, defined once and used wherever a layout is needed, including as one kind of message among several. |
-| **Enum** | A named table of labels for integer values and value ranges, defined once and shared by every Field whose values it names. |
-| **Framing** | How a Dissector finds where each message starts and ends in a TCP stream. |
-| **Expression** | A formula that computes a size, a count, a condition or a switch subject from Fields read earlier. |
-| **Diagnostic** | An error or a warning about a Protocol Description, with a stable name and a location. An error stops generation; a warning does not. |
-| **Dissector** | The Wireshark Lua plugin generated from a Protocol Description. |
+The domain terms (Protocol Description, Field, Structure, Type, Switch, Case, Message, Framing and the rest) are defined in [`GLOSSARY.md`](../GLOSSARY.md), the single source for their meaning; this spec uses them as defined there.
 
-There is no first-class *message* concept: a protocol with several message kinds is a `switch` whose cases use Types (§3.9).
+There is no `messages:` key: a protocol with several kinds of Message is a `switch` whose Cases use Types (§3.9).
 
 The flow is: **Source** (description text plus a name) → `validate` → **ValidDescription** (or Diagnostics) → `generate` → Lua text. The CLI adds files around it.
 
@@ -317,7 +307,7 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
   - overlapping cases (values or ranges) are the error `overlapping-cases`, comparing values as the subject has them (§4.4), so `-1` and `18446744073709551615` overlap;
   - with no matching case and no `default:`, the rest of the message is shown raw as a bytes item filtered `<protocol>._unmatched`, with an expert info note (group Undecoded) filtered `<protocol>._undecoded.unmatched`, and the dissection stops: nothing says where the unknown layout ends.
 - A case adds no tree level either: its Fields go straight into the `switch` Field's subtree item.
-- A message type is a `switch` case using a Type. The `switch` Field's item shows the message type's name after its label ("Body: Login"). When the `switch:` subject is a bare Field path to a Field read by the same dissect function (§7.3), the name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number, and so does a path a Type resolves at its use site (§4.3), which can name a different Field at each use.
+- A protocol with several kinds of message is a `switch` whose cases use Types. The `switch` Field's item shows the name of the subject's value after its label ("Body: Login"). When the `switch:` subject is a bare Field path to a Field read by the same dissect function (§7.3), the name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number, and so does a path a Type resolves at its use site (§4.3), which can name a different Field at each use.
 - A `switch` Field accepts only `name`, `label`, `description`, `if`, `hidden`, `switch`, `cases` and `default`, never `values:`. Another key is reported under the name it has elsewhere: a length key `unexpected-length`, `endian` `invalid-endian`, `bits` `invalid-bits`, `count`/`repeat` `invalid-array`, a value key `incompatible-display`. `cases` or `default` without `switch` is `missing-field-kind`, or `conflicting-field-kind` beside `type` or `fields`.
 - Fields under `if:` or inside a case can be referenced only from inside the same conditional scope (§4.3). The way out is an inline structure carrying the `if:`.
 - `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField under the rule of §3.4.9; otherwise it is the error `conflicting-filter-name`. For a Field of a Type, its "type" is the Type: two Fields of different Types at one path conflict.
@@ -809,7 +799,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
   - Nothing is generated from the schema.
 - **Examples**: three invented protocols in `examples/`, each also a corpus case. None clashes with a built-in protocol.
   1. *UDP telemetry*: fixed Fields, an enum, a bitfield, `info:`, port Registration. This is the book's tutorial.
-  2. *TCP request/response*: length-based Framing, `switch` on message type, named Types, a length-prefixed string.
+  2. *TCP request/response*: length-based Framing, `switch` on a header Field, named Types, a length-prefixed string.
   3. *Tagged records*: arrays until end, `if` Fields, padding and hidden Fields, `expect:` warnings, handoff to a built-in Dissector.
 
   The old `example/example_dissector.json` is deleted.

@@ -58,7 +58,7 @@ of Field names, and two sub-Fields of one bitfield need different names.
   those labels.
 - A **wider** sub-Field is an unsigned integer of its width. It takes the `display:` of an
   unsigned integer, and `values:` (an inline table or an Enum) or `unit:`, as described in
-  [Value labels and units](fields.md#value-mappings). A key that does not fit in the sub-Field's
+  [Value mappings](fields.md#value-mappings). A key that does not fit in the sub-Field's
   width is the warning [`unreachable-value`](../diagnostics.md#unreachable-value).
 - A 1-bit sub-Field with `values:`, `unit:` or `display:` is an unsigned integer too, holding 0
   or 1.

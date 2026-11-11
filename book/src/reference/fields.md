@@ -246,7 +246,7 @@ fields:
 Display changes only what the tree shows: a filter matches the value whichever way it is
 written, so `demo.flags == 16` and `demo.flags == 0x10` are the same filter.
 
-## Value labels and units {#value-mappings}
+## Value mappings {#value-mappings}
 
 Three keys give a value words. Like `display:`, they change only what the tree shows: a filter
 still matches the number, so `demo.msg_type == 1` finds every "Request".

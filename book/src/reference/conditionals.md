@@ -1,7 +1,7 @@
 # `if` and `switch`
 
 Some Fields are in a message only sometimes: an extension present when a flag is set, a body
-whose layout depends on a message type. `if:` reads a Field only under a condition;
+whose layout depends on a Field of the header. `if:` reads a Field only under a condition;
 `switch:` picks one layout among several.
 
 ## `if:` {#if}
@@ -75,7 +75,7 @@ so is `hdr.len` when `len` is read under an `if:` inside the Type of `hdr`. The 
 ## `switch:` {#switch}
 
 A `switch` Field reads one layout among several, picked by the value of an
-[Expression](expressions.md), its **subject**. It is how a protocol with several message types
+[Expression](expressions.md), its **subject**. It is how a protocol with several kinds of message
 is described: a header saying which message follows, then a `switch` on it.
 
 ```yaml
@@ -143,14 +143,14 @@ The `switch` Field is a subtree, like an inline structure, and the case it reads
 into it: a case adds no level to the tree and no segment to filter names. Above, the Login's
 `user_id` is `demo.body.user_id`, not `demo.body.Login.user_id`.
 
-The subtree item is named after the subject's value, the **message type**: "Body: Login". When
+The subtree item is named after the subject's value: "Body: Login". When
 the subject is a bare Field path (`msg_type`, `hdr.kind`, `flags.op`) to a Field read in the
 same layout or Type, the name is that Field's `values:` label, else the number; any other
 Expression (`"kind & 0x0f"`), or a path a [Type](fields.md#types) reads from where it is used,
 shows the number: "Body: 7".
 
 Two cases reaching one filter name share its ProtoField when the two Fields have the same type,
-`display:`, value labels, `label:` and `description:`, so `demo.body.user_id` filters both a
+`display:`, value mappings, `label:` and `description:`, so `demo.body.user_id` filters both a
 Login's `user_id` and another message's. When they differ, it is
 [`conflicting-filter-name`](../diagnostics.md#conflicting-filter-name): rename one, or make them
 match.
