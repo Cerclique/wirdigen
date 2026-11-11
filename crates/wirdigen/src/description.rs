@@ -180,14 +180,14 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
     let ports = registration::check(&description.registration, description.framing, &mut diagnostics);
     let endian = Endian::resolve(description.endian.as_ref(), Endian::default(), &mut diagnostics);
     let mut enums = Enums::check(&description.enums, &mut diagnostics);
-    let (fields, types, raw_types) =
-        types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
+    let (fields, types) = types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
     let enums = enums.finish(&mut diagnostics);
-    let info =
-        description.info.as_ref().and_then(|raw| info::check(raw, &description.fields, &raw_types, &mut diagnostics));
     // Filter names are walked through every use of every Type, which needs Types without cycles.
+    // The `info:` template is resolved in the checked layout too, where no Field is in error.
+    let mut info = None;
     if !diagnostics.iter().any(|d| d.severity() == Severity::Error) {
         filter::check(&fields, &types, &mut diagnostics);
+        info = description.info.as_ref().and_then(|raw| info::check(raw, &fields, &types, &mut diagnostics));
     }
     let has_errors = diagnostics.iter().any(|d| d.severity() == Severity::Error);
     let protocol = (!has_errors).then(|| Protocol {

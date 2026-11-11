@@ -316,6 +316,7 @@ cases! {
     registration => "registration",
     info => "info",
     info_default => "info-default",
+    info_empty => "info-empty",
 }
 
 /// Registration (spec §3.12): the declared ports follow their range preferences, and TCP ports

@@ -10,13 +10,13 @@
 
 use std::ops::Range;
 
-use crate::bits::Lookup;
+use crate::bits::Bit;
 use crate::diagnostic::{Diagnostic, Name};
-use crate::field::{self, RawEntry, RawField, Shape, is_field_name};
+use crate::field::{BuiltinField, Entry, FieldKind, is_field_name};
 use crate::keys::{closest, expect_string, is_single_line};
 use crate::scope::{self, Miss};
-use crate::switch::RawBody;
-use crate::types::Types;
+use crate::switch::Body;
+use crate::types::NamedType;
 use crate::yaml::Node;
 
 /// `info:` as written, after stage 2.
@@ -26,16 +26,19 @@ pub(crate) struct RawInfo {
     parsed: Result<Vec<Piece>, Diagnostic>,
 }
 
-/// A piece of a template as written: text, or a reference with its span in the source.
+/// A piece of a template as written: text, or a Field Path with its span in the source.
 #[derive(Debug, Clone)]
 enum Piece {
+    /// Text shown as is, escapes undone.
     Text(String),
-    Reference { segments: Vec<String>, span: Range<usize> },
+    /// A Field Path, by its names, written at `span` (its braces included).
+    Path { segments: Vec<String>, span: Range<usize> },
 }
 
 /// A checked template: what the Info column shows, in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Template {
+    /// The parts, shown one after another.
     pub(crate) parts: Vec<Part>,
 }
 
@@ -63,7 +66,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawInfo>
             pieces
                 .into_iter()
                 .map(|piece| match piece {
-                    Piece::Reference { segments, span } => Piece::Reference { segments, span: node.token_span(span) },
+                    Piece::Path { segments, span } => Piece::Path { segments, span: node.token_span(span) },
                     text @ Piece::Text(_) => text,
                 })
                 .collect()
@@ -90,6 +93,7 @@ struct SyntaxError {
 }
 
 impl SyntaxError {
+    /// An error at `span`, explained by `message` and the hint `note`.
     fn new(span: Range<usize>, message: impl Into<String>, note: &'static str) -> Self {
         Self { span, message: message.into(), note }
     }
@@ -100,8 +104,8 @@ impl SyntaxError {
     }
 }
 
-/// The note of every reference that is not a bare Field Path.
-const PATH_ONLY: &str = "a reference is a Field path only, such as `{msg_type}` or `{header.id}`: \
+/// The note of every pair of braces that does not hold a bare Field Path.
+const PATH_ONLY: &str = "write a Field path in braces, such as `{msg_type}` or `{header.id}`: \
                          no Expression, no format specifier";
 
 /// Parses a template, with spans into `text`.
@@ -127,7 +131,7 @@ fn parse(text: &str) -> Result<Vec<Piece>, SyntaxError> {
                 let span = at..close + 1;
                 let inside = &text[at + 1..close];
                 if inside.is_empty() {
-                    return Err(SyntaxError::new(span, "this reference names no Field", PATH_ONLY));
+                    return Err(SyntaxError::new(span, "these braces name no Field", PATH_ONLY));
                 }
                 let segments: Vec<String> = inside.split('.').map(str::to_owned).collect();
                 if !segments.iter().all(|s| is_field_name(s)) {
@@ -136,7 +140,7 @@ fn parse(text: &str) -> Result<Vec<Piece>, SyntaxError> {
                 if !literal.is_empty() {
                     pieces.push(Piece::Text(std::mem::take(&mut literal)));
                 }
-                pieces.push(Piece::Reference { segments, span });
+                pieces.push(Piece::Path { segments, span });
                 while rest.next_if(|&(i, _)| i <= close).is_some() {}
             }
             c => literal.push(c),
@@ -148,12 +152,14 @@ fn parse(text: &str) -> Result<Vec<Piece>, SyntaxError> {
     Ok(pieces)
 }
 
-/// Stage 4: resolves the references of a template from the top-level layout `top`. Returns the
-/// checked template, or pushes why some reference shows nothing.
+/// Stage 4: resolves the references of a template from the checked top-level layout `top`, whose
+/// Types are `types`. Run once the rest of the description has no error, so a Field in error
+/// is never reported again here. Returns the checked template, or pushes why some reference
+/// shows nothing.
 pub(crate) fn check(
     raw: &RawInfo,
-    top: &[RawEntry],
-    types: &Types<'_>,
+    top: &[Entry],
+    types: &[NamedType],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Template> {
     let pieces = raw.parsed.as_ref().ok()?;
@@ -162,110 +168,130 @@ pub(crate) fn check(
     for piece in pieces {
         match piece {
             Piece::Text(text) => parts.push(Part::Text(text.clone())),
-            Piece::Reference { segments, span } => {
-                match resolve(segments, top, types) {
-                    Ok(()) => parts.push(Part::Field(segments.clone())),
-                    Err(Unresolved::Suppressed) => ok = false,
-                    Err(Unresolved::Unknown(guess)) => {
-                        let message = format!("no top-level Field is named `{}`", segments[0]);
-                        let unknown = Diagnostic::new(Name::UnknownField, span.clone(), message);
-                        diagnostics.push(match guess {
-                            Some(guess) => unknown.with_note(format!("did you mean `{guess}`?"), None),
-                            None => {
-                                unknown.with_note("a reference starts from a Field of the top-level `fields`", None)
-                            }
-                        });
-                        ok = false;
-                    }
-                    Err(Unresolved::Miss(miss)) => {
-                        diagnostics.push(scope::miss_diagnostic(&miss, segments, span.clone()));
-                        ok = false;
-                    }
-                    Err(Unresolved::NoValue { what, declared }) => {
-                        let last = segments.last().expect("a path has a name");
-                        diagnostics.push(
-                        Diagnostic::new(Name::InvalidInfo, span.clone(), format!("`{last}` is {what}, which has no value to show"))
-                            .with_note(format!("`{last}` is declared here"), Some(declared))
-                            .with_note(
-                                "a reference shows a Field of a built-in type, a bitfield sub-Field or a `switch` Field",
-                                None,
-                            ),
-                    );
-                        ok = false;
-                    }
+            Piece::Path { segments, span } => match find(top, types, segments) {
+                Ok(_) => parts.push(Part::Field(segments.clone())),
+                Err(unresolved) => {
+                    diagnostics.push(unresolved.diagnostic(segments, span.clone()));
+                    ok = false;
                 }
-            }
+            },
         }
     }
     ok.then_some(Template { parts })
 }
 
-/// Why a reference shows nothing.
-enum Unresolved {
-    /// No top-level Field has the path's first name; the closest name, if any is close.
-    Unknown(Option<String>),
-    /// The path finds no Field it can show.
-    Miss(Miss),
-    /// The path ends on a Field with no value of its own, declared at `declared`.
-    NoValue { what: &'static str, declared: Range<usize> },
-    /// The path leads to a Field already in error (an unknown type): nothing more is said.
-    Suppressed,
+/// A Field the Info column can show, as [`find`] finds it.
+#[derive(Debug)]
+pub(crate) enum Target<'p> {
+    /// A Field of a built-in type.
+    Value(&'p BuiltinField),
+    /// A bitfield sub-Field.
+    SubField(&'p Bit),
+    /// A `switch` Field: the Type it is in, `None` in the top-level layout, and its path from
+    /// the Type's body or the top-level layout.
+    Switch { ty: Option<&'p str>, path: Vec<String> },
 }
 
-/// Follows `segments` from the top-level layout: a Field whose value the column can show.
-fn resolve(segments: &[String], top: &[RawEntry], types: &Types<'_>) -> Result<(), Unresolved> {
-    let first = &segments[0];
-    let Some(mut field) = field::fields(top).find(|f| f.name().value == *first) else {
-        let names: Vec<&str> = field::fields(top).map(|f| f.name().value.as_str()).collect();
-        return Err(Unresolved::Unknown(closest(first, &names).map(str::to_owned)));
+/// Why a template's Field Path shows nothing.
+#[derive(Debug)]
+pub(crate) enum Unresolved {
+    /// No top-level Field has the path's first name; the closest name, if any is close.
+    Unknown(Option<String>),
+    /// The path finds no Field on the way.
+    Miss(Miss),
+    /// The path ends on a Field with no value of its own (`what`), declared at `declared`.
+    NoValue { what: &'static str, declared: Range<usize> },
+}
+
+impl Unresolved {
+    /// The Diagnostic of the path `segments`, written at `span`.
+    fn diagnostic(self, segments: &[String], span: Range<usize>) -> Diagnostic {
+        match self {
+            Self::Unknown(guess) => {
+                let message = format!("no top-level Field is named `{}`", segments[0]);
+                let unknown = Diagnostic::new(Name::UnknownField, span, message);
+                match guess {
+                    Some(guess) => unknown.with_note(format!("did you mean `{guess}`?"), None),
+                    None => unknown.with_note("a Field path starts from a Field of the top-level `fields`", None),
+                }
+            }
+            Self::Miss(miss) => scope::miss_diagnostic(&miss, segments, span),
+            Self::NoValue { what, declared } => {
+                let last = segments.last().expect("a path has a name");
+                let message = format!("`{last}` is {what}, which has no value to show");
+                Diagnostic::new(Name::InvalidInfo, span, message)
+                    .with_note(format!("`{last}` is declared here"), Some(declared))
+                    .with_note(
+                        "the Info column shows a Field of a built-in type, a bitfield sub-Field or a `switch` Field",
+                        None,
+                    )
+            }
+        }
+    }
+}
+
+/// Follows the Field Path `path` from the top-level layout `top`, into inline structures, Types
+/// (`types`), `switch` cases and bitfields. Cases add no segment, so the path goes on in the
+/// case that has the next Field; cases reaching one path share its `ProtoField` (spec §3.9).
+/// Validation and lowering both find the Fields of a template through it.
+pub(crate) fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]) -> Result<Target<'p>, Unresolved> {
+    let names = |entries: &'p [Entry]| entries.iter().filter_map(Entry::field);
+    let Some(mut field) = names(top).find(|f| f.name == path[0]) else {
+        let candidates: Vec<&str> = names(top).map(|f| f.name.as_str()).collect();
+        return Err(Unresolved::Unknown(closest(&path[0], &candidates).map(str::to_owned)));
     };
-    for (index, segment) in segments.iter().enumerate().skip(1) {
-        if field.is_array() {
-            return Err(Unresolved::Miss(Miss::IntoArray(field.name().value.clone())));
+    let body = |name: &str| &types.iter().find(|t| t.name == name).expect("validation resolved the Type").fields;
+    // The Type the Field is in, and the Field's path from the Type's body or the top level.
+    let (mut ty, mut at): (Option<&'p str>, Vec<String>) = (None, vec![field.name.clone()]);
+    for (index, segment) in path.iter().enumerate().skip(1) {
+        if field.array.is_some() {
+            return Err(Unresolved::Miss(Miss::IntoArray(field.name.clone())));
         }
         let no_member = |candidates| {
-            let (parent, member) = (field.name().value.clone(), segment.clone());
+            let (parent, member) = (field.name.clone(), segment.clone());
             Unresolved::Miss(Miss::NoMember { parent, member, candidates })
         };
-        let children: Vec<&RawField> = match field.shape(types) {
-            Shape::Structure(children) | Shape::Type { fields: children, .. } => field::fields(children).collect(),
-            // A case adds no segment: the path goes on in whichever case reads the Field.
-            Shape::Switch(switch) => switch
+        // Each place the next Field can be, with the Type it is in and the path there of what
+        // holds it.
+        let places: Vec<(&'p [Entry], Option<&'p str>, Vec<String>)> = match &field.kind {
+            FieldKind::Structure(children) => vec![(children.as_slice(), ty, at.clone())],
+            FieldKind::Type { name, .. } => vec![(body(name).as_slice(), Some(name.as_str()), Vec::new())],
+            FieldKind::Switch(switch) => switch
                 .bodies()
-                .filter_map(|(_, body)| match body {
-                    RawBody::Fields(fields) => Some(fields.as_slice()),
-                    RawBody::Type(name) => types.body(&name.value),
+                .map(|case| match case {
+                    Body::Fields(children) => (children.as_slice(), ty, at.clone()),
+                    Body::Type { name, .. } => (body(name).as_slice(), Some(name.as_str()), Vec::new()),
                 })
-                .flat_map(field::fields)
                 .collect(),
-            Shape::Unknown => return Err(Unresolved::Suppressed),
-            Shape::Value(builtin, _) => {
-                let Some(bits) = field.bits() else {
-                    return Err(Unresolved::Miss(Miss::NotStructure(field.name().value.clone())));
-                };
-                return match bits.lookup(segment, builtin) {
-                    Lookup::Missing => Err(no_member(bits.names())),
-                    Lookup::Found { .. } if index + 1 < segments.len() => {
-                        Err(Unresolved::Miss(Miss::NotStructure(segment.clone())))
+            FieldKind::Builtin(value) => {
+                let Some(bit) = value.bits.iter().find(|b| b.name == *segment) else {
+                    if value.bits.is_empty() {
+                        return Err(Unresolved::Miss(Miss::NotStructure(field.name.clone())));
                     }
-                    Lookup::Found { .. } => Ok(()),
-                    Lookup::Invalid => Err(Unresolved::Suppressed),
+                    return Err(no_member(value.bits.iter().map(|b| b.name.clone()).collect()));
                 };
+                if index + 1 < path.len() {
+                    return Err(Unresolved::Miss(Miss::NotStructure(segment.clone())));
+                }
+                return Ok(Target::SubField(bit));
             }
         };
-        let Some(child) = children.iter().find(|f| f.name().value == *segment) else {
-            return Err(no_member(children.iter().map(|f| f.name().value.clone()).collect()));
+        let found =
+            places.iter().find_map(|(entries, ty, at)| Some((names(entries).find(|f| f.name == *segment)?, ty, at)));
+        let Some((child, child_ty, holder)) = found else {
+            let candidates = places.iter().flat_map(|(entries, ..)| names(entries)).map(|f| f.name.clone()).collect();
+            return Err(no_member(candidates));
         };
-        field = child;
+        (field, ty, at) = (child, *child_ty, [holder.as_slice(), std::slice::from_ref(segment)].concat());
     }
-    let what = match field.shape(types) {
-        Shape::Unknown => return Err(Unresolved::Suppressed),
-        _ if field.is_array() => "an array",
-        Shape::Value(..) | Shape::Switch(_) => return Ok(()),
-        Shape::Structure(_) => "a structure",
-        Shape::Type { .. } => "a Field of a Type",
+    let what = match &field.kind {
+        _ if field.array.is_some() => "an array",
+        FieldKind::Builtin(value) => return Ok(Target::Value(value)),
+        FieldKind::Switch(_) => return Ok(Target::Switch { ty, path: at }),
+        FieldKind::Structure(_) => "a structure",
+        FieldKind::Type { .. } => "a Field of a Type",
     };
-    Err(Unresolved::NoValue { what, declared: field.name().span.clone() })
+    Err(Unresolved::NoValue { what, declared: field.span.clone() })
 }
 
 #[cfg(test)]
@@ -278,7 +304,7 @@ mod tests {
             .into_iter()
             .map(|piece| match piece {
                 Piece::Text(text) => format!("text {text:?}"),
-                Piece::Reference { segments, span } => format!("ref {} at {span:?}", segments.join(".")),
+                Piece::Path { segments, span } => format!("ref {} at {span:?}", segments.join(".")),
             })
             .collect()
     }
@@ -310,7 +336,7 @@ mod tests {
         assert_eq!(error("{ a }"), (0..5, "` a ` is not a Field path".to_owned()));
         assert_eq!(error("{_offset}"), (0..9, "`_offset` is not a Field path".to_owned()));
         assert_eq!(error("{a..b}"), (0..6, "`a..b` is not a Field path".to_owned()));
-        assert_eq!(error("{}"), (0..2, "this reference names no Field".to_owned()));
+        assert_eq!(error("{}"), (0..2, "these braces name no Field".to_owned()));
     }
 
     #[test]

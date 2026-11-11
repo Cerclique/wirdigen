@@ -104,6 +104,10 @@ _Avoid_: Formula, rule, script
 The dotted chain of Field names by which an Expression reads an earlier Field, looked up from the nearest enclosing Structure outward.
 _Avoid_: Reference, variable, identifier
 
+**Info Template**:
+The text a Protocol Description gives for Wireshark's Info column, with Field Paths in braces that show the Fields of each Message; without one, the column names the case of the outermost Switch.
+_Avoid_: Info format, summary line, info string
+
 **Diagnostic**:
 An error or a warning that Wirdigen reports about a Protocol Description, identified by a stable name and pointing at where in the description it applies. An error stops generation; a warning does not.
 _Avoid_: Lint, issue, validation message

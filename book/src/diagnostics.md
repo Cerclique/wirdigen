@@ -596,8 +596,8 @@ fields:
 **Severity**: error
 
 The top-level [`info:`](reference/info.md) template cannot be read: it is not a string, it is on
-several lines, a `{` or `}` pairs with nothing, or a reference is not a bare Field path, such as
-an Expression or a format specifier. Or a reference names an inline structure, a Field of a Type
+several lines, a `{` or `}` pairs with nothing, or braces hold something other than a bare Field path, such as
+an Expression or a format specifier. Or a Field path names an inline structure, a Field of a Type
 or an array, which have no value of their own to show.
 
 ```yaml,diagnostic=invalid-info
@@ -607,7 +607,7 @@ fields:
   - { name: id, type: uint16 }
 ```
 
-**Fix**: write each reference as a Field path in braces, `{id}`, and give the Field the
+**Fix**: write each Field path in braces, `{id}`, and give the Field the
 [`display:`](reference/fields.md#display) it should show with. Write `{{` and `}}` for literal
 braces, and reference a Field inside a structure rather than the structure.
 
@@ -903,7 +903,7 @@ it: a misspelling, a path into a structure that has no such Field or into a Fiel
 structure, a path into the structure still being read, or a path into an
 [array](reference/arrays.md), whose Fields only its elements can read. Inside a Type, a name
 the Type does not declare is looked up where the Type is used, and the error points at that
-use. A reference of the [`info:`](reference/info.md) template is checked the same way, from the
+use. A Field path of the [`info:`](reference/info.md) template is checked the same way, from the
 top-level Fields.
 
 ```yaml,diagnostic=unknown-field

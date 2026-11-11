@@ -194,7 +194,8 @@ fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
                         format!("wd_info_display({})", model.extractors[*extractor].local)
                     }
                     InfoPart::Label { extractor, names } => {
-                        format!("wd_info_label({}, {})", model.extractors[*extractor].local, model.names[*names].local)
+                        let names = names.map_or_else(|| "{}".to_owned(), |n| model.names[n].local.clone());
+                        format!("wd_info_label({}, {names})", model.extractors[*extractor].local)
                     }
                     InfoPart::Case(path) => format!("({} or \"\")", case(path)),
                 })

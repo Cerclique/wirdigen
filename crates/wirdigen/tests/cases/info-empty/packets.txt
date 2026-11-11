@@ -1,0 +1,6 @@
+# flag=0: neither opt nor tiny is read, so the column is empty.
+0000  00
+# flag=1: opt=5.
+0000  01 05
+# flag=2: opt=6, tiny=7, shown as 7, not 0x07.
+0000  02 06 07
