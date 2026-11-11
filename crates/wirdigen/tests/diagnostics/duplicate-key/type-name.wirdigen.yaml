@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - { name: hdr, type: Header }
+types:
+  Header:
+    fields: [ { name: len, type: uint16 } ]
+  Header:
+    fields: [ { name: len, type: uint8 } ]

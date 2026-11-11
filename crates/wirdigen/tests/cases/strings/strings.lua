@@ -74,7 +74,7 @@ local function dissect_top(tvb, tree, offset)
     -- Field: fixed
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "fixed")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_fixed, tvb(offset, 4), ENC_UTF_8)
     offset = offset + 4
@@ -82,13 +82,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 1) then
             wd_truncated(tree, wd_ei_truncated, "user")
-            return offset
+            return nil
         end
         local len = tvb(offset, 1):uint()
         offset = offset + 1
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "user")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_user, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
@@ -97,13 +97,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 2) then
             wd_truncated(tree, wd_ei_truncated, "note")
-            return offset
+            return nil
         end
         local len = tvb(offset, 2):le_uint()
         offset = offset + 2
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "note")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_note, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
@@ -113,7 +113,7 @@ local function dissect_top(tvb, tree, offset)
         local len = wd_terminated(tvb, offset, 0, 1)
         if not len then
             wd_truncated(tree, wd_ei_truncated, "path")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_path, tvb(offset, len), ENC_UTF_8)
         offset = offset + len + 1
@@ -123,7 +123,7 @@ local function dissect_top(tvb, tree, offset)
         local len = wd_terminated(tvb, offset, 10, 1)
         if not len then
             wd_truncated(tree, wd_ei_truncated, "line")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_line, tvb(offset, len), ENC_ASCII)
         offset = offset + len + 1
@@ -133,7 +133,7 @@ local function dissect_top(tvb, tree, offset)
         local len = wd_terminated(tvb, offset, 0, 2)
         if not len then
             wd_truncated(tree, wd_ei_truncated, "wide")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_wide, tvb(offset, len), ENC_UTF_16 + ENC_LITTLE_ENDIAN)
         offset = offset + len + 2
@@ -141,14 +141,14 @@ local function dissect_top(tvb, tree, offset)
     -- Field: wide_be
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "wide_be")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_wide_be, tvb(offset, 4), ENC_UCS_2 + ENC_BIG_ENDIAN)
     offset = offset + 4
     -- Field: legacy
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "legacy")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_legacy, tvb(offset, 3), ENC_ISO_8859_1)
     offset = offset + 3

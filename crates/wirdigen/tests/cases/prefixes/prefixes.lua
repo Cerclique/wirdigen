@@ -58,13 +58,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 2) then
             wd_truncated(tree, wd_ei_truncated, "p16")
-            return offset
+            return nil
         end
         local len = tvb(offset, 2):uint()
         offset = offset + 2
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "p16")
-            return offset
+            return nil
         end
         tree:add(f_p16, tvb(offset, len))
         offset = offset + len
@@ -73,13 +73,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 3) then
             wd_truncated(tree, wd_ei_truncated, "p24")
-            return offset
+            return nil
         end
         local len = tvb(offset, 3):uint()
         offset = offset + 3
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "p24")
-            return offset
+            return nil
         end
         tree:add(f_p24, tvb(offset, len))
         offset = offset + len
@@ -88,13 +88,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 4) then
             wd_truncated(tree, wd_ei_truncated, "p32_le")
-            return offset
+            return nil
         end
         local len = tvb(offset, 4):le_uint()
         offset = offset + 4
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "p32_le")
-            return offset
+            return nil
         end
         tree:add(f_p32_le, tvb(offset, len))
         offset = offset + len
@@ -103,13 +103,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 5) then
             wd_truncated(tree, wd_ei_truncated, "p40")
-            return offset
+            return nil
         end
         local len = tvb(offset, 5):uint64():tonumber()
         offset = offset + 5
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "p40")
-            return offset
+            return nil
         end
         tree:add(f_p40, tvb(offset, len))
         offset = offset + len
@@ -118,13 +118,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 7) then
             wd_truncated(tree, wd_ei_truncated, "p56_le")
-            return offset
+            return nil
         end
         local len = tvb(offset, 7):le_uint64():tonumber()
         offset = offset + 7
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "p56_le")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_p56_le, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
@@ -133,13 +133,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 8) then
             wd_truncated(tree, wd_ei_truncated, "p64")
-            return offset
+            return nil
         end
         local len = tvb(offset, 8):uint64():tonumber()
         offset = offset + 8
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "p64")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_p64, tvb(offset, len), ENC_UTF_8)
         offset = offset + len

@@ -45,6 +45,7 @@ mod prelude;
 mod render;
 mod scalar;
 mod source;
+mod types;
 mod yaml;
 
 pub use diagnostic::{Diagnostic, Diagnostics, Note, Severity};

@@ -67,77 +67,77 @@ local function dissect_top(tvb, tree, offset)
     -- Field: abs_secs
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "abs_secs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_abs_secs, tvb(offset, 4), ENC_TIME_SECS + ENC_LITTLE_ENDIAN)
     offset = offset + 4
     -- Field: abs_secs_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_secs_nsecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_abs_secs_nsecs, tvb(offset, 8), ENC_TIME_SECS_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_ntp
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_ntp")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_abs_ntp, tvb(offset, 8), ENC_TIME_NTP + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_msecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_msecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_abs_msecs, tvb(offset, 8), ENC_TIME_MSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_usecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_usecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_abs_usecs, tvb(offset, 8), ENC_TIME_USECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_nsecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_abs_nsecs, tvb(offset, 8), ENC_TIME_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_secs
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "rel_secs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_rel_secs, tvb(offset, 4), ENC_TIME_SECS + ENC_LITTLE_ENDIAN)
     offset = offset + 4
     -- Field: rel_secs_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_secs_nsecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_rel_secs_nsecs, tvb(offset, 8), ENC_TIME_SECS_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_msecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_msecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_rel_msecs, tvb(offset, 8), ENC_TIME_MSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_usecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_usecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_rel_usecs, tvb(offset, 8), ENC_TIME_USECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_nsecs")
-        return offset
+        return nil
     end
     tree:add_packet_field(f_rel_nsecs, tvb(offset, 8), ENC_TIME_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8

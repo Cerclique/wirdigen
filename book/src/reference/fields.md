@@ -17,7 +17,7 @@ Each Field is shown in the protocol tree and can be filtered as `<protocol>.<nam
 ## A Field
 
 A Field is a mapping with a `name:` and exactly one key saying what it is. This chapter covers
-`type:` with a built-in type, and `fields:` with an
+`type:` with a built-in type or a [Type](#types), and `fields:` with an
 [inline structure](#inline-structures).
 
 - Leaving all of them out is the error
@@ -54,8 +54,8 @@ as one of those keys says (see [Strings and bytes](#strings-and-bytes)), and the
 | `eui64` | 8 | EUI-64 identifier |
 | `guid` | 16 | GUID (UUID) |
 
-A `type:` naming none of these built-ins is
-[`unknown-type`](../diagnostics.md#unknown-type).
+A `type:` starting with an uppercase letter names a [Type](#types) instead. A lowercase `type:`
+naming none of these built-ins is [`unknown-type`](../diagnostics.md#unknown-type).
 
 ```yaml
 name: sensor
@@ -74,7 +74,8 @@ fields:
 Fields are big-endian (network byte order) unless `endian:` says otherwise. The top-level
 `endian:` sets the default for the whole description, an
 [inline structure](#inline-structures)'s `endian:` the default for the Fields inside it, and a
-Field's own `endian:` overrides both. The value is `big` or `little`
+Field's own `endian:` overrides both. A [Type](#types) is read in its own byte order: its
+`endian:`, else the top-level one. The value is `big` or `little`
 ([`invalid-endian`](../diagnostics.md#invalid-endian)).
 
 ```yaml
@@ -384,10 +385,56 @@ say how a value is read or shown belong on the Fields inside: a length key on a 
 Only the Fields of one structure need different names: `header.length` and a top-level
 `length` can live side by side.
 
+## Types {#types}
+
+A **Type** is a named group of Fields, declared once under the top-level `types:` and used by
+any number of Fields with `type: <Name>`. A Field of a Type is shown like an inline structure: a
+subtree holding the Type's Fields.
+
+```yaml
+name: demo
+fields:
+  - { name: req_hdr, type: Header, label: Request header }
+  - { name: resp_hdr, type: Header, label: Response header }
+types:
+  Header:
+    fields:
+      - { name: length, type: uint16 }
+      - { name: sent, type: Stamp }
+  Stamp:
+    endian: little
+    fields:
+      - { name: secs, type: uint32 }
+      - { name: usecs, type: uint32 }
+```
+
+- `types:` maps each Type name to a body with a required `fields:`, written like an inline
+  structure's, and an optional `endian:`. Types can be declared in any order and use each
+  other.
+- A Type name is an uppercase letter, then letters or digits: `Header`, `V2Header`
+  ([`invalid-type-name`](../diagnostics.md#invalid-type-name)). Built-in types are all lowercase,
+  so the two never clash.
+- A Type is read in its own byte order: its `endian:`, else the top-level `endian:`, whatever
+  structure the Field using it is in. A Field of a Type takes `name:`, `label:` and
+  `description:` only: `endian:` on it is [`invalid-endian`](../diagnostics.md#invalid-endian),
+  a length key [`unexpected-length`](../diagnostics.md#unexpected-length), and a display or
+  value-mapping key [`incompatible-display`](../diagnostics.md#incompatible-display).
+- Using a Type nobody declared is [`unknown-type`](../diagnostics.md#unknown-type), reported
+  once however many Fields use it. Declaring a name twice is
+  [`duplicate-key`](../diagnostics.md#duplicate-key). A Type that contains itself, directly or
+  through other Types, is [`recursive-type`](../diagnostics.md#recursive-type), and a Type no
+  Field uses is the warning [`unused-type`](../diagnostics.md#unused-type).
+
+Type names never appear in filter names: each Field of a Type is filtered under the path of the
+Field using it, so the example above gives `demo.req_hdr.length`, `demo.req_hdr.sent.secs`,
+`demo.resp_hdr.length` and `demo.resp_hdr.sent.secs`, and a request header can be filtered
+apart from a response header.
+
 ## Filter names {#filter-names}
 
 Every Field the tree shows, structures included, gets the display filter name
-`<protocol>.<path>`, where the path is the chain of Field names from the top level down. In the
+`<protocol>.<path>`, where the path is the chain of Field names from the top level down,
+through inline structures and Fields of a [Type](#types), never through Type names. In the
 example above they are `demo.msg_type`, `demo.header`, `demo.header.length`,
 `demo.header.flags`, `demo.header.flags.urgent`, `demo.header.flags.priority` and
 `demo.payload`. A filter on a structure, such as `demo.header.flags`, matches every packet

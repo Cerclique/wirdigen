@@ -105,105 +105,105 @@ local function dissect_top(tvb, tree, offset)
     -- Field: msg_type
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "msg_type")
-        return offset
+        return nil
     end
     tree:add(f_msg_type, tvb(offset, 1))
     offset = offset + 1
     -- Field: reply_type
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "reply_type")
-        return offset
+        return nil
     end
     tree:add(f_reply_type, tvb(offset, 1))
     offset = offset + 1
     -- Field: status
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "status")
-        return offset
+        return nil
     end
     tree:add(f_status, tvb(offset, 2))
     offset = offset + 2
     -- Field: delta
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "delta")
-        return offset
+        return nil
     end
     tree:add(f_delta, tvb(offset, 1))
     offset = offset + 1
     -- Field: drift
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "drift")
-        return offset
+        return nil
     end
     tree:add(f_drift, tvb(offset, 4))
     offset = offset + 4
     -- Field: level8
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "level8")
-        return offset
+        return nil
     end
     tree:add(f_level8, tvb(offset, 1))
     offset = offset + 1
     -- Field: level16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "level16")
-        return offset
+        return nil
     end
     tree:add(f_level16, tvb(offset, 2))
     offset = offset + 2
     -- Field: huge
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "huge")
-        return offset
+        return nil
     end
     tree:add(f_huge, tvb(offset, 8))
     offset = offset + 8
     -- Field: id48
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "id48")
-        return offset
+        return nil
     end
     tree:add(f_id48, tvb(offset, 6), tvb(offset, 6):uint64())
     offset = offset + 6
     -- Field: enabled
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "enabled")
-        return offset
+        return nil
     end
     tree:add(f_enabled, tvb(offset, 1))
     offset = offset + 1
     -- Field: urgent
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "urgent")
-        return offset
+        return nil
     end
     tree:add(f_urgent, tvb(offset, 1))
     offset = offset + 1
     -- Field: length
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "length")
-        return offset
+        return nil
     end
     tree:add(f_length, tvb(offset, 2))
     offset = offset + 2
     -- Field: timeout
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "timeout")
-        return offset
+        return nil
     end
     tree:add(f_timeout, tvb(offset, 2))
     offset = offset + 2
     -- Field: distance
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "distance")
-        return offset
+        return nil
     end
     tree:add(f_distance, tvb(offset, 4))
     offset = offset + 4
     -- Field: ratio
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "ratio")
-        return offset
+        return nil
     end
     tree:add(f_ratio, tvb(offset, 8))
     offset = offset + 8

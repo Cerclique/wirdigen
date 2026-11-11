@@ -1,0 +1,17 @@
+# A Type used twice, a Type inside a Type, and a Type with its own byte order.
+name: demo
+fields:
+  - { name: req_hdr, type: Header }
+  - { name: resp_hdr, type: Header, label: Response header }
+  - name: body
+    fields:
+      - { name: stamp, type: Stamp }
+types:
+  Header:
+    fields:
+      - { name: len, type: uint16 }
+      - { name: stamp, type: Stamp }
+  Stamp:
+    endian: little
+    fields:
+      - { name: secs, type: uint32 }

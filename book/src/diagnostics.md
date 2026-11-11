@@ -206,8 +206,8 @@ fields: [ {name: a, type: uint8} ]
 
 **Severity**: error
 
-An `endian:` value, at the top level or on a Field, is not a byte order. Byte order is `big` or
-`little`, never encoded in a type name.
+An `endian:` value, at the top level, on a Type or on a Field, is not a byte order. Byte order
+is `big` or `little`, never encoded in a type name.
 
 ```yaml,diagnostic=invalid-endian
 name: demo
@@ -216,6 +216,20 @@ fields: [ {name: id, type: uint16} ]
 ```
 
 **Fix**: write `big` or `little`, or leave `endian:` out for big-endian.
+
+It is also reported for `endian:` on a Field of a Type: a Type is read in its own byte order,
+whichever Field uses it.
+
+```yaml,diagnostic=invalid-endian
+name: demo
+fields:
+  - { name: hdr, type: Header, endian: little }
+types:
+  Header:
+    fields: [ {name: length, type: uint16} ]
+```
+
+**Fix**: set `endian:` on the Type, or on the Fields inside it.
 
 ## `missing-field-kind` {#missing-field-kind}
 
@@ -266,9 +280,9 @@ fields: [ {name: msgType, type: uint8} ]
 
 **Severity**: error
 
-The name of an Enum under `enums:` is not an uppercase letter followed by letters or digits.
-Names of Enums start with an uppercase letter so they can never be mistaken for a Field or a
-built-in type, which are lowercase.
+The name of a Type under `types:` or of an Enum under `enums:` is not an uppercase letter
+followed by letters or digits. Names of Types and Enums start with an uppercase letter so they
+can never be mistaken for a Field or a built-in type, which are lowercase.
 
 ```yaml,diagnostic=invalid-type-name
 name: demo
@@ -278,7 +292,8 @@ enums:
   msg_type: { 1: Request }
 ```
 
-**Fix**: rename the Enum and every `values:` naming it, here `MsgType`.
+**Fix**: rename the Enum and every `values:` naming it, here `MsgType`. For a Type, rename it
+and every `type:` naming it.
 
 ## `duplicate-field-name` {#duplicate-field-name}
 
@@ -300,16 +315,39 @@ fields:
 
 **Severity**: error
 
-A Field's `type:` names no built-in type and no Type. When the name is close to a built-in, the
-message suggests it.
+A Field's `type:` names no built-in type and no Type. When the name is close to a built-in or
+to a declared Type, the message suggests it. An unknown Type is reported once, at its first
+use, however many Fields use it.
 
 ```yaml,diagnostic=unknown-type
 name: demo
 fields: [ {name: id, type: unit8} ]
 ```
 
-**Fix**: correct the spelling, here `uint8`. The built-in types are listed in
-[Fields](reference/fields.md#built-in-types).
+**Fix**: correct the spelling, here `uint8`, or declare the Type under `types:`. The built-in
+types are listed in [Fields](reference/fields.md#built-in-types).
+
+## `recursive-type` {#recursive-type}
+
+**Severity**: error
+
+A Type contains itself, directly or through other Types, so reading it would never end. Each
+cycle is reported once, at the use the first-declared Type of the cycle makes of the next one,
+and a note spells the whole cycle.
+
+```yaml,diagnostic=recursive-type
+name: demo
+fields:
+  - { name: root, type: Node }
+types:
+  Node:
+    fields:
+      - { name: id, type: uint8 }
+      - { name: child, type: Node }
+```
+
+**Fix**: break the cycle, for example by giving the inner Field a Type of its own that does not
+use the outer one.
 
 ## `unexpected-length` {#unexpected-length}
 
@@ -592,6 +630,33 @@ fields:
 enums:
   MsgType: { 1: Request }
 allow: [unused-enum]
+```
+
+## `unused-type` {#unused-type}
+
+**Severity**: warning
+
+A Type under `types:` is never named by a Field's `type:`, so the Dissector never reads it.
+
+```yaml,diagnostic=unused-type
+name: demo
+fields:
+  - { name: id, type: uint8 }
+types:
+  Header:
+    fields: [ {name: length, type: uint16} ]
+```
+
+**Fix**: use it with `type: Header`, or remove it. To keep it for later, allow the warning:
+
+```yaml
+name: demo
+fields:
+  - { name: id, type: uint8 }
+types:
+  Header:
+    fields: [ {name: length, type: uint16} ]
+allow: [unused-type]
 ```
 
 ## `unknown-allow` {#unknown-allow}

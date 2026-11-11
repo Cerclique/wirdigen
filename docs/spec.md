@@ -255,8 +255,8 @@ Two Fields reaching one filter path (§5.2) share a ProtoField only when type, `
 - `types:` is a map from Type name to `{ fields: [...], endian: … }`: `fields:` is required, `endian:` optional. A Type body is spelled like an inline structure Field without `name:`.
 - A Type can be used as a Field's `type:`, as an array element and as a `switch` case.
 - Type names are not part of filter names (§5.2): a Field `req_hdr` of Type `Header` with a Field `len` is `myproto.req_hdr.len`.
-- `endian:` can be set on a Type (§3.11).
-- Duplicate or unknown Type names, and recursive Types, are errors. A Type never used is the warning `unused-type`.
+- `endian:` can be set on a Type (§3.11). A Type is read in its own byte order, else the top level's, whatever structure the Field using it is in: one `dissect_<Type>` serves every use (§7.3). `endian:` on a Field of a Type is therefore `invalid-endian`, and the value keys on it are rejected as on an inline structure (`unexpected-length`, `incompatible-display`).
+- A duplicate Type name is `duplicate-key`; an unknown Type is `unknown-type`, reported once at its first use; a Type containing itself, directly or through other Types, is `recursive-type`, reported once per cycle. A Type never used is the warning `unused-type`; a misspelt use counts as using the Type it is closest to, as for Enums.
 - Expressions inside a Type are resolved at each place the Type is used (§4.3), and errors point at that use site.
 - There is no per-Type `info:` in v1.
 
@@ -333,7 +333,7 @@ There is no `align:` in v1.
 
 ### 3.11 Byte order
 
-`endian:` is `big` (default) or `little`. It is set at the top level and can be overridden on a Type or a Field. It is never encoded in type names.
+`endian:` is `big` (default) or `little`. It is set at the top level and can be overridden on a Type, an inline structure or a Field. A Type does not inherit the byte order of the structure it is used in (§3.5). It is never encoded in type names.
 
 ### 3.12 Registration
 
@@ -510,7 +510,7 @@ Errors:
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - bitfield widths not adding up to the container;
 - forward or unresolvable references; references to non-numeric Fields; conditional Fields used outside their scope;
-- duplicate sibling Field names; duplicate or unknown Type names; recursive Types;
+- duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - overlapping `switch` cases;
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`);
 - `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6);
@@ -584,7 +584,7 @@ Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─�
 
 ### 7.3 Generated code
 
-- **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Locals exist only for Fields some Expression or `info:` template references. Outer scopes are reached through a context table.
+- **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Locals exist only for Fields some Expression or `info:` template references. Outer scopes are reached through a context table.
 - **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, `bit`-based operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
 - **Names**: user names are always mangled (`f_<name>`, `dissect_<Type>`), and prelude names start with `wd_`, so a Field called `end` or `type` is safe.
 - **Format**: 4-space indent, fixed by the emitter (no external formatter). Comments name each Type (`-- Type: X`) and each Field's path, with no source line numbers.

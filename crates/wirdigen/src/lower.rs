@@ -25,6 +25,10 @@ pub(crate) struct Dissector {
     pub(crate) tables: Vec<SharedTable>,
     /// The `ProtoField`s to register, each once.
     pub(crate) proto_fields: Vec<ProtoField>,
+    /// The site tables of the uses of Types outside any Type, each declared once.
+    pub(crate) sites: Vec<SharedSite>,
+    /// The dissect functions of the Types, each after the Types it calls (spec §7.3).
+    pub(crate) types: Vec<TypeFunction>,
     /// The statements of the top-level layout.
     pub(crate) layout: Vec<Stmt>,
     /// The prelude chunks the Dissector uses, before dependencies are added.
@@ -124,13 +128,60 @@ impl FieldType {
     }
 }
 
+/// The dissect function of a Type: one per Type, shared by every use of it.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct TypeFunction {
+    /// The Type's name.
+    pub(crate) name: String,
+    /// The statements of its Fields, whose paths are relative to the Type and whose
+    /// `ProtoField`s are slots of the site table it is passed.
+    pub(crate) body: Vec<Stmt>,
+}
+
+/// The site table of one use of a Type: the `ProtoField`s registered for that use (spec §5.2),
+/// passed to the Type's dissect function, by slot key.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Site {
+    /// The path of the Field using the Type, which the Type's paths extend in truncation reports.
+    pub(crate) path: String,
+    /// The slots, in the Type's layout order: `f_<path>` holds a `ProtoField`, `t_<path>` the site
+    /// table of a Type the Type uses.
+    pub(crate) entries: Vec<(String, SiteEntry)>,
+}
+
+/// What a slot of a site table holds.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum SiteEntry {
+    /// Index into [`Dissector::proto_fields`].
+    Field(usize),
+    /// The site table of a use of a Type inside the Type.
+    Site(Site),
+}
+
+/// The site table of a use of a Type outside any Type, declared once as a Lua local.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SharedSite {
+    /// The Lua local (`site_req_hdr`).
+    pub(crate) local: String,
+    pub(crate) site: Site,
+}
+
+/// How a statement reaches a `ProtoField` or a site table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Ref {
+    /// A Lua local, outside any Type: an index into [`Dissector::proto_fields`] or
+    /// [`Dissector::sites`].
+    Local(usize),
+    /// A slot of the site table, inside a Type's dissect function.
+    Slot(String),
+}
+
 /// One step of a dissect function.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Stmt {
     /// A bounds-checked read added to the tree.
     Read {
-        /// Index into [`Dissector::proto_fields`].
-        field: usize,
+        field: Ref,
         length: Length,
         decode: Decode,
         /// The Field's path, for the comment and the truncation report.
@@ -139,12 +190,22 @@ pub(crate) enum Stmt {
     /// An inline structure: a subtree item holding the statements of its Fields, as long as
     /// the bytes they read.
     Structure {
-        /// Index into [`Dissector::proto_fields`].
-        field: usize,
+        field: Ref,
         /// The Field's path, for the comment.
         path: String,
         /// The statements of its Fields, inside the subtree.
         body: Vec<Stmt>,
+    },
+    /// A Field of a Type: a subtree item, filled by the Type's dissect function called with the
+    /// site table of this use, as long as the bytes it read.
+    Call {
+        field: Ref,
+        /// The Field's path, for the comment.
+        path: String,
+        /// The Type's name.
+        ty: String,
+        /// The site table of this use.
+        site: Ref,
     },
 }
 
@@ -182,11 +243,24 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         enums: &protocol.enums,
         proto_fields: Vec::new(),
         tables: Vec::new(),
+        slots: BTreeMap::new(),
+        sites: Vec::new(),
         // The layout is never empty, so every Dissector reads something and checks bounds.
         chunks: vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS],
     };
+    // Every Type's slots are known before any use of it builds a site table.
+    let types = protocol
+        .types
+        .iter()
+        .map(|t| {
+            let mut slots = Vec::new();
+            let body = lowering.type_structure(&t.fields, &[], &mut slots);
+            lowering.slots.insert(&t.name, slots);
+            TypeFunction { name: t.name.clone(), body }
+        })
+        .collect();
     let layout = lowering.structure(&protocol.fields, &[]);
-    let Lowering { proto_fields, tables, chunks, .. } = lowering;
+    let Lowering { proto_fields, tables, sites, chunks, .. } = lowering;
 
     let filter_name = protocol.name.clone();
     let short_name = filter_name.to_ascii_uppercase();
@@ -197,9 +271,29 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         filter_name,
         tables,
         proto_fields,
+        sites,
+        types,
         layout,
         chunks,
     }
+}
+
+/// A slot of a Type's site tables: what each use registers for one Field of the Type.
+#[derive(Debug, Clone)]
+struct Slot<'p> {
+    /// The key in the site table.
+    key: String,
+    /// The Field's path inside the Type.
+    segments: Vec<&'p str>,
+    kind: SlotKind<'p>,
+}
+
+#[derive(Debug, Clone)]
+enum SlotKind<'p> {
+    /// The `ProtoField` of this Field.
+    Field(&'p Field),
+    /// The site table of this Type, which the Field is of.
+    Site(&'p str),
 }
 
 /// What lowering has built so far, while it walks the layout.
@@ -209,65 +303,131 @@ struct Lowering<'p> {
     enums: &'p BTreeMap<String, Table>,
     proto_fields: Vec<ProtoField>,
     tables: Vec<SharedTable>,
+    /// The slots of each Type's site tables, in the Type's layout order.
+    slots: BTreeMap<&'p str, Vec<Slot<'p>>>,
+    sites: Vec<SharedSite>,
     chunks: Vec<&'static str>,
 }
 
-impl Lowering<'_> {
-    /// The statements of a structure whose Fields' paths start with `parent`.
-    fn structure(&mut self, fields: &[Field], parent: &[&str]) -> Vec<Stmt> {
+impl<'p> Lowering<'p> {
+    /// The statements of a structure outside any Type whose Fields' paths start with `parent`.
+    fn structure(&mut self, fields: &'p [Field], parent: &[&'p str]) -> Vec<Stmt> {
         fields.iter().map(|field| self.field(field, parent)).collect()
     }
 
-    /// Registers the `ProtoField` of a Field whose path starts with `parent`, and returns the
-    /// statement that reads it.
-    fn field(&mut self, field: &Field, parent: &[&str]) -> Stmt {
+    /// Registers the `ProtoField`s of a Field outside any Type whose path starts with `parent`,
+    /// and returns the statement that reads it.
+    fn field(&mut self, field: &'p Field, parent: &[&'p str]) -> Stmt {
         let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
+        let path = segments.join(".");
+        let index = self.proto_field(field, &segments);
+        match &field.kind {
+            FieldKind::Builtin(value) => self.read(value, Ref::Local(index), path),
+            FieldKind::Structure(fields) => {
+                Stmt::Structure { field: Ref::Local(index), body: self.structure(fields, &segments), path }
+            }
+            FieldKind::Type(ty) => {
+                let site = self.site(ty, &segments);
+                let local =
+                    unique(&format!("site_{}", segments.join("__")), |n| self.sites.iter().any(|s| s.local == n));
+                self.sites.push(SharedSite { local, site });
+                let site = Ref::Local(self.sites.len() - 1);
+                Stmt::Call { field: Ref::Local(index), path, ty: ty.clone(), site }
+            }
+        }
+    }
+
+    /// The statements of a structure inside a Type whose Fields' paths, relative to the Type,
+    /// start with `parent`, adding the slots they read to `slots`.
+    fn type_structure(&mut self, fields: &'p [Field], parent: &[&'p str], slots: &mut Vec<Slot<'p>>) -> Vec<Stmt> {
+        fields
+            .iter()
+            .map(|field| {
+                let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
+                let path = segments.join(".");
+                let mut slot = |prefix: &str, kind: SlotKind<'p>| {
+                    let key = unique(&format!("{prefix}{}", segments.join("__")), |k| slots.iter().any(|s| s.key == k));
+                    slots.push(Slot { key: key.clone(), segments: segments.clone(), kind });
+                    Ref::Slot(key)
+                };
+                let field_ref = slot("f_", SlotKind::Field(field));
+                match &field.kind {
+                    FieldKind::Builtin(value) => self.read(value, field_ref, path),
+                    FieldKind::Structure(fields) => {
+                        let body = self.type_structure(fields, &segments, slots);
+                        Stmt::Structure { field: field_ref, path, body }
+                    }
+                    FieldKind::Type(ty) => {
+                        let site = slot("t_", SlotKind::Site(ty));
+                        Stmt::Call { field: field_ref, path, ty: ty.clone(), site }
+                    }
+                }
+            })
+            .collect()
+    }
+
+    /// The site table of a use of the Type `ty` at the path `segments`, registering the
+    /// `ProtoField`s of that use.
+    fn site(&mut self, ty: &str, segments: &[&'p str]) -> Site {
+        let slots = self.slots[ty].clone();
+        let entries = slots
+            .into_iter()
+            .map(|slot| {
+                let path: Vec<&str> = segments.iter().copied().chain(slot.segments).collect();
+                let entry = match slot.kind {
+                    SlotKind::Field(field) => SiteEntry::Field(self.proto_field(field, &path)),
+                    SlotKind::Site(ty) => SiteEntry::Site(self.site(ty, &path)),
+                };
+                (slot.key, entry)
+            })
+            .collect();
+        Site { path: segments.join("."), entries }
+    }
+
+    /// The statement reading a Field of a built-in type through `field`, at `path`.
+    fn read(&mut self, value: &BuiltinField, field: Ref, path: String) -> Stmt {
+        let length = length(value);
+        if matches!(length, Length::Terminator { .. }) && !self.chunks.contains(&prelude::TERMINATED) {
+            self.chunks.push(prelude::TERMINATED);
+        }
+        Stmt::Read { field, length, decode: decode(value), path }
+    }
+
+    /// Registers the `ProtoField` of a Field at the path `segments`, returning its index.
+    fn proto_field(&mut self, field: &Field, segments: &[&str]) -> usize {
         let path = segments.join(".");
         let (field_type, strings) = match &field.kind {
             FieldKind::Builtin(value) => (
                 field_type(value),
                 value.mapping.as_ref().and_then(|m| strings(m, value.ty, self.enums, &mut self.tables)),
             ),
-            FieldKind::Structure(_) => (FieldType::new("none", Args::Plain), None),
+            FieldKind::Structure(_) | FieldKind::Type(_) => (FieldType::new("none", Args::Plain), None),
         };
         self.proto_fields.push(ProtoField {
-            local: self.local(&segments),
+            local: self.local(segments),
             abbrev: format!("{}.{path}", self.filter_name),
             label: field.label.clone().unwrap_or_else(|| default_label(&field.name)),
             description: field.description.clone(),
             field_type,
             strings,
         });
-        let index = self.proto_fields.len() - 1;
-        match &field.kind {
-            FieldKind::Builtin(value) => {
-                let length = length(value);
-                if matches!(length, Length::Terminator { .. }) && !self.chunks.contains(&prelude::TERMINATED) {
-                    self.chunks.push(prelude::TERMINATED);
-                }
-                Stmt::Read { field: index, length, decode: decode(value), path }
-            }
-            FieldKind::Structure(fields) => {
-                Stmt::Structure { field: index, body: self.structure(fields, &segments), path }
-            }
-        }
+        self.proto_fields.len() - 1
     }
 
     /// The Lua local of the `ProtoField` at a path: `f_` then the segments joined by `__`
-    /// (`f_options__ttl`). A Field name can itself hold `__`, so a local already taken gets the
-    /// first free `_<n>` suffix; filter names are never changed this way.
+    /// (`f_options__ttl`).
     fn local(&self, segments: &[&str]) -> String {
-        let base = format!("f_{}", segments.join("__"));
-        let taken = |name: &str| self.proto_fields.iter().any(|f| f.local == name);
-        if !taken(&base) {
-            return base;
-        }
-        // Of these `len + 1` names, at most `len` are taken.
-        (2..=self.proto_fields.len() + 2)
-            .map(|n| format!("{base}_{n}"))
-            .find(|name| !taken(name))
-            .expect("some suffix is free")
+        unique(&format!("f_{}", segments.join("__")), |name| self.proto_fields.iter().any(|f| f.local == name))
     }
+}
+
+/// `base`, or when `taken` says it is, `base` with the first free `_<n>` suffix. A Field name
+/// can itself hold `__`, so two paths can mangle alike; filter names are never changed this way.
+fn unique(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(base) {
+        return base.to_owned();
+    }
+    (2..=usize::MAX).map(|n| format!("{base}_{n}")).find(|name| !taken(name)).expect("some suffix is free")
 }
 
 /// The Wireshark field type a Field is shown as (spec §3.4.4, §3.4.6).
@@ -502,7 +662,7 @@ mod tests {
             .iter()
             .map(|stmt| match stmt {
                 Stmt::Read { length, decode, .. } => (*length, *decode),
-                Stmt::Structure { path, .. } => panic!("{path} is a structure"),
+                Stmt::Structure { path, .. } | Stmt::Call { path, .. } => panic!("{path} is a structure"),
             })
             .collect()
     }
@@ -591,7 +751,7 @@ mod tests {
         let protocol = protocol.unwrap_or_else(|| panic!("{diagnostics:?}"));
         let mapping = |field: &Field| match &field.kind {
             FieldKind::Builtin(value) => value.mapping.clone(),
-            FieldKind::Structure(_) => None,
+            FieldKind::Structure(_) | FieldKind::Type(_) => None,
         };
         assert_eq!(mapping(&protocol.fields[0]), mapping(&protocol.fields[1]));
         let d = lower(&protocol, "x");
@@ -663,8 +823,94 @@ mod tests {
             .flat_map(|stmt| match stmt {
                 Stmt::Read { decode, .. } => vec![*decode],
                 Stmt::Structure { body, .. } => all_decodes(body),
+                Stmt::Call { .. } => Vec::new(),
             })
             .collect()
+    }
+
+    /// A request and a response header of one Type, the Type using another Type.
+    const TYPES: &str = "name: demo\nfields:\n  - {name: req, type: Header}\n  - {name: resp, type: Header}\ntypes:\n  Header:\n    fields:\n      - {name: len, type: uint16}\n      - {name: stamp, type: Stamp}\n  Stamp:\n    fields: [ {name: secs, type: uint32} ]\n";
+
+    /// Spec §5.2: Type names never appear in filter names, and each use of a Type registers its
+    /// own `ProtoField`s, so a request and a response header can be filtered apart.
+    #[test]
+    fn each_use_of_a_type_registers_its_own_proto_fields() {
+        let d = lowered(TYPES, "x");
+        let abbrevs: Vec<&str> = d.proto_fields.iter().map(|f| f.abbrev.as_str()).collect();
+        assert_eq!(
+            abbrevs,
+            [
+                "demo.req",
+                "demo.req.len",
+                "demo.req.stamp",
+                "demo.req.stamp.secs",
+                "demo.resp",
+                "demo.resp.len",
+                "demo.resp.stamp",
+                "demo.resp.stamp.secs",
+            ]
+        );
+    }
+
+    /// Spec §7.3: one dissect function per Type, each defined before the functions calling it.
+    #[test]
+    fn types_are_defined_after_the_types_they_use() {
+        let d = lowered(TYPES, "x");
+        let names: Vec<&str> = d.types.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["Stamp", "Header"]);
+    }
+
+    /// Every `ProtoField` a Type's function reads through its site table is in the table of
+    /// each use, and is that use's `ProtoField` for the same Field.
+    #[test]
+    fn each_site_holds_the_proto_fields_its_type_reads() {
+        fn slots(stmts: &[Stmt]) -> Vec<(String, String)> {
+            let slot = |r: &Ref, path: &str| match r {
+                Ref::Slot(key) => (key.clone(), path.to_owned()),
+                Ref::Local(_) => panic!("{path} reads a local inside a Type"),
+            };
+            stmts
+                .iter()
+                .flat_map(|stmt| match stmt {
+                    Stmt::Read { field, path, .. } | Stmt::Call { field, path, .. } => vec![slot(field, path)],
+                    Stmt::Structure { field, path, body } => {
+                        [slot(field, path)].into_iter().chain(slots(body)).collect()
+                    }
+                })
+                .collect()
+        }
+        fn check(d: &Dissector, site: &Site, ty: &str) {
+            let function = d.types.iter().find(|t| t.name == ty).unwrap();
+            for (key, path) in slots(&function.body) {
+                let entry = site.entries.iter().find(|(k, _)| *k == key).map(|(_, e)| e);
+                let Some(SiteEntry::Field(index)) = entry else { panic!("{} has no `{key}`", site.path) };
+                assert_eq!(d.proto_fields[*index].abbrev, format!("demo.{}.{path}", site.path));
+            }
+            for (_, entry) in &site.entries {
+                if let SiteEntry::Site(nested) = entry {
+                    check(d, nested, "Stamp");
+                }
+            }
+        }
+        let d = lowered(TYPES, "x");
+        let paths: Vec<&str> = d.sites.iter().map(|s| s.site.path.as_str()).collect();
+        assert_eq!(paths, ["req", "resp"]);
+        for shared in &d.sites {
+            check(&d, &shared.site, "Header");
+        }
+    }
+
+    /// Spec §3.5, §3.11: a Type reads in its own byte order, else the top level's, whatever
+    /// encloses the place it is used.
+    #[test]
+    fn a_type_reads_in_its_own_byte_order() {
+        let d = lowered(
+            "name: demo\nendian: little\nfields:\n  - name: s\n    endian: big\n    fields: [ {name: a, type: A}, {name: b, type: B} ]\ntypes:\n  A:\n    fields: [ {name: x, type: uint16} ]\n  B:\n    endian: big\n    fields: [ {name: y, type: uint16}, {name: z, type: uint16, endian: little} ]\n",
+            "x",
+        );
+        let decodes: Vec<(&str, Vec<Decode>)> =
+            d.types.iter().map(|t| (t.name.as_str(), all_decodes(&t.body))).collect();
+        assert_eq!(decodes, [("A", vec![Decode::Little]), ("B", vec![Decode::Big, Decode::Little])]);
     }
 
     #[test]

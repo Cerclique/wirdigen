@@ -64,6 +64,7 @@ names! {
     InvalidTypeName => "invalid-type-name", Error;
     DuplicateFieldName => "duplicate-field-name", Error;
     UnknownType => "unknown-type", Error;
+    RecursiveType => "recursive-type", Error;
     UnexpectedLength => "unexpected-length", Error;
     MissingLength => "missing-length", Error;
     ConflictingLength => "conflicting-length", Error;
@@ -80,6 +81,7 @@ names! {
     NotSupportedYet => "not-supported-yet", Error;
     UnreachableValue => "unreachable-value", Warning;
     UnusedEnum => "unused-enum", Warning;
+    UnusedType => "unused-type", Warning;
     UnknownAllow => "unknown-allow", Warning;
 }
 

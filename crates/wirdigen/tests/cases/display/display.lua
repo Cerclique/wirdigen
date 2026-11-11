@@ -61,56 +61,56 @@ local function dissect_top(tvb, tree, offset)
     -- Field: plain
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "plain")
-        return offset
+        return nil
     end
     tree:add(f_plain, tvb(offset, 1))
     offset = offset + 1
     -- Field: dec
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "dec")
-        return offset
+        return nil
     end
     tree:add(f_dec, tvb(offset, 1))
     offset = offset + 1
     -- Field: hex
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "hex")
-        return offset
+        return nil
     end
     tree:add(f_hex, tvb(offset, 2))
     offset = offset + 2
     -- Field: oct
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "oct")
-        return offset
+        return nil
     end
     tree:add(f_oct, tvb(offset, 1))
     offset = offset + 1
     -- Field: dec_hex
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "dec_hex")
-        return offset
+        return nil
     end
     tree:add(f_dec_hex, tvb(offset, 4))
     offset = offset + 4
     -- Field: hex_dec
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "hex_dec")
-        return offset
+        return nil
     end
     tree:add(f_hex_dec, tvb(offset, 3))
     offset = offset + 3
     -- Field: wide_hex
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "wide_hex")
-        return offset
+        return nil
     end
     tree:add(f_wide_hex, tvb(offset, 6), tvb(offset, 6):uint64())
     offset = offset + 6
     -- Field: signed
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "signed")
-        return offset
+        return nil
     end
     tree:add(f_signed, tvb(offset, 2))
     offset = offset + 2

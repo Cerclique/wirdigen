@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - { name: node, type: Node }
+types:
+  Node:
+    fields:
+      - { name: id, type: uint8 }
+      - { name: next, type: Node }

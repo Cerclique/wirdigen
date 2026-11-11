@@ -51,21 +51,21 @@ local function dissect_top(tvb, tree, offset)
     -- Field: small
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "small")
-        return offset
+        return nil
     end
     tree:add(f_small, tvb(offset, 1))
     offset = offset + 1
     -- Field: medium
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "medium")
-        return offset
+        return nil
     end
     tree:add(f_medium, tvb(offset, 2))
     offset = offset + 2
     -- Field: large
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "large")
-        return offset
+        return nil
     end
     tree:add(f_large, tvb(offset, 4))
     offset = offset + 4

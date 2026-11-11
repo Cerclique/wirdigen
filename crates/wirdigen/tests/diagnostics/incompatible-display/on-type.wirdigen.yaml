@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - { name: hdr, type: Header, display: hex }
+types:
+  Header:
+    fields: [ { name: len, type: uint16 } ]

@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - { name: hdr, type: Header }
+types:
+  Header:
+    endian: little

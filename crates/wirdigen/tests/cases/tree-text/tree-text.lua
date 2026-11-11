@@ -55,35 +55,35 @@ local function dissect_top(tvb, tree, offset)
     -- Field: msg_type
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "msg_type")
-        return offset
+        return nil
     end
     tree:add(f_msg_type, tvb(offset, 1))
     offset = offset + 1
     -- Field: id
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "id")
-        return offset
+        return nil
     end
     tree:add(f_id, tvb(offset, 2))
     offset = offset + 2
     -- Field: flag
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flag")
-        return offset
+        return nil
     end
     tree:add(f_flag, tvb(offset, 1))
     offset = offset + 1
     -- Field: ratio
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "ratio")
-        return offset
+        return nil
     end
     tree:add(f_ratio, tvb(offset, 4))
     offset = offset + 4
     -- Field: addr
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "addr")
-        return offset
+        return nil
     end
     tree:add(f_addr, tvb(offset, 4))
     offset = offset + 4

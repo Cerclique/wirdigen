@@ -6,7 +6,9 @@
 
 use std::fmt::Write as _;
 
-use crate::lower::{Args, Decode, Dissector, Length, LuaTable, ProtoField, Stmt, Strings, TableRef};
+use crate::lower::{
+    Args, Decode, Dissector, Length, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt, Strings, TableRef,
+};
 use crate::prelude;
 
 const INDENT: &str = "    ";
@@ -70,16 +72,40 @@ pub(crate) fn emit(model: &Dissector) -> String {
     }
     w.block("wd_proto.fields = {", |w| model.proto_fields.iter().for_each(|f| w.line(&format!("{},", f.local))), "}");
     w.line("");
+    if !model.sites.is_empty() {
+        w.line("-- The ProtoFields of each use of a Type, passed to the Type's dissect function");
+        for shared in &model.sites {
+            w.block(&format!("local {} = {{", shared.local), |w| site_entries(w, model, &shared.site), "}");
+        }
+        w.line("");
+    }
     w.line(&format!("local wd_ei_truncated = wd_expert_truncated({proto})"));
     w.line("wd_proto.experts = { wd_ei_truncated }");
     w.line("");
+
+    // Every dissect function returns the offset after what it read, or `nil` once it stopped
+    // on a truncated packet, so that its callers stop too.
+    for function in &model.types {
+        w.line(&format!("-- Type: {}", function.name));
+        w.block(
+            &format!("local function dissect_{}(tvb, tree, offset, site)", function.name),
+            |w| {
+                for stmt in &function.body {
+                    statement(w, model, stmt, Scope::Type);
+                }
+                w.line("return offset");
+            },
+            "end",
+        );
+        w.line("");
+    }
 
     w.line("-- Layout");
     w.block(
         "local function dissect_top(tvb, tree, offset)",
         |w| {
             for stmt in &model.layout {
-                statement(w, model, stmt);
+                statement(w, model, stmt, Scope::Top);
             }
             w.line("return offset");
         },
@@ -178,10 +204,55 @@ fn lua_integer(value: i64) -> String {
     if value == i64::MIN { "(-9223372036854775807 - 1)".to_owned() } else { value.to_string() }
 }
 
-fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
+/// The slots of a site table, a nested site table spanning several lines.
+fn site_entries(w: &mut Writer, model: &Dissector, site: &Site) {
+    w.line(&format!("path = {},", lua_string(&site.path)));
+    for (key, entry) in &site.entries {
+        match entry {
+            SiteEntry::Field(index) => w.line(&format!("{key} = {},", model.proto_fields[*index].local)),
+            SiteEntry::Site(nested) => w.block(&format!("{key} = {{"), |w| site_entries(w, model, nested), "},"),
+        }
+    }
+}
+
+/// Which dissect function a statement is in, which says how its paths are reported.
+#[derive(Clone, Copy)]
+enum Scope {
+    /// The top-level layout: paths are whole.
+    Top,
+    /// A Type's function: paths are relative to the Type, and extend the site table's path.
+    Type,
+}
+
+/// The Lua expression of a `ProtoField` or a site table.
+fn reference(model: &Dissector, r: &Ref, is_site: bool) -> String {
+    match r {
+        Ref::Local(index) if is_site => model.sites[*index].local.clone(),
+        Ref::Local(index) => model.proto_fields[*index].local.clone(),
+        Ref::Slot(key) => format!("site.{key}"),
+    }
+}
+
+fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
+        Stmt::Call { field, path, ty, site } => {
+            let local = reference(model, field, false);
+            let site = reference(model, site, true);
+            w.line(&format!("-- Field: {path}"));
+            w.block(
+                "do",
+                |w| {
+                    w.line("local start = offset");
+                    w.line(&format!("local tree = tree:add({local}, tvb(offset, tvb:len() - offset))"));
+                    w.line(&format!("offset = dissect_{ty}(tvb, tree, offset, {site})"));
+                    w.block("if not offset then", |w| w.line("return nil"), "end");
+                    w.line("tree:set_len(offset - start)");
+                },
+                "end",
+            );
+        }
         Stmt::Structure { field, path, body } => {
-            let local = &model.proto_fields[*field].local;
+            let local = reference(model, field, false);
             w.line(&format!("-- Field: {path}"));
             // The subtree shadows `tree` for its Fields. It spans the rest of the packet until
             // they are read, so a truncated structure covers what is left of it.
@@ -191,7 +262,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
                     w.line("local start = offset");
                     w.line(&format!("local tree = tree:add({local}, tvb(offset, tvb:len() - offset))"));
                     for stmt in body {
-                        statement(w, model, stmt);
+                        statement(w, model, stmt, scope);
                     }
                     w.line("tree:set_len(offset - start)");
                 },
@@ -199,10 +270,14 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt) {
             );
         }
         Stmt::Read { field, length, decode, path } => {
-            let local = &model.proto_fields[*field].local;
+            let local = reference(model, field, false);
+            let reported = match scope {
+                Scope::Top => lua_string(path),
+                Scope::Type => format!("site.path .. {}", lua_string(&format!(".{path}"))),
+            };
             let truncated = |w: &mut Writer| {
-                w.line(&format!("wd_truncated(tree, wd_ei_truncated, {})", lua_string(path)));
-                w.line("return offset");
+                w.line(&format!("wd_truncated(tree, wd_ei_truncated, {reported})"));
+                w.line("return nil");
             };
             let add = |range: &str| match decode {
                 Decode::Big => format!("tree:add({local}, {range})"),

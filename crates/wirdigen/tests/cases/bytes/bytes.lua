@@ -70,14 +70,14 @@ local function dissect_top(tvb, tree, offset)
     -- Field: raw
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "raw")
-        return offset
+        return nil
     end
     tree:add(f_raw, tvb(offset, 3))
     offset = offset + 3
     -- Field: dotted
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "dotted")
-        return offset
+        return nil
     end
     tree:add(f_dotted, tvb(offset, 3))
     offset = offset + 3
@@ -85,13 +85,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 1) then
             wd_truncated(tree, wd_ei_truncated, "dashed")
-            return offset
+            return nil
         end
         local len = tvb(offset, 1):uint()
         offset = offset + 1
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "dashed")
-            return offset
+            return nil
         end
         tree:add(f_dashed, tvb(offset, len))
         offset = offset + len
@@ -100,13 +100,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 4) then
             wd_truncated(tree, wd_ei_truncated, "colons")
-            return offset
+            return nil
         end
         local len = tvb(offset, 4):le_uint()
         offset = offset + 4
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "colons")
-            return offset
+            return nil
         end
         tree:add(f_colons, tvb(offset, len))
         offset = offset + len
@@ -116,7 +116,7 @@ local function dissect_top(tvb, tree, offset)
         local len = wd_terminated(tvb, offset, 255, 1)
         if not len then
             wd_truncated(tree, wd_ei_truncated, "spaced")
-            return offset
+            return nil
         end
         tree:add(f_spaced, tvb(offset, len))
         offset = offset + len + 1
@@ -124,7 +124,7 @@ local function dissect_top(tvb, tree, offset)
     -- Field: empty
     if not wd_fits(tvb, offset, 0) then
         wd_truncated(tree, wd_ei_truncated, "empty")
-        return offset
+        return nil
     end
     tree:add(f_empty, tvb(offset, 0))
     offset = offset + 0

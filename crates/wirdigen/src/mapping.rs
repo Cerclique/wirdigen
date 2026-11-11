@@ -10,7 +10,7 @@ use std::ops::{Range, RangeInclusive};
 
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::Builtin;
-use crate::keys::{Keys, Spanned, closest, duplicate_key, expect_string, is_single_line, wrong_type};
+use crate::keys::{Keys, Spanned, closest, duplicate_key, expect_string, is_single_line, is_type_name, wrong_type};
 use crate::scalar::{Kind, parse_int, resolve_plain};
 use crate::yaml::{Node, Value};
 
@@ -557,10 +557,4 @@ fn check_unit(form: &Spanned<String>, diagnostics: &mut Vec<Diagnostic>) {
             "a unit must be a non-empty single line",
         ));
     }
-}
-
-/// `[A-Z][A-Za-z0-9]*` (spec §3.4.2).
-fn is_type_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars.next().is_some_and(|c| c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
 }
