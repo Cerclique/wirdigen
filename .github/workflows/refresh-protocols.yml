@@ -89,7 +89,7 @@ jobs:
           set -euo pipefail
           title="chore: refresh built-in protocols for Wireshark $VERSION"
 
-          bot="$APP_SLUG[bot]"
+          bot="${APP_SLUG}[bot]"
           bot_id=$(gh api "/users/$bot" --jq .id)
           git -c user.name="$bot" -c user.email="$bot_id+$bot@users.noreply.github.com" \
             commit --quiet --message "$title" -- "$SNAPSHOT"
