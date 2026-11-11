@@ -591,6 +591,26 @@ fields:
 **Fix**: write the name Wireshark registers the Dissector under, such as `json` or `data`.
 `tshark -G dissectors` lists them.
 
+## `invalid-info` {#invalid-info}
+
+**Severity**: error
+
+The top-level [`info:`](reference/info.md) template cannot be read: it is not a string, it is on
+several lines, a `{` or `}` pairs with nothing, or braces hold something other than a bare Field path, such as
+an Expression or a format specifier. Or a Field path names an inline structure, a Field of a Type
+or an array, which have no value of their own to show.
+
+```yaml,diagnostic=invalid-info
+name: demo
+info: "id={id:04x}"
+fields:
+  - { name: id, type: uint16 }
+```
+
+**Fix**: write each Field path in braces, `{id}`, and give the Field the
+[`display:`](reference/fields.md#display) it should show with. Write `{{` and `}}` for literal
+braces, and reference a Field inside a structure rather than the structure.
+
 ## `invalid-array` {#invalid-array}
 
 **Severity**: error
@@ -883,7 +903,8 @@ it: a misspelling, a path into a structure that has no such Field or into a Fiel
 structure, a path into the structure still being read, or a path into an
 [array](reference/arrays.md), whose Fields only its elements can read. Inside a Type, a name
 the Type does not declare is looked up where the Type is used, and the error points at that
-use.
+use. A Field path of the [`info:`](reference/info.md) template is checked the same way, from the
+top-level Fields.
 
 ```yaml,diagnostic=unknown-field
 name: demo

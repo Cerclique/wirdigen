@@ -1,0 +1,10 @@
+# `info:` (spec §3.14) renders a Field not read as nothing, so a template whose Fields were all
+# skipped empties the Info column. A Field whose `values:` labels none of the values its type
+# holds shows the number, not its display form.
+name: info-empty
+info: "{opt}{tiny}"
+fields:
+  - { name: flag, type: uint8 }
+  - { name: opt, type: uint8, if: flag }
+  - { name: tiny, type: uint8, display: hex, values: { 300: never }, if: "flag == 2" }
+allow: [unreachable-value]

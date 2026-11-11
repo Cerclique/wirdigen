@@ -1,0 +1,11 @@
+# kind=1 (Login), seq=0x0102, urgent set, prio=7 (high), user=bob; hdr.len=1, addr=192.0.2.1,
+# big=2^64-1 (max), ok, secret=9.
+0000  01 01 02 f0 62 6f 62 00 01 c0 00 02 01 ff ff ff
+0010  ff ff ff ff ff 01 09
+# kind=2: code=5, note=hi; hdr.len=2, addr=10.0.0.1, big=2^63 (no label), not ok, secret=0.
+0000  02 00 03 30 05 02 68 69 00 02 0a 00 00 01 80 00
+0010  00 00 00 00 00 00 00 00
+# kind=3: no case, so the rest is shown raw and nothing after the switch is read.
+0000  03 00 04 00 aa
+# kind=1, truncated in the user name: only kind, seq and flags are read.
+0000  01 00 05 80 62

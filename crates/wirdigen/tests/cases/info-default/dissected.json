@@ -1,0 +1,65 @@
+[
+  {
+    "info-default.count": "1",
+    "info-default.items": {
+      "info-default.items.sub": {
+        "info-default.items.sub.v": "7"
+      }
+    },
+    "info-default.msg": {
+      "info-default.msg.tag": "1",
+      "info-default.msg.payload": {
+        "info-default.msg.payload.inner": {
+          "info-default.msg.payload.inner.x": "2"
+        }
+      },
+      "info-default.msg.op": {
+        "info-default.msg.op.y": "3"
+      }
+    }
+  },
+  {
+    "info-default.count": "0",
+    "info-default.msg": {
+      "info-default.msg.tag": "4",
+      "info-default.msg.payload": {
+        "info-default.msg.payload.inner": {
+          "info-default.msg.payload.inner.z": "9"
+        }
+      },
+      "info-default.msg.op": {
+        "info-default.msg.op.w": "8"
+      }
+    }
+  },
+  {
+    "info-default.count": "5",
+    "info-default.items": [
+      {
+        "info-default.items.sub": {
+          "info-default.items.sub.v": "1"
+        }
+      },
+      {
+        "info-default.items.sub": {
+          "info-default.items.sub.v": "1"
+        }
+      },
+      {
+        "info-default.items.sub": {
+          "info-default.items.sub.v": "1"
+        }
+      },
+      {
+        "info-default.items.sub": {
+          "info-default.items.sub.v": "1"
+        }
+      },
+      {
+        "info-default.items.sub": {
+          "info-default.items.sub.v": "1"
+        }
+      }
+    ]
+  }
+]

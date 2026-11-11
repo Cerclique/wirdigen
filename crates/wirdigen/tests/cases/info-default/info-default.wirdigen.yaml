@@ -1,0 +1,32 @@
+# Without `info:` (spec §3.14), the Info column shows the case name of the outermost `switch`
+# Field: the one fewest structures and Fields of Types away from the top level, here `msg.op`
+# inside a Type, not `msg.payload.inner` one level deeper nor `items.sub` in an array. Its
+# subject is an Expression, so the case name is the number. When it is not read, the column
+# keeps the transport's text.
+name: info-default
+fields:
+  - { name: count, type: uint8 }
+  - name: items
+    count: count
+    fields:
+      - name: sub
+        switch: 1
+        cases:
+          1: [ { name: v, type: uint8 } ]
+  - { name: msg, type: Message, if: "count < 5" }
+types:
+  Message:
+    fields:
+      - { name: tag, type: uint8 }
+      - name: payload
+        fields:
+          - name: inner
+            switch: tag
+            cases:
+              1: [ { name: x, type: uint8 } ]
+            default: [ { name: z, type: uint8 } ]
+      - name: op
+        switch: "tag + 1"
+        cases:
+          2: [ { name: y, type: uint8 } ]
+        default: [ { name: w, type: uint8 } ]

@@ -10,7 +10,7 @@ in the order the book and the examples use.
 | `registration` | no | Ports claimed by default, and Decode As ([Registration](registration.md)). Leaving it out means Decode As only. |
 | `framing` | no | How messages are found in a TCP stream. |
 | `endian` | no | Default byte order, `big` (the default) or `little`. |
-| `info` | no | Template of the Info column. |
+| `info` | no | Template of the Info column ([Info column](info.md)). Without it, the column names the case of the outermost `switch` Field. |
 | `fields` | yes | The top-level layout: a non-empty list of Fields. |
 | `types` | no | Named Types, reusable groups of Fields. |
 | `enums` | no | Named tables of labels for integer values. |

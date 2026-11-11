@@ -1,0 +1,4 @@
+name: demo
+info: "id={id"
+fields:
+  - { name: id, type: uint8 }

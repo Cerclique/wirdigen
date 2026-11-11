@@ -1,0 +1,14 @@
+[
+  {
+    "info-empty.flag": "0"
+  },
+  {
+    "info-empty.flag": "1",
+    "info-empty.opt": "5"
+  },
+  {
+    "info-empty.flag": "2",
+    "info-empty.opt": "6",
+    "info-empty.tiny": "0x07"
+  }
+]

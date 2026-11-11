@@ -70,4 +70,7 @@ cases! {
     expect => "expect",
     handoff => "handoff",
     registration => "registration",
+    info => "info",
+    info_default => "info-default",
+    info_empty => "info-empty",
 }

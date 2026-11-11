@@ -1,0 +1,5 @@
+# In an escaped YAML string, the error points at the whole value.
+name: demo
+info: "\t{id:x}"
+fields:
+  - { name: id, type: uint8 }

@@ -1,0 +1,6 @@
+# count=1: items[0].sub reads v=7; msg: tag=1, inner reads x=2, op's subject is 2: y=3.
+0000  01 07 01 02 03
+# count=0; msg: tag=4, inner's default reads z=9, op's subject is 5: its default reads w=8.
+0000  00 04 09 08
+# count=5: msg is not read, so the column keeps the transport's text.
+0000  05 01 01 01 01 01

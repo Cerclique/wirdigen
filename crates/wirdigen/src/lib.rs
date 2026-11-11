@@ -40,6 +40,7 @@ mod expect;
 mod expr;
 mod field;
 mod filter;
+mod info;
 mod keys;
 mod lower;
 #[cfg(test)]
