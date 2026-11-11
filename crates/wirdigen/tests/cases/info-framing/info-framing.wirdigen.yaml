@@ -1,0 +1,17 @@
+# `info:` under Framing (spec §3.13, §3.14): with several Messages in one TCP segment, the Info
+# column shows the last one's, and a Field under `if:` or in a case it did not read shows nothing,
+# even when an earlier Message of the segment read it.
+name: info-framing
+framing:
+  header: 2
+  length: "len"
+info: "{kind} {body} code={body.code} note={note}"
+fields:
+  - { name: kind, type: uint8 }
+  - { name: len, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: [ { name: code, type: uint8 } ]
+      2: [ { name: other, type: uint8 } ]
+  - { name: note, type: uint8, if: "kind == 1" }

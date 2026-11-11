@@ -238,6 +238,10 @@ fn message(w: &mut Writer, model: &Dissector) {
     if model.chunks.contains(&prelude::INFO_CASES) {
         w.line("wd_info_cases = {}");
     }
+    if !model.extractors.is_empty() {
+        let fields: Vec<&str> = model.extractors.iter().map(|x| x.local.as_str()).collect();
+        w.line(&format!("local before = wd_info_counts({{ {} }})", fields.join(", ")));
+    }
     w.line(&root_line(model));
     w.line("dissect_top(tvb, pinfo, root, 0)");
     if let Some(info) = &model.info {
@@ -245,7 +249,8 @@ fn message(w: &mut Writer, model: &Dissector) {
     }
 }
 
-/// Sets the Info column once the Message is read, however far it was read (spec §3.14).
+/// Sets the Info column once the Message is read, however far it was read (spec §3.14), from
+/// the values it read: `before` holds the extractors' counts from before it.
 fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
     let case = |path: &str| format!("wd_info_cases[{}]", lua_string(path));
     match info {
@@ -255,11 +260,11 @@ fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
                 .map(|part| match part {
                     InfoPart::Text(text) => lua_string(text),
                     InfoPart::Display(extractor) => {
-                        format!("wd_info_display({})", model.extractors[*extractor].local)
+                        format!("wd_info_display({}, before)", model.extractors[*extractor].local)
                     }
                     InfoPart::Label { extractor, names } => {
                         let names = names.map_or_else(|| "{}".to_owned(), |n| model.names[n].local.clone());
-                        format!("wd_info_label({}, {names})", model.extractors[*extractor].local)
+                        format!("wd_info_label({}, before, {names})", model.extractors[*extractor].local)
                     }
                     InfoPart::Case(path) => format!("({} or \"\")", case(path)),
                 })

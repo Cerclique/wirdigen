@@ -83,4 +83,5 @@ datagram is one message, as without `framing:`.
 - A length that is negative, below the header, or has no value (a division by zero, a shift
   outside 0 to 63) is a "Malformed" expert info error: the rest of the segment is shown as one
   malformed message.
-- With several messages in a packet, the Info column shows the last one's.
+- With several messages in a packet, the Info column shows the last one's, with only the
+  Fields that message read.

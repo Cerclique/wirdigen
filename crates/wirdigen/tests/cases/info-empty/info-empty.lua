@@ -43,25 +43,41 @@ local function wd_gt(a, b) return wd_bool(a > b) end
 local function wd_ge(a, b) return wd_bool(a >= b) end
 local function wd_not(a) return wd_bool(a == 0) end
 
--- The Info column (spec §3.14). The last value the field extractor `field` found in the packet,
--- or nil when its Field was not read.
-local function wd_info_found(field)
-    local found = { field() }
-    return found[#found]
+-- The Info column (spec §3.14). A field extractor gives every value its Field took in the
+-- packet, and a packet can hold several Messages under Framing (spec §3.13): the Info column of
+-- a Message shows only the values it read, those found past the counts `wd_info_counts` takes
+-- of each extractor in `fields` before the Message is read. The result is keyed by extractor.
+local function wd_info_counts(fields)
+    local counts = {}
+    for _, field in ipairs(fields) do
+        counts[field] = select("#", field())
+    end
+    return counts
 end
 
--- What Wireshark displays for the value `field` extracts, or "" when its Field was not read.
-local function wd_info_display(field)
-    local info = wd_info_found(field)
+-- The last value the field extractor `field` found in the Message, or nil when its Field was
+-- not read there; `before` is what `wd_info_counts` returned before the Message was read.
+local function wd_info_found(field, before)
+    local found = { field() }
+    if #found > before[field] then
+        return found[#found]
+    end
+    return nil
+end
+
+-- What Wireshark displays for the value `field` extracts, or "" when its Field was not read in
+-- the Message (`before` as for `wd_info_found`).
+local function wd_info_display(field, before)
+    local info = wd_info_found(field, before)
     return info and info.display or ""
 end
 
 -- The label in `names`, a list of `{ low, high, label }`, of the value `field` extracts, or else
--- the number; "" when its Field was not read. A 64-bit value comes as a UInt64 or an Int64,
--- looked up as an Expression reads it, its 64 bits as a signed integer, and shown as Wireshark
--- shows it.
-local function wd_info_label(field, names)
-    local info = wd_info_found(field)
+-- the number; "" when its Field was not read in the Message (`before` as for `wd_info_found`). A
+-- 64-bit value comes as a UInt64 or an Int64, looked up as an Expression reads it, its 64 bits
+-- as a signed integer, and shown as Wireshark shows it.
+local function wd_info_label(field, before, names)
+    local info = wd_info_found(field, before)
     if not info then return "" end
     local key = info.value
     if type(key) == "userdata" then
@@ -136,9 +152,10 @@ end
 
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "INFO-EMPTY"
+    local before = wd_info_counts({ x_opt, x_tiny })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO-EMPTY")
     dissect_top(tvb, pinfo, root, 0)
-    pinfo.cols.info = wd_info_display(x_opt) .. wd_info_label(x_tiny, {})
+    pinfo.cols.info = wd_info_display(x_opt, before) .. wd_info_label(x_tiny, before, {})
     return tvb:len()
 end
 
