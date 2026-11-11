@@ -20,6 +20,7 @@ pub(crate) struct Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What an Expression node is.
 pub(crate) enum ExprKind {
     /// An integer literal. Literals above `i64::MAX` wrap to negative values (spec §4.4).
     Int(u64),
@@ -56,8 +57,10 @@ pub(crate) enum Builtin {
 }
 
 impl Builtin {
+    /// Every built-in, for the note of an unknown one and for tests.
     const ALL: [Self; 2] = [Self::Offset, Self::Remaining];
 
+    /// The name as written, `_` included.
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Offset => "_offset",
@@ -67,6 +70,7 @@ impl Builtin {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A unary operator (spec §4.2).
 pub(crate) enum UnaryOp {
     /// `!`: 1 for zero, else 0.
     Not,
@@ -77,6 +81,7 @@ pub(crate) enum UnaryOp {
 }
 
 impl UnaryOp {
+    /// The operator as written.
     pub(crate) const fn symbol(self) -> &'static str {
         match self {
             Self::Not => "!",
@@ -87,6 +92,7 @@ impl UnaryOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A binary operator (spec §4.2).
 pub(crate) enum BinaryOp {
     Mul,
     Div,
@@ -109,6 +115,7 @@ pub(crate) enum BinaryOp {
 }
 
 impl BinaryOp {
+    /// Every binary operator, for the lexer.
     const ALL: [Self; 18] = [
         Self::Mul,
         Self::Div,
@@ -130,6 +137,7 @@ impl BinaryOp {
         Self::Or,
     ];
 
+    /// The operator as written.
     pub(crate) const fn symbol(self) -> &'static str {
         match self {
             Self::Mul => "*",
@@ -186,7 +194,12 @@ pub(crate) struct SyntaxError {
 
 impl SyntaxError {
     fn new(span: Range<usize>, message: impl Into<String>) -> Self {
-        Self { name: Name::ExpressionSyntax, span, message: message.into(), note: None }
+        Self::named(Name::ExpressionSyntax, span, message)
+    }
+
+    /// An error with its own Diagnostic name, not `expression-syntax`.
+    fn named(name: Name, span: Range<usize>, message: impl Into<String>) -> Self {
+        Self { name, span, message: message.into(), note: None }
     }
 
     fn with_note(mut self, note: impl Into<String>) -> Self {
@@ -235,6 +248,7 @@ pub(crate) fn parse_text(text: &str) -> Result<Expr, SyntaxError> {
 /// constant Expression, validation reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Fault {
+    /// `/` or `%` by zero.
     DivisionByZero,
     /// A shift count outside 0..63.
     ShiftOutOfRange(i64),
@@ -332,6 +346,7 @@ impl Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// What a token of an Expression is.
 enum TokenKind {
     Int(u64),
     Path(Vec<String>),
@@ -357,6 +372,7 @@ impl fmt::Display for TokenKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A token, with its span in the Expression's text.
 struct Token {
     kind: TokenKind,
     span: Range<usize>,
@@ -424,6 +440,7 @@ fn word_end(bytes: &[u8], mut at: usize) -> usize {
     at
 }
 
+/// The error for a character at `at` that starts no token.
 fn unexpected_character(text: &str, at: usize) -> SyntaxError {
     let c = text[at..].chars().next().expect("`at` is inside `text`");
     let span = at..at + c.len_utf8();
@@ -461,18 +478,13 @@ fn literal(word: &str, span: Range<usize>) -> Result<u64, SyntaxError> {
         (lower.as_str(), 10, "decimal")
     };
     if radix == 10 && word.len() > 1 && word.starts_with('0') && word.bytes().all(|b| b.is_ascii_digit() || b == b'_') {
-        return Err(SyntaxError {
-            name: Name::LeadingZeroLiteral,
-            span,
-            message: format!("`{word}` starts with a zero"),
-            note: Some(format!(
-                "write `{}` for a decimal number, or `0x`/`0b` for hexadecimal or binary; octal does not exist",
-                word.trim_start_matches(['0', '_'])
-                    .replace('_', "")
-                    .parse::<u64>()
-                    .map_or_else(|_| "0".to_owned(), |v| v.to_string())
-            )),
-        });
+        // The decimal number a reader most likely meant, the zeros dropped.
+        let decimal = word.trim_start_matches(['0', '_']);
+        let decimal = if decimal.is_empty() { "0" } else { decimal };
+        return Err(SyntaxError::named(Name::LeadingZeroLiteral, span, format!("`{word}` starts with a zero"))
+            .with_note(format!(
+                "write `{decimal}` for a decimal number, or `0x`/`0b` for hexadecimal or binary; octal does not exist"
+            )));
     }
     let digits: String = digits.chars().filter(|c| *c != '_').collect();
     if let Some(bad) = digits.chars().find(|c| !c.is_digit(radix)) {
@@ -484,14 +496,17 @@ fn literal(word: &str, span: Range<usize>) -> Result<u64, SyntaxError> {
     u64::from_str_radix(&digits, radix).map_err(|_| SyntaxError::new(span, format!("`{word}` does not fit in 64 bits")))
 }
 
+/// A precedence-climbing parser over the tokens of one Expression.
 struct Parser<'t> {
     tokens: &'t [Token],
+    /// The index of the next token to read.
     next: usize,
     /// The length of the text, where a missing token is reported.
     end: usize,
 }
 
 impl Parser<'_> {
+    /// The next token, without reading it.
     fn peek(&self) -> Option<&Token> {
         self.tokens.get(self.next)
     }
@@ -506,12 +521,8 @@ impl Parser<'_> {
                 break;
             }
             if compared && op.is_comparison() {
-                return Err(SyntaxError {
-                    name: Name::ChainedComparison,
-                    span,
-                    message: "comparisons cannot be chained".to_owned(),
-                    note: Some("join two comparisons with `&&`, as in `a < b && b < c`, or add parentheses".to_owned()),
-                });
+                return Err(SyntaxError::named(Name::ChainedComparison, span, "comparisons cannot be chained")
+                    .with_note("join two comparisons with `&&`, as in `a < b && b < c`, or add parentheses"));
             }
             self.next += 1;
             let right = self.binary(op.precedence() + 1)?;

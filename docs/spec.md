@@ -273,7 +273,7 @@ A variable-length Field (string, bytes, …) states its length with exactly one 
 | `prefix: <int type>` | Length read from an unsigned integer type (`uint8` … `uint64`) just before the value, in the Field's byte order (`prefix: uint16`). |
 | `terminator: <byte>` | Ends at that byte, 0 to 255 (NUL-terminated strings). The terminator is consumed but not part of the value. |
 
-None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
+None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, and so is a constant Expression that is negative, divides by zero or shifts by a count outside 0..63 (#60: rejected when building rather than reported at runtime as in §4.4), any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
 
 A Field placed after a `size: "_remaining"` Field in the same structure is a warning.
 
@@ -423,7 +423,7 @@ Literals: decimal, `0x` hex (case-insensitive), `0b` binary, with `_` separators
 - One value type: signed 64-bit integer (Lua 5.3/5.4 integers). A `uint64` above 2⁶³ reads as negative.
 - Truthiness is C's: comparisons and logic give 1 or 0, and any non-zero value is true.
 - `/` truncates toward zero and `%` takes the dividend's sign (C, not Lua floor division). `>>` is arithmetic. Overflow wraps.
-- Operators compile to prelude helper calls, never native Lua bitwise operators or `//`, so the file parses under Lua 5.2 (§5.4).
+- Operators compile to prelude helper calls, never native Lua bitwise operators or `//` in the parsed file, so it parses under Lua 5.2 (§5.4); the helpers that need Lua 5.3 operators compile them from strings with `load`, after the version guard.
 - Division or modulo by zero, a negative size, count, padding or framing length, and a shift count outside 0..63 are a "Malformed" expert info error on that Field. The Dissector stops cleanly and never raises a Lua error.
 - An oversized size or count is a truncation (§5.3).
 

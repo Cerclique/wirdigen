@@ -410,6 +410,7 @@ impl<'p> Lowering<'p> {
         Stmt::Read { field, length, decode: decode(value), path }
     }
 
+    /// Adds a prelude chunk the Dissector needs, once.
     fn use_chunk(&mut self, chunk: &'static str) {
         if !self.chunks.contains(&chunk) {
             self.chunks.push(chunk);
