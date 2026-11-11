@@ -32,6 +32,8 @@ pub(crate) const NAMES: &str = "names";
 pub(crate) const UNMATCHED: &str = "unmatched";
 /// Reporting a value outside a Field's `expect:`.
 pub(crate) const UNEXPECTED: &str = "unexpected";
+/// Handing a `bytes` Field's bytes to a Wireshark Dissector by name.
+pub(crate) const HANDOFF: &str = "handoff";
 
 #[derive(Debug)]
 struct Chunk {

@@ -1,0 +1,15 @@
+name: demo
+fields:
+  - { name: text, type: string, size: 2, dissector: json }
+  - { name: count, type: uint8, dissector: json }
+  - name: header
+    dissector: json
+    fields: [ { name: a, type: uint8 } ]
+  - { name: point, type: Point, dissector: json }
+  - name: body
+    switch: header.a
+    dissector: json
+    cases: { 1: Point }
+types:
+  Point:
+    fields: [ { name: x, type: uint8 } ]

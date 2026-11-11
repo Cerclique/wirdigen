@@ -133,7 +133,7 @@ local wd_ei_truncated = wd_expert_truncated("types")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Type: Stamp
-local function dissect_Stamp(tvb, tree, offset, site)
+local function dissect_Stamp(tvb, pinfo, tree, offset, site)
     -- Field: secs
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".secs")
@@ -155,7 +155,7 @@ local function dissect_Stamp(tvb, tree, offset, site)
 end
 
 -- Type: Header
-local function dissect_Header(tvb, tree, offset, site)
+local function dissect_Header(tvb, pinfo, tree, offset, site)
     -- Field: kind
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".kind")
@@ -187,7 +187,7 @@ local function dissect_Header(tvb, tree, offset, site)
     do
         local start = offset
         local tree = tree:add(site.f_stamp, tvb(offset, tvb:len() - offset))
-        offset = dissect_Stamp(tvb, tree, offset, site.t_stamp)
+        offset = dissect_Stamp(tvb, pinfo, tree, offset, site.t_stamp)
         if not offset then
             return nil
         end
@@ -197,12 +197,12 @@ local function dissect_Header(tvb, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: req_hdr
     do
         local start = offset
         local tree = tree:add(f_req_hdr, tvb(offset, tvb:len() - offset))
-        offset = dissect_Header(tvb, tree, offset, site_req_hdr)
+        offset = dissect_Header(tvb, pinfo, tree, offset, site_req_hdr)
         if not offset then
             return nil
         end
@@ -212,7 +212,7 @@ local function dissect_top(tvb, tree, offset)
     do
         local start = offset
         local tree = tree:add(f_resp_hdr, tvb(offset, tvb:len() - offset))
-        offset = dissect_Header(tvb, tree, offset, site_resp_hdr)
+        offset = dissect_Header(tvb, pinfo, tree, offset, site_resp_hdr)
         if not offset then
             return nil
         end
@@ -226,7 +226,7 @@ local function dissect_top(tvb, tree, offset)
         do
             local start = offset
             local tree = tree:add(f_trailer__stamp, tvb(offset, tvb:len() - offset))
-            offset = dissect_Stamp(tvb, tree, offset, site_trailer__stamp)
+            offset = dissect_Stamp(tvb, pinfo, tree, offset, site_trailer__stamp)
             if not offset then
                 return nil
             end
@@ -240,7 +240,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "TYPES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "TYPES")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

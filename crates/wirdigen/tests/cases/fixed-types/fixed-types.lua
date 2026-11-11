@@ -58,7 +58,7 @@ local wd_ei_truncated = wd_expert_truncated("fixed-types")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: is_set
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "is_set")
@@ -121,7 +121,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "FIXED-TYPES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "FIXED-TYPES")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

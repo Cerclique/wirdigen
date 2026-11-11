@@ -222,3 +222,41 @@ local function wd_expect(item, value, ranges, expected, expert_info, path)
     end
     item:add_proto_expert_info(expert_info, "Unexpected value: " .. path .. " (expected " .. expected .. ")")
 end
+
+--@chunk handoff
+-- Handing a `bytes` Field's bytes to a Wireshark Dissector by name (spec §3.10). The `_`
+-- segment is reserved: no Field path can reach it (spec §3.4.2, §5.2).
+local function wd_expert_dissector(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._undecoded.dissector",
+        "Unknown Dissector",
+        expert.group.UNDECODED,
+        expert.severity.WARN
+    )
+end
+
+-- The Dissectors found by name, or false for a name Wireshark does not know. Each is looked up
+-- when a packet first needs it, once every Dissector is registered.
+local wd_dissectors = {}
+
+-- Passes the bytes of `range` to the Dissector named `name`, whose layer goes into `tree`. An
+-- unknown name adds a warning to `tree` instead, even when there are no bytes to pass. An error
+-- in the Dissector is shown in its own layer by Wireshark, and never escapes as a Lua error. The
+-- Protocol column keeps this Dissector's short name (spec §5.5).
+local function wd_handoff(name, range, pinfo, tree, expert_info, path)
+    local dissector = wd_dissectors[name]
+    if dissector == nil then
+        local found, value = pcall(Dissector.get, name)
+        dissector = found and value or false
+        wd_dissectors[name] = dissector
+    end
+    if not dissector then
+        tree:add_proto_expert_info(expert_info, "Unknown Dissector " .. name .. ": " .. path)
+        return
+    end
+    if range:len() > 0 then
+        local protocol = tostring(pinfo.cols.protocol)
+        pcall(dissector.call, dissector, range:tvb(), pinfo, tree)
+        pinfo.cols.protocol = protocol
+    end
+end

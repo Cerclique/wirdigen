@@ -212,7 +212,7 @@ local wd_ei_unmatched = wd_expert_unmatched("switch")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_unmatched }
 
 -- Type: Login
-local function dissect_Login(tvb, tree, offset, site)
+local function dissect_Login(tvb, pinfo, tree, offset, site)
     -- Field: user_id
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".user_id")
@@ -231,7 +231,7 @@ local function dissect_Login(tvb, tree, offset, site)
 end
 
 -- Type: Vendor
-local function dissect_Vendor(tvb, tree, offset, site)
+local function dissect_Vendor(tvb, pinfo, tree, offset, site)
     local v_code
     -- Field: code
     if not wd_fits(tvb, offset, 1) then
@@ -256,7 +256,7 @@ local function dissect_Vendor(tvb, tree, offset, site)
             tree:add(site.f_detail__v16, tvb(offset, 1))
             offset = offset + 1
         else
-            offset = dissect_Login(tvb, tree, offset, site.t_detail__Login)
+            offset = dissect_Login(tvb, pinfo, tree, offset, site.t_detail__Login)
             if not offset then
                 return nil
             end
@@ -267,7 +267,7 @@ local function dissect_Vendor(tvb, tree, offset, site)
 end
 
 -- Type: Pair
-local function dissect_Pair(tvb, tree, offset, site)
+local function dissect_Pair(tvb, pinfo, tree, offset, site)
     -- Field: a
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".a")
@@ -286,7 +286,7 @@ local function dissect_Pair(tvb, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     local v_body__size, v_kind, v_mode
     -- Field: kind
     if not wd_fits(tvb, offset, 1) then
@@ -303,7 +303,7 @@ local function dissect_top(tvb, tree, offset)
         local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
         tree:append_text(": " .. wd_case_name(names_body, subject))
         if subject == 1 then
-            offset = dissect_Login(tvb, tree, offset, site_body__Login)
+            offset = dissect_Login(tvb, pinfo, tree, offset, site_body__Login)
             if not offset then
                 return nil
             end
@@ -338,7 +338,7 @@ local function dissect_top(tvb, tree, offset)
                 offset = offset + len
             end
         elseif (subject >= 16 and subject <= 31) then
-            offset = dissect_Vendor(tvb, tree, offset, site_body__Vendor)
+            offset = dissect_Vendor(tvb, pinfo, tree, offset, site_body__Vendor)
             if not offset then
                 return nil
             end
@@ -380,7 +380,7 @@ local function dissect_top(tvb, tree, offset)
             tree:add(f_trailer__short, tvb(offset, 2))
             offset = offset + 2
         elseif subject == 1 then
-            offset = dissect_Pair(tvb, tree, offset, site_trailer__Pair)
+            offset = dissect_Pair(tvb, pinfo, tree, offset, site_trailer__Pair)
             if not offset then
                 return nil
             end
@@ -396,7 +396,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "SWITCH"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "SWITCH")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

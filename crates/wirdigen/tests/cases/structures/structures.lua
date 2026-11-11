@@ -61,7 +61,7 @@ local wd_ei_truncated = wd_expert_truncated("structures")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: id
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "id")
@@ -129,7 +129,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "STRUCTURES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "STRUCTURES")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

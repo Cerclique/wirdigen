@@ -32,6 +32,10 @@ _Avoid_: Invisible field, private field, internal field
 The values a Field or Sub-Field should hold. A Message holding another value gets a warning in Wireshark but is still read to the end; it is not Malformed.
 _Avoid_: Constraint, assertion, validation, magic value
 
+**Handoff**:
+Passing the bytes of a Field to a dissector Wireshark already has, named in the Protocol Description; its layer is shown right after the Field.
+_Avoid_: Sub-dissector, delegation, chaining, payload dissector
+
 **Bitfield**:
 A Field of an unsigned integer type whose bits are split, most significant first, into Sub-Fields and Padding, every bit accounted for.
 _Avoid_: Flags, bitmask, packed field

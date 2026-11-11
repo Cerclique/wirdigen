@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - { name: a, type: bytes, size: 1, dissector: "" }
+  - { name: b, type: bytes, size: 1, dissector: " " }
+  - { name: c, type: bytes, size: 1, dissector: "json data" }

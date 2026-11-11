@@ -573,6 +573,24 @@ fields:
 
 **Fix**: write the number of bytes to skip, zero or more.
 
+## `invalid-dissector` {#invalid-dissector}
+
+**Severity**: error
+
+A Field's [`dissector:`](reference/fields.md#dissector) is not the name of a Dissector: it is
+empty, has a space in it, or is not a string. A Dissector name is one word, as Wireshark
+registers it. Whether Wireshark has a Dissector by that name is only known when a packet is
+read, where an unknown one is a warning in the tree.
+
+```yaml,diagnostic=invalid-dissector
+name: demo
+fields:
+  - { name: payload, type: bytes, size: 8, dissector: "" }
+```
+
+**Fix**: write the name Wireshark registers the Dissector under, such as `json` or `data`.
+`tshark -G dissectors` lists them.
+
 ## `invalid-array` {#invalid-array}
 
 **Severity**: error
@@ -608,9 +626,9 @@ key its type does not take. Unsigned integers take `dec`, `hex`, `oct`, `dec_hex
 `colon` and `space`; `abs_time` takes `local`, `utc` and `doy_utc`; `string`, `rel_time`,
 `bool`, the floats and the address types take no `display:` at all. Only `string`, `abs_time`
 and `rel_time` take `encoding:`, each its own values: `ntp` is an `abs_time` encoding only.
-Only integers take `values:`, only `bool` takes `true:` and `false:`, and only integers and
-floats take `unit:`. An inline structure takes none of these keys: they belong on the Fields
-inside it. A bitfield sub-Field takes the displays of an unsigned integer, and `true:` and
+Only integers take `values:`, only `bool` takes `true:` and `false:`, only integers and floats
+take `unit:`, and only `bytes` take `dissector:`. An inline structure takes none of these keys:
+they belong on the Fields inside it. A bitfield sub-Field takes the displays of an unsigned integer, and `true:` and
 `false:` only when it is boolean: 1 bit wide, without `values:`, `unit:` or `display:`.
 
 ```yaml,diagnostic=incompatible-display

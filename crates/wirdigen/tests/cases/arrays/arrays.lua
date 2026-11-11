@@ -106,7 +106,7 @@ local wd_ei_invalid = wd_expert_invalid("arrays")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Point
-local function dissect_Point(tvb, tree, offset, site)
+local function dissect_Point(tvb, pinfo, tree, offset, site)
     local v_dim
     -- Field: dim
     if not wd_fits(tvb, offset, 1) then
@@ -145,7 +145,7 @@ local function dissect_Point(tvb, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     local v_items__len, v_n, v_width
     -- Field: n
     if not wd_fits(tvb, offset, 1) then
@@ -209,7 +209,7 @@ local function dissect_top(tvb, tree, offset)
             local start = offset
             local tree = tree:add(f_points, tvb(offset, tvb:len() - offset))
             tree:append_text(" [" .. i .. "]")
-            offset = dissect_Point(tvb, tree, offset, site_points)
+            offset = dissect_Point(tvb, pinfo, tree, offset, site_points)
             if not offset then
                 return nil
             end
@@ -263,7 +263,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "ARRAYS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "ARRAYS")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

@@ -143,7 +143,7 @@ local wd_ei_invalid = wd_expert_invalid("bitfield-references")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Record
-local function dissect_Record(tvb, tree, offset, site, ctx)
+local function dissect_Record(tvb, pinfo, tree, offset, site, ctx)
     local v_head
     -- Field: head
     if not wd_fits(tvb, offset, 1) then
@@ -174,7 +174,7 @@ local function dissect_Record(tvb, tree, offset, site, ctx)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     local v_flags, v_options, v_rec
     -- Field: flags
     if not wd_fits(tvb, offset, 1) then
@@ -248,7 +248,7 @@ local function dissect_top(tvb, tree, offset)
     do
         local start = offset
         local tree = tree:add(f_rec, tvb(offset, tvb:len() - offset))
-        offset, v_rec = dissect_Record(tvb, tree, offset, site_rec, { ["flags.shift"] = wd_band(v_flags, 15) })
+        offset, v_rec = dissect_Record(tvb, pinfo, tree, offset, site_rec, { ["flags.shift"] = wd_band(v_flags, 15) })
         if not offset then
             return nil
         end
@@ -274,7 +274,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "BITFIELD-REFERENCES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "BITFIELD-REFERENCES")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

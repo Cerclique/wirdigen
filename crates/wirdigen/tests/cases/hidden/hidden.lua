@@ -190,7 +190,7 @@ local wd_ei_unmatched = wd_expert_unmatched("hidden")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_unmatched }
 
 -- Type: Point
-local function dissect_Point(tvb, tree, offset, site)
+local function dissect_Point(tvb, pinfo, tree, offset, site)
     local v_x
     -- Field: x
     if not wd_fits(tvb, offset, 1) then
@@ -211,7 +211,7 @@ local function dissect_Point(tvb, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     local v_flags, v_header__version, v_len, v_point
     -- Field: len
     if not wd_fits(tvb, offset, 1) then
@@ -302,7 +302,7 @@ local function dissect_top(tvb, tree, offset)
         local start = offset
         local tree = tree:add(f_point, tvb(offset, tvb:len() - offset))
         tree:set_hidden(true)
-        offset, v_point = dissect_Point(tvb, tree, offset, site_point)
+        offset, v_point = dissect_Point(tvb, pinfo, tree, offset, site_point)
         if not offset then
             return nil
         end
@@ -324,7 +324,7 @@ local function dissect_top(tvb, tree, offset)
             tree:add(f_body__one, tvb(offset, 1))
             offset = offset + 1
         elseif subject == 2 then
-            offset = dissect_Point(tvb, tree, offset, site_body__Point)
+            offset = dissect_Point(tvb, pinfo, tree, offset, site_body__Point)
             if not offset then
                 return nil
             end
@@ -379,7 +379,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "HIDDEN"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "HIDDEN")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

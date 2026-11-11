@@ -326,6 +326,9 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 - `expect:` goes on integer and `bool` Fields and on sub-Fields; elsewhere it is `incompatible-display`, like a value-mapping key. Its values are read like `values:` keys (§3.4.7), and an empty list is `wrong-value-type`. A `bool` holds 0 or 1, as Expressions read it (§4.4), and a `uint64` is compared as the unsigned value it is.
 - An `expect:` is `unreachable-expect` when none of its values is in the range of the Field's type or the sub-Field's width; it is kept, so every packet gets the warning.
 - A mismatch is an expert info warning (group Protocol) on the Field's item, hidden or not: "Unexpected value: <path> (expected <values as written>)", filtered `<protocol>._protocol.unexpected`.
+- `dissector:` goes on `bytes` Fields only; elsewhere it is `incompatible-display`, like a value-mapping key. Its value is a one-word string: an empty one, one with whitespace, or a scalar that is not a string is `invalid-dissector`.
+- The handed-off Dissector's layer goes into the Field's structure, right after the Field's item, hidden or not, and the dissection goes on after it. A Field with no bytes calls no Dissector. The Protocol column keeps the short name (§5.5).
+- The Dissector is looked up by name the first time a packet reads the Field, empty or not. An unknown name is an expert info warning (group Undecoded) on the structure: "Unknown Dissector <name>: <path>", filtered `<protocol>._undecoded.dissector`. An error in the handed-off Dissector is shown in its own layer and never raises a Lua error.
 
 There is no `align:` in v1.
 
@@ -441,7 +444,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 ### 5.1 Tree
 
 - The tree root shows the full name (§3.3). Each structure Field is a subtree, and each array element is its own subtree item (`items[0]`).
-- Padding is one "Padding" item. Hidden Fields are not shown. Unmatched `switch` bytes are shown raw with an expert info note (§3.9).
+- Padding is one "Padding" item. Hidden Fields are not shown, but the layer a `dissector:` hands their bytes to is (§3.10). Unmatched `switch` bytes are shown raw with an expert info note (§3.9).
 
 ### 5.2 Filter names
 
@@ -453,7 +456,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
+- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`, a `dissector:` naming no Dissector (§3.10) `<protocol>._undecoded.dissector`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
@@ -503,7 +506,7 @@ Errors:
 
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
 - `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `invalid-bits`: `bits:` on anything but a fixed-size unsigned integer;
-- `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
+- `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key, `expect:` or `dissector:` on a type that does not take it (§3.10);
 - `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - `mismatched-bit-widths`: bitfield widths not adding up to the container; `invalid-bit-width`: a width below 1;
@@ -511,7 +514,7 @@ Errors:
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - `overlapping-cases`: overlapping `switch` cases (§3.9);
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
-- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding` (§3.10);
+- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding`, `invalid-dissector` (§3.10);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - invalid ports and port ranges (§3.12);

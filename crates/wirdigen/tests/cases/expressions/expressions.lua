@@ -148,7 +148,7 @@ local wd_ei_truncated = wd_expert_truncated("expressions")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: precedence
     do
         local len = wd_sub(wd_add(1, wd_mul(2, 3)), 6)
@@ -289,7 +289,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "EXPRESSIONS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "EXPRESSIONS")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 
