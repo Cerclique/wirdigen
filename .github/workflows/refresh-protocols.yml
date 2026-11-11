@@ -1,4 +1,4 @@
-# Refreshes the built-in protocols snapshot behind `protocol-name-taken` (spec §10.9) each week,
+# Refreshes the built-in protocols snapshot behind `protocol-name-taken` (spec §3.3) each week,
 # when the tshark-stable image may pick up a new Wireshark from the stable PPA. A changed
 # snapshot is force-pushed as one commit on main to chore/refresh-protocols, with one PR opened
 # or updated from it. Pushes and PR calls use a GitHub App token rather than GITHUB_TOKEN, so
@@ -15,6 +15,7 @@ on:
 
 permissions: {}
 
+# Never cancel a run midway through its push and PR update.
 concurrency:
   group: refresh-protocols
   cancel-in-progress: false
@@ -47,7 +48,8 @@ jobs:
           load: true
           cache-from: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }}
           cache-to: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }},mode=max
-      - run: make docker-refresh-protocols DOCKER_PREBUILT=1
+      - name: Refresh the snapshot
+        run: make docker-refresh-protocols DOCKER_PREBUILT=1
       - name: Check the snapshot
         id: snapshot
         run: |
@@ -93,7 +95,8 @@ jobs:
             commit --quiet --message "$title" -- "$SNAPSHOT"
 
           # Skip the push when the branch already holds this tree, so CI does not rerun for nothing.
-          if git fetch --quiet --depth=1 origin "$BRANCH" 2>/dev/null && git diff --quiet FETCH_HEAD HEAD; then
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null &&
+            git fetch --quiet --depth=1 origin "$BRANCH" && git diff --quiet FETCH_HEAD HEAD; then
             echo "$BRANCH is already up to date."
           else
             git push --quiet --force "https://x-access-token:$GH_TOKEN@github.com/$GH_REPO.git" "HEAD:refs/heads/$BRANCH"
@@ -102,7 +105,7 @@ jobs:
           body="Refreshes \`$SNAPSHOT\` from \`tshark -G protocols\` of Wireshark $VERSION, as \`make docker-refresh-protocols\` does. Opened by the [Refresh protocols]($GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID) workflow."
           pr=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
           if [ -n "$pr" ]; then
-            gh pr edit "$pr" --title "$title" --body "$body"
+            gh pr edit "$pr" --title "$title"
             echo "Updated PR #$pr."
           else
             gh pr create --head "$BRANCH" --base main --title "$title" --body "$body"
