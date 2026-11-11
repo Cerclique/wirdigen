@@ -146,14 +146,9 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         };
         diagnostics.push(Diagnostic::new(Name::UnknownAllow, entry.span.clone(), message));
     }
-    let endian = match &description.endian {
-        Some(value) => record(Endian::check(value), &mut diagnostics),
-        None => Some(Endian::default()),
-    };
-    // An invalid top-level byte order is an error already, so any stand-in will do.
+    let endian = Endian::resolve(description.endian.as_ref(), Endian::default(), &mut diagnostics);
     let mut enums = Enums::check(&description.enums, &mut diagnostics);
-    let (fields, types) =
-        types::check(&description.types, &description.fields, endian.unwrap_or_default(), &mut enums, &mut diagnostics);
+    let (fields, types) = types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
     let enums = enums.finish(&mut diagnostics);
     let has_errors = diagnostics.iter().any(|d| d.severity() == Severity::Error);
     let protocol = (!has_errors).then(|| Protocol {

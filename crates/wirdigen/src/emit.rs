@@ -224,11 +224,18 @@ enum Scope {
     Type,
 }
 
-/// The Lua expression of a `ProtoField` or a site table.
-fn reference(model: &Dissector, r: &Ref, is_site: bool) -> String {
+/// The Lua expression of a `ProtoField`.
+fn field_ref(model: &Dissector, r: &Ref) -> String {
     match r {
-        Ref::Local(index) if is_site => model.sites[*index].local.clone(),
         Ref::Local(index) => model.proto_fields[*index].local.clone(),
+        Ref::Slot(key) => format!("site.{key}"),
+    }
+}
+
+/// The Lua expression of a site table.
+fn site_ref(model: &Dissector, r: &Ref) -> String {
+    match r {
+        Ref::Local(index) => model.sites[*index].local.clone(),
         Ref::Slot(key) => format!("site.{key}"),
     }
 }
@@ -236,8 +243,8 @@ fn reference(model: &Dissector, r: &Ref, is_site: bool) -> String {
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
         Stmt::Call { field, path, ty, site } => {
-            let local = reference(model, field, false);
-            let site = reference(model, site, true);
+            let local = field_ref(model, field);
+            let site = site_ref(model, site);
             w.line(&format!("-- Field: {path}"));
             w.block(
                 "do",
@@ -252,7 +259,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             );
         }
         Stmt::Structure { field, path, body } => {
-            let local = reference(model, field, false);
+            let local = field_ref(model, field);
             w.line(&format!("-- Field: {path}"));
             // The subtree shadows `tree` for its Fields. It spans the rest of the packet until
             // they are read, so a truncated structure covers what is left of it.
@@ -270,7 +277,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             );
         }
         Stmt::Read { field, length, decode, path } => {
-            let local = reference(model, field, false);
+            let local = field_ref(model, field);
             let reported = match scope {
                 Scope::Top => lua_string(path),
                 Scope::Type => format!("site.path .. {}", lua_string(&format!(".{path}"))),

@@ -1,6 +1,8 @@
 //! Named Types (spec §3.5): reading `types:` (stage 2), and the checks that span Types (stage 4):
 //! their names, which Fields use them, recursion and the order lowering defines them in.
 
+use std::collections::BTreeSet;
+
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::field::{self, Endian, Field, RawField};
 use crate::keys::{Spanned, closest, duplicate_key, expect_string, is_type_name, read_keys, wrong_type};
@@ -45,16 +47,15 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<RawType> {
             errors.push(duplicate_key(text, key, &first.name.span));
             continue;
         }
-        if let Some(body) = read_body(value, errors) {
-            let (endian, fields) = body;
-            types.push(RawType { name: Spanned { value: text.clone(), span: key.span.clone() }, endian, fields });
-        }
+        let name = Spanned { value: text.clone(), span: key.span.clone() };
+        types.extend(read_body(name, value, errors));
     }
     types
 }
 
-/// Reads a Type body, `{ fields: [...], endian: ... }`. `None` when it has errors.
-fn read_body(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<(Option<Spanned<String>>, Vec<RawField>)> {
+/// Reads the body of the Type `name`, `{ fields: [...], endian: ... }`. `None` when it has
+/// errors.
+fn read_body(name: Spanned<String>, node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawType> {
     let Value::Mapping(entries) = &node.value else {
         errors.push(
             wrong_type(node.span.clone(), "a Type is a mapping with `fields`")
@@ -68,17 +69,15 @@ fn read_body(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<(Option<Spanne
         errors.push(Diagnostic::new(Name::MissingKey, node.span.clone(), "missing required key `fields`"));
     }
     let endian = keys.get("endian").and_then(|n| record(expect_string(n, "endian", Name::InvalidEndian), errors));
-    let fields = keys.get("fields").and_then(|n| field::read_structure(n, errors));
-    match fields {
-        Some(fields) if errors.len() == before => Some((endian, fields)),
-        _ => None,
-    }
+    let fields = keys.get("fields").and_then(|n| field::read_structure(n, errors))?;
+    (errors.len() == before).then_some(RawType { name, endian, fields })
 }
 
 /// The Types of a description, during stage 4: what Fields look up and mark as used.
 pub(crate) struct Types<'a> {
     /// In source order.
     raw: &'a [RawType],
+    /// Whether some Field uses each Type of `raw`.
     used: Vec<bool>,
     /// One `unknown-type` per unknown name, at its first use in the source: an unknown Type is
     /// one error, not one per use.
@@ -86,25 +85,31 @@ pub(crate) struct Types<'a> {
 }
 
 impl<'a> Types<'a> {
-    pub(crate) fn new(raw: &'a [RawType]) -> Self {
+    fn new(raw: &'a [RawType]) -> Self {
         Self { raw, used: vec![false; raw.len()], unknown: Vec::new() }
     }
 
-    fn names(&self) -> Vec<&'a str> {
-        self.raw.iter().map(|t| t.name.value.as_str()).collect()
+    fn position(&self, name: &str) -> Option<usize> {
+        self.raw.iter().position(|t| t.name.value == name)
+    }
+
+    /// Whether `types:` declares a Type named `name`, valid name or not, so that a Field using
+    /// a wrongly named Type is not also `unknown-type` (spec §6.1).
+    pub(crate) fn declares(&self, name: &str) -> bool {
+        self.position(name).is_some()
     }
 
     /// Looks up the Type a Field's `type:` names, marking it as used. An unknown name marks the
     /// Type it most likely misspells instead, so a typo is not also an `unused-type`, and is
     /// reported the first time only.
     pub(crate) fn resolve(&mut self, name: &Spanned<String>) -> Option<String> {
-        let names = self.names();
-        if let Some(index) = names.iter().position(|n| *n == name.value) {
+        if let Some(index) = self.position(&name.value) {
             self.used[index] = true;
             return Some(name.value.clone());
         }
+        let names: Vec<&str> = self.raw.iter().map(|t| t.name.value.as_str()).collect();
         let guess = closest(&name.value, &names);
-        if let Some(index) = guess.and_then(|g| names.iter().position(|n| *n == g)) {
+        if let Some(index) = guess.and_then(|g| self.position(g)) {
             self.used[index] = true;
         }
         let unknown =
@@ -123,10 +128,11 @@ impl<'a> Types<'a> {
     }
 }
 
-/// Stage 4: checks every Type's name and body, then the uses between Types.
+/// Stage 4: checks every Type's name and body, the top-level layout `top`, which uses Types too,
+/// and the uses between Types.
 ///
-/// Returns the Types in dependency order, each after the Types it uses, so lowering can define
-/// each one before its callers. `top` is the top-level layout, which uses Types too.
+/// Returns the checked layout, and the Types in dependency order, each after the Types it uses,
+/// so lowering can define each one before its callers.
 pub(crate) fn check(
     raw: &[RawType],
     top: &[RawField],
@@ -147,12 +153,8 @@ pub(crate) fn check(
                 .with_note("a Type name is an uppercase letter then letters or digits", None),
             );
         }
-        // An invalid byte order is an error already, so any stand-in will do.
-        let endian = match &t.endian {
-            Some(value) => record(Endian::check(value), diagnostics).unwrap_or_default(),
-            None => endian,
-        };
-        bodies.push(field::check(&t.fields, endian, enums, &mut types, diagnostics));
+        let endian = Endian::resolve(t.endian.as_ref(), endian, diagnostics);
+        bodies.push(Some(field::check(&t.fields, endian, enums, &mut types, diagnostics)));
     }
     let layout = field::check(top, endian, enums, &mut types, diagnostics);
     diagnostics.extend(types.unknown.into_iter().map(|(_, d)| d));
@@ -168,12 +170,14 @@ pub(crate) fn check(
             );
         }
     }
-    let order = dependency_order(raw, diagnostics);
-    let named = order.into_iter().map(|i| NamedType { name: raw[i].name.value.clone(), fields: bodies[i].clone() });
+    let named = Walk::new(raw).dependency_order(diagnostics).into_iter().map(|i| NamedType {
+        name: raw[i].name.value.clone(),
+        fields: bodies[i].take().expect("each Type comes once in the order"),
+    });
     (layout, named.collect())
 }
 
-/// Where a DFS over the uses between Types stands with one Type.
+/// Where a depth-first walk over the uses between Types stands with one Type.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Visit {
     New,
@@ -182,68 +186,92 @@ enum Visit {
     Done,
 }
 
-/// The indices of the Types in dependency order, reporting each cycle once as `recursive-type`
-/// (spec §3.5), at the use the cycle's first-declared Type makes of the next one.
-fn dependency_order(raw: &[RawType], diagnostics: &mut Vec<Diagnostic>) -> Vec<usize> {
-    let uses: Vec<Vec<(usize, &Spanned<String>)>> = raw
-        .iter()
-        .map(|t| {
-            field::type_uses(&t.fields)
-                .into_iter()
-                .filter_map(|u| raw.iter().position(|r| r.name.value == u.value).map(|i| (i, u)))
-                .collect()
-        })
-        .collect();
-    let mut state = vec![Visit::New; raw.len()];
-    let mut order = Vec::new();
-    let mut path = Vec::new();
-    for start in 0..raw.len() {
-        visit(start, &uses, &mut state, &mut path, &mut order, raw, diagnostics);
-    }
-    order
+/// A depth-first walk over the uses between Types, in source order.
+struct Walk<'a> {
+    raw: &'a [RawType],
+    /// For each Type, the Types its Fields use, by index, with the `type:` naming each.
+    uses: Vec<Vec<(usize, &'a Spanned<String>)>>,
+    state: Vec<Visit>,
+    /// The Types being visited, outermost first.
+    path: Vec<usize>,
+    /// The Types visited, each after the Types it uses.
+    order: Vec<usize>,
+    /// The Types of each cycle reported, so a cycle closed by several uses is one error.
+    cycles: BTreeSet<Vec<usize>>,
 }
 
-fn visit(
-    node: usize,
-    uses: &[Vec<(usize, &Spanned<String>)>],
-    state: &mut [Visit],
-    path: &mut Vec<usize>,
-    order: &mut Vec<usize>,
-    raw: &[RawType],
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    if state[node] != Visit::New {
-        return;
-    }
-    state[node] = Visit::Open;
-    path.push(node);
-    for &(next, _) in &uses[node] {
-        match state[next] {
-            Visit::New => visit(next, uses, state, path, order, raw, diagnostics),
-            Visit::Open => {
-                let from = path.iter().position(|&n| n == next).expect("an open Type is on the path");
-                diagnostics.push(recursion(&path[from..], uses, raw));
-            }
-            Visit::Done => {}
+impl<'a> Walk<'a> {
+    fn new(raw: &'a [RawType]) -> Self {
+        let uses = raw
+            .iter()
+            .map(|t| {
+                field::type_uses(&t.fields)
+                    .into_iter()
+                    .filter_map(|u| raw.iter().position(|r| r.name.value == u.value).map(|i| (i, u)))
+                    .collect()
+            })
+            .collect();
+        Self {
+            raw,
+            uses,
+            state: vec![Visit::New; raw.len()],
+            path: Vec::new(),
+            order: Vec::new(),
+            cycles: BTreeSet::new(),
         }
     }
-    path.pop();
-    state[node] = Visit::Done;
-    order.push(node);
-}
 
-/// The Diagnostic of the cycle through `cycle`, in use order, each Type using the next and the
-/// last the first.
-fn recursion(cycle: &[usize], uses: &[Vec<(usize, &Spanned<String>)>], raw: &[RawType]) -> Diagnostic {
-    let first = (0..cycle.len()).min_by_key(|&i| cycle[i]).expect("a cycle has a Type");
-    let (from, to) = (cycle[first], cycle[(first + 1) % cycle.len()]);
-    let (_, site) = uses[from].iter().find(|(n, _)| *n == to).expect("each Type of a cycle uses the next");
-    let names: Vec<&str> = cycle[first..].iter().chain(&cycle[..=first]).map(|&i| raw[i].name.value.as_str()).collect();
-    let message = if cycle.len() == 1 {
-        format!("the Type `{}` contains itself", names[0])
-    } else {
-        format!("the Type `{}` contains itself through {}", names[0], names[1..names.len() - 1].join(", "))
-    };
-    Diagnostic::new(Name::RecursiveType, site.span.clone(), message)
-        .with_note(format!("a Type cannot contain itself: {}", names.join(" → ")), None)
+    /// The indices of the Types in dependency order, reporting each cycle once as
+    /// `recursive-type` (spec §3.5).
+    fn dependency_order(mut self, diagnostics: &mut Vec<Diagnostic>) -> Vec<usize> {
+        for start in 0..self.raw.len() {
+            self.visit(start, diagnostics);
+        }
+        self.order
+    }
+
+    fn visit(&mut self, node: usize, diagnostics: &mut Vec<Diagnostic>) {
+        if self.state[node] != Visit::New {
+            return;
+        }
+        self.state[node] = Visit::Open;
+        self.path.push(node);
+        for use_index in 0..self.uses[node].len() {
+            let next = self.uses[node][use_index].0;
+            match self.state[next] {
+                Visit::New => self.visit(next, diagnostics),
+                Visit::Open => {
+                    let from = self.path.iter().position(|&n| n == next).expect("an open Type is on the path");
+                    let cycle = self.path[from..].to_vec();
+                    let mut members = cycle.clone();
+                    members.sort_unstable();
+                    if self.cycles.insert(members) {
+                        diagnostics.push(self.recursion(&cycle));
+                    }
+                }
+                Visit::Done => {}
+            }
+        }
+        self.path.pop();
+        self.state[node] = Visit::Done;
+        self.order.push(node);
+    }
+
+    /// The Diagnostic of the cycle through `cycle`, in use order, each Type using the next and
+    /// the last the first. It points at the use the cycle's first-declared Type makes of the
+    /// next one.
+    fn recursion(&self, cycle: &[usize]) -> Diagnostic {
+        let first = (0..cycle.len()).min_by_key(|&i| cycle[i]).expect("a cycle has a Type");
+        let (from, to) = (cycle[first], cycle[(first + 1) % cycle.len()]);
+        let (_, site) = self.uses[from].iter().find(|(n, _)| *n == to).expect("each Type of a cycle uses the next");
+        let names: Vec<&str> =
+            cycle[first..].iter().chain(&cycle[..=first]).map(|&i| self.raw[i].name.value.as_str()).collect();
+        let message = if cycle.len() == 1 {
+            format!("the Type `{}` contains itself", names[0])
+        } else {
+            format!("the Type `{}` contains itself through {}", names[0], names[1..names.len() - 1].join(", "))
+        };
+        Diagnostic::new(Name::RecursiveType, site.span.clone(), message)
+            .with_note(format!("a Type cannot contain itself: {}", names.join(" → ")), None)
+    }
 }

@@ -249,16 +249,13 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         chunks: vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS],
     };
     // Every Type's slots are known before any use of it builds a site table.
-    let types = protocol
-        .types
-        .iter()
-        .map(|t| {
-            let mut slots = Vec::new();
-            let body = lowering.type_structure(&t.fields, &[], &mut slots);
-            lowering.slots.insert(&t.name, slots);
-            TypeFunction { name: t.name.clone(), body }
-        })
-        .collect();
+    let mut types = Vec::new();
+    for t in &protocol.types {
+        let mut slots = Vec::new();
+        let body = lowering.type_structure(&t.fields, &[], &mut slots);
+        lowering.slots.insert(&t.name, slots);
+        types.push(TypeFunction { name: t.name.clone(), body });
+    }
     let layout = lowering.structure(&protocol.fields, &[]);
     let Lowering { proto_fields, tables, sites, chunks, .. } = lowering;
 
@@ -369,7 +366,7 @@ impl<'p> Lowering<'p> {
     /// The site table of a use of the Type `ty` at the path `segments`, registering the
     /// `ProtoField`s of that use.
     fn site(&mut self, ty: &str, segments: &[&'p str]) -> Site {
-        let slots = self.slots[ty].clone();
+        let slots = self.slots.get(ty).expect("every Type is lowered before any use of it").clone();
         let entries = slots
             .into_iter()
             .map(|slot| {
@@ -662,7 +659,7 @@ mod tests {
             .iter()
             .map(|stmt| match stmt {
                 Stmt::Read { length, decode, .. } => (*length, *decode),
-                Stmt::Structure { path, .. } | Stmt::Call { path, .. } => panic!("{path} is a structure"),
+                Stmt::Structure { path, .. } | Stmt::Call { path, .. } => panic!("{path} is not a read"),
             })
             .collect()
     }
