@@ -1,0 +1,4 @@
+name: demo
+fields:
+  - { name: ids, type: uint8, count: 4 }
+  - { name: names, type: string, size: 8, repeat: to_end }

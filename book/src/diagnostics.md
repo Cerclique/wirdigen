@@ -501,6 +501,86 @@ fields:
 **Fix**: cover the bits nothing names with a `{ padding: n }` entry, here `{ padding: 4 }`
 last, or correct a width.
 
+## `conflicting-repeat` {#conflicting-repeat}
+
+**Severity**: error
+
+A Field has both `count:` and `repeat:`, so the number of elements of the
+[array](reference/arrays.md) has no single meaning. A note points at `count:`.
+
+```yaml,diagnostic=conflicting-repeat
+name: demo
+fields:
+  - name: items
+    count: 4
+    repeat: to_end
+    fields: [ {name: id, type: uint8} ]
+```
+
+**Fix**: keep `count:` when the number of elements is known before the array, or
+`repeat: to_end` when the elements fill the rest of the message.
+
+## `invalid-repeat` {#invalid-repeat}
+
+**Severity**: error
+
+A `repeat:` is not `to_end`, the only way to repeat other than `count:` in this version of
+the format.
+
+```yaml,diagnostic=invalid-repeat
+name: demo
+fields:
+  - name: items
+    repeat: forever
+    fields: [ {name: id, type: uint8} ]
+```
+
+**Fix**: write `repeat: to_end` to read elements until the message ends, or give the number of
+elements with `count:`. See [Arrays](reference/arrays.md).
+
+## `invalid-count` {#invalid-count}
+
+**Severity**: error
+
+A constant `count:` is a negative number of elements, or an Expression that has no value: it
+divides by zero, or shifts by a count outside 0 to 63. The error points at the dividing or
+shifting operator.
+
+```yaml,diagnostic=invalid-count
+name: demo
+fields:
+  - name: items
+    count: -1
+    fields: [ {name: id, type: uint8} ]
+```
+
+**Fix**: write the number of elements, zero or more.
+
+## `invalid-array` {#invalid-array}
+
+**Severity**: error
+
+A Field of a built-in type has `count:` or `repeat:`. Only an inline structure or a Field of a
+Type repeats, so that each element is a subtree item of its own.
+
+```yaml,diagnostic=invalid-array
+name: demo
+fields:
+  - { name: ids, type: uint16, count: 4 }
+```
+
+**Fix**: put the value in an inline structure that repeats:
+
+```yaml
+name: demo
+fields:
+  - name: ids
+    count: 4
+    fields: [ {name: id, type: uint16} ]
+```
+
+See [Arrays](reference/arrays.md).
+
 ## `incompatible-display` {#incompatible-display}
 
 **Severity**: error
@@ -682,8 +762,10 @@ compare the 1 or 0 of the first: `(a < b) < c`.
 
 A name in an [Expression](reference/expressions.md#references) matches no Field read before
 it: a misspelling, a path into a structure that has no such Field or into a Field that is not a
-structure, or a path into the structure still being read. Inside a Type, a name the Type does
-not declare is looked up where the Type is used, and the error points at that use.
+structure, a path into the structure still being read, or a path into an
+[array](reference/arrays.md), whose Fields only its elements can read. Inside a Type, a name
+the Type does not declare is looked up where the Type is used, and the error points at that
+use.
 
 ```yaml,diagnostic=unknown-field
 name: demo
@@ -785,8 +867,9 @@ allow: [unreachable-value]
 
 **Severity**: warning
 
-A Field comes after a `size: "_remaining"` Field in the same structure. That Field reads every
-byte left, so the one after it is always empty or truncated.
+A Field comes after a `size: "_remaining"` Field or a `repeat: to_end`
+[array](reference/arrays.md) in the same structure. That Field reads every byte left, so the
+one after it is always empty or truncated.
 
 ```yaml,diagnostic=unreachable-field
 name: demo
@@ -795,8 +878,18 @@ fields:
   - { name: checksum, type: uint16 }
 ```
 
-**Fix**: give the earlier Field a size that leaves room, such as `"_remaining - 2"`, or remove
-the later Field. When the later Field is meant to be empty, allow the warning:
+```yaml,diagnostic=unreachable-field
+name: demo
+fields:
+  - name: records
+    repeat: to_end
+    fields: [ {name: tag, type: uint8} ]
+  - { name: checksum, type: uint16 }
+```
+
+**Fix**: give the earlier Field a size that leaves room, such as `"_remaining - 2"`, or a
+`count:` in place of `repeat: to_end`, or remove the later Field. When the later Field is meant
+to be empty, allow the warning:
 
 ```yaml
 name: demo

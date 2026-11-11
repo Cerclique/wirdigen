@@ -1,0 +1,16 @@
+name: demo
+fields:
+  - { name: n, type: uint8 }
+  - name: items
+    count: n
+    fields: [ {name: len, type: uint8} ]
+  - { name: data, type: bytes, size: items.len }
+  - name: header
+    fields:
+      - name: records
+        repeat: to_end
+        type: Record
+  - { name: rest, type: bytes, size: header.records.len }
+types:
+  Record:
+    fields: [ {name: len, type: uint8} ]

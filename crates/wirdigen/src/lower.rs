@@ -9,7 +9,7 @@ use std::ops::RangeInclusive;
 use crate::bits::Bit;
 use crate::description::Protocol;
 use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
-use crate::field::{self, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind};
+use crate::field::{self, Amount, Array, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
 use crate::scope::Reference;
@@ -250,6 +250,43 @@ pub(crate) enum Stmt {
         /// The local the table the Type returns is kept in, when an Expression reads inside it.
         result: Option<String>,
     },
+    /// An array (spec §3.7): its element, a [`Stmt::Structure`] or a [`Stmt::Call`], repeated,
+    /// each element its own subtree item with the same `ProtoField`s. An element that reads no
+    /// bytes stops the array as malformed.
+    Array {
+        /// The Field's path, for the comment and the malformed-packet reports.
+        path: String,
+        repeat: Repeat,
+        element: Box<Stmt>,
+    },
+}
+
+/// How many times an array repeats its element.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Repeat {
+    /// As many times as this Expression gives, evaluated once before the first element.
+    Count(Computed),
+    /// Until the message ends.
+    ToEnd,
+}
+
+/// A `size:` or `count:` Expression as the Dissector evaluates it, with the checks it needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Computed {
+    pub(crate) value: LuaExpr,
+    /// Whether the value is known only when the packet is read, so a negative one is reported
+    /// as malformed (spec §4.4).
+    pub(crate) checked: bool,
+    /// Whether evaluating it can fault (division by zero, a shift out of 0..63), so it runs
+    /// under `wd_evaluate`.
+    pub(crate) faults: bool,
+}
+
+impl Computed {
+    /// A value validation already checked: evaluated as is.
+    const fn checked_already(value: LuaExpr) -> Self {
+        Self { value, checked: false, faults: false }
+    }
 }
 
 /// A bitfield sub-Field: a masked `ProtoField` added under its container's item, from the
@@ -287,15 +324,7 @@ pub(crate) enum Length {
     /// After this many bytes.
     Fixed(usize),
     /// After as many bytes as this Expression gives.
-    Expression {
-        value: LuaExpr,
-        /// Whether the value is known only when the packet is read, so a negative one is
-        /// reported as malformed (spec §4.4).
-        checked: bool,
-        /// Whether evaluating it can fault (division by zero, a shift out of 0..63), so it runs
-        /// under `wd_evaluate`.
-        faults: bool,
-    },
+    Expression(Computed),
     /// After as many bytes as the unsigned integer of `size` bytes just before the value says,
     /// read with the `TvbRange` call `read` (`uint()`).
     Prefix { size: usize, read: &'static str },
@@ -529,6 +558,9 @@ impl Plan {
 /// uses of Types make, inline structures included.
 fn references(fields: &[Field], f: &mut impl FnMut(&Reference)) {
     for field in fields {
+        if let Some(Array::Count(Amount::Expression { references, .. })) = &field.array {
+            references.values().for_each(&mut *f);
+        }
         match &field.kind {
             FieldKind::Builtin(BuiltinField { length: field::Length::Expression { references, .. }, .. }) => {
                 references.values().for_each(&mut *f);
@@ -587,7 +619,7 @@ impl<'p> Lowering<'p> {
         let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
         let path = segments.join(".");
         let index = self.proto_field(field, &segments);
-        match &field.kind {
+        let stmt = match &field.kind {
             FieldKind::Builtin(value) => {
                 let bits = value
                     .bits
@@ -610,7 +642,25 @@ impl<'p> Lowering<'p> {
                 let site = Ref::Local(self.sites.len() - 1);
                 self.call(Ref::Local(index), &segments, name, site, context)
             }
-        }
+        };
+        self.array(field, &segments, stmt)
+    }
+
+    /// The statement of `field`, at `segments`, given the statement `stmt` reading it once:
+    /// `stmt` itself, or `stmt` repeated when the Field is an array.
+    fn array(&mut self, field: &Field, segments: &[&str], stmt: Stmt) -> Stmt {
+        let Some(array) = &field.array else { return stmt };
+        // An element that reads no bytes is reported as malformed.
+        self.use_chunk(prelude::INVALID);
+        let repeat = match array {
+            Array::ToEnd => Repeat::ToEnd,
+            Array::Count(Amount::Constant(count)) => {
+                let count = u64::try_from(*count).expect("a count fits in 64 bits");
+                Repeat::Count(Computed::checked_already(LuaExpr::Int(count)))
+            }
+            Array::Count(Amount::Expression { expr, references }) => Repeat::Count(self.computed(expr, references)),
+        };
+        Stmt::Array { path: segments.join("."), repeat, element: Box::new(stmt) }
     }
 
     /// The statements of a structure inside a Type whose Fields' paths, relative to the Type,
@@ -627,7 +677,7 @@ impl<'p> Lowering<'p> {
                     Ref::Slot(key)
                 };
                 let field_ref = slot(slots, "f_", segments.clone(), SlotKind::Field(field));
-                match &field.kind {
+                let stmt = match &field.kind {
                     FieldKind::Builtin(value) => {
                         let bits = value
                             .bits
@@ -647,7 +697,8 @@ impl<'p> Lowering<'p> {
                         let site = slot(slots, "t_", segments.clone(), SlotKind::Site(name));
                         self.call(field_ref, &segments, name, site, context)
                     }
-                }
+                };
+                self.array(field, &segments, stmt)
             })
             .collect()
     }
@@ -697,14 +748,7 @@ impl<'p> Lowering<'p> {
         bits: Vec<(Ref, &Bit)>,
     ) -> Stmt {
         let length = match &field_value.length {
-            field::Length::Expression { expr, references } => {
-                let checked = expr.constant().is_none();
-                let faults = checked && can_fault(expr);
-                if checked {
-                    self.use_chunk(prelude::INVALID);
-                }
-                Length::Expression { value: self.expression(expr, references), checked, faults }
-            }
+            field::Length::Expression { expr, references } => Length::Expression(self.computed(expr, references)),
             _ => length(field_value),
         };
         if matches!(length, Length::Terminator { .. }) {
@@ -719,6 +763,18 @@ impl<'p> Lowering<'p> {
         let bits =
             bits.into_iter().map(|(field, bit)| BitItem { field, hidden: hidden || bit.hidden, little }).collect();
         Stmt::Read { field, length, decode: decode(field_value), path: segments.join("."), value, hidden, bits }
+    }
+
+    /// Compiles a `size:` or `count:` Expression whose paths read `references`, with the
+    /// checks it needs: a value known only when the packet is read is reported when negative,
+    /// under the `invalid` chunk.
+    fn computed(&mut self, expr: &Expr, references: &BTreeMap<Vec<String>, Reference>) -> Computed {
+        let checked = expr.constant().is_none();
+        let faults = checked && can_fault(expr);
+        if checked {
+            self.use_chunk(prelude::INVALID);
+        }
+        Computed { value: self.expression(expr, references), checked, faults }
     }
 
     /// Adds a prelude chunk the Dissector needs, once.
@@ -1153,7 +1209,9 @@ mod tests {
             .iter()
             .map(|stmt| match stmt {
                 Stmt::Read { length, decode, .. } => (length.clone(), *decode),
-                Stmt::Structure { path, .. } | Stmt::Call { path, .. } => panic!("{path} is not a read"),
+                Stmt::Structure { path, .. } | Stmt::Call { path, .. } | Stmt::Array { path, .. } => {
+                    panic!("{path} is not a read")
+                }
             })
             .collect()
     }
@@ -1314,6 +1372,7 @@ mod tests {
             .flat_map(|stmt| match stmt {
                 Stmt::Read { decode, .. } => vec![*decode],
                 Stmt::Structure { body, .. } => all_decodes(body),
+                Stmt::Array { element, .. } => all_decodes(std::slice::from_ref(element)),
                 Stmt::Call { .. } => Vec::new(),
             })
             .collect()
@@ -1367,6 +1426,7 @@ mod tests {
                     Stmt::Structure { field, path, body } => {
                         [slot(field, path)].into_iter().chain(slots(body)).collect()
                     }
+                    Stmt::Array { element, .. } => slots(std::slice::from_ref(element)),
                 })
                 .collect()
         }
@@ -1442,7 +1502,7 @@ mod tests {
         );
         let call = |helper, args| LuaExpr::Call { helper, args };
         // A constant was checked by validation: it is evaluated as is.
-        let constant = |value| Length::Expression { value, checked: false, faults: false };
+        let constant = |value| Length::Expression(Computed::checked_already(value));
         let lengths: Vec<Length> = reads(&d).into_iter().map(|(length, _)| length).collect();
         assert_eq!(
             lengths,
@@ -1484,6 +1544,7 @@ mod tests {
             stmts.iter().find_map(|s| match s {
                 Stmt::Read { path: p, .. } | Stmt::Call { path: p, .. } if p == path => Some(s),
                 Stmt::Structure { body, .. } => find(body, path),
+                Stmt::Array { element, .. } => find(std::slice::from_ref(element), path),
                 Stmt::Read { .. } | Stmt::Call { .. } => None,
             })
         }
@@ -1493,7 +1554,7 @@ mod tests {
     /// The Expression a `size:` at `path` among `stmts` compiles to.
     fn size<'d>(stmts: &'d [Stmt], path: &str) -> &'d LuaExpr {
         match stmt(stmts, path) {
-            Stmt::Read { length: Length::Expression { value, .. }, .. } => value,
+            Stmt::Read { length: Length::Expression(Computed { value, .. }), .. } => value,
             other => panic!("`{path}` has no Expression: {other:?}"),
         }
     }
@@ -1654,7 +1715,7 @@ mod tests {
                 "x",
             );
             let (checked, faults) = match stmt(&d.layout, "a") {
-                Stmt::Read { length: Length::Expression { checked, faults, .. }, .. } => (*checked, *faults),
+                Stmt::Read { length: Length::Expression(Computed { checked, faults, .. }), .. } => (*checked, *faults),
                 other => panic!("{other:?}"),
             };
             (checked, faults, d.chunks.contains(&prelude::INVALID))
@@ -1665,6 +1726,48 @@ mod tests {
         assert_eq!(checks("n / 2"), (true, true, true));
         assert_eq!(checks("1 << n"), (true, true, true));
         assert_eq!(checks("-(n % 3)"), (true, true, true));
+    }
+
+    /// The array statement of the Field at `path` among `stmts`.
+    fn array<'d>(stmts: &'d [Stmt], path: &str) -> (&'d Repeat, &'d Stmt) {
+        stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::Array { path: p, repeat, element } if p == path => Some((repeat, element.as_ref())),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("`{path}` is not an array"))
+    }
+
+    /// Spec §3.7, §5.2: an array repeats its element's statement, and its elements share one set
+    /// of `ProtoField`s. Its count is read like a size, and an element can read inside itself.
+    #[test]
+    fn an_array_repeats_its_element_with_one_set_of_proto_fields() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: n, type: uint8}\n  - name: items\n    count: n\n    fields:\n      - {name: len, type: uint8}\n      - {name: data, type: bytes, size: len}\n",
+            "x",
+        );
+        let abbrevs: Vec<&str> = d.proto_fields.iter().map(|f| f.abbrev.as_str()).collect();
+        assert_eq!(abbrevs, ["demo.n", "demo.items", "demo.items.len", "demo.items.data"]);
+        let (repeat, element) = array(&d.layout, "items");
+        assert_eq!(repeat, &Repeat::Count(Computed { value: local("v_n", &[]), checked: true, faults: false }));
+        assert!(matches!(element, Stmt::Structure { path, .. } if path == "items"));
+        assert_eq!(size(&d.layout, "items.data"), &local("v_items__len", &[]));
+        assert!(d.chunks.contains(&prelude::INVALID), "an empty element is reported as malformed");
+    }
+
+    /// A constant count needs no runtime check; `repeat: to_end` has no count, and a Type repeats
+    /// by calling its dissect function once per element.
+    #[test]
+    fn constant_counts_and_repeats_to_the_end() {
+        let d = lowered(
+            "name: demo\nfields:\n  - name: pair\n    count: 2\n    type: Item\n  - name: rest\n    repeat: to_end\n    fields: [ {name: id, type: uint8} ]\ntypes:\n  Item:\n    fields: [ {name: id, type: uint8} ]\n",
+            "x",
+        );
+        let (repeat, element) = array(&d.layout, "pair");
+        assert_eq!(repeat, &Repeat::Count(Computed::checked_already(LuaExpr::Int(2))));
+        assert!(matches!(element, Stmt::Call { ty, .. } if ty == "Item"));
+        assert_eq!(array(&d.layout, "rest").0, &Repeat::ToEnd);
     }
 
     /// Reading a `bool` for an Expression needs `wd_bool`.

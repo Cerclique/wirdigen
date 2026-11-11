@@ -74,6 +74,8 @@ enum Miss {
     NoMember { parent: String, member: String, candidates: Vec<String> },
     /// A Field on the path is not a structure, but the path goes on.
     NotStructure(String),
+    /// A Field on the path is an array, whose Fields only its elements can read (spec §4.3).
+    IntoArray(String),
     /// The path ends on a Field that is not an integer or a `bool`.
     NonNumeric { what: String, span: Range<usize> },
 }
@@ -129,6 +131,9 @@ fn resolve<'a>(segments: &[String], scope: Scope<'a, '_>, types: &Types<'a>) -> 
 /// Follows the rest of a path from `field`, found at `path`.
 fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, types: &Types<'a>) -> Resolution {
     for (index, segment) in rest.iter().enumerate() {
+        if field.is_array() {
+            return Resolution::Miss(Miss::IntoArray(field.name().value.clone()));
+        }
         let children = match field.shape(types) {
             Shape::Structure(children) | Shape::Type { fields: children, .. } => children,
             Shape::Unknown => return Resolution::Suppressed,
@@ -161,8 +166,9 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
         path.push(segment.clone());
     }
     let what = match field.shape(types) {
-        Shape::Value(Builtin::Int { .. } | Builtin::Bool, _) => return Resolution::Found(Reference::Field(path)),
         Shape::Unknown => return Resolution::Suppressed,
+        _ if field.is_array() => "an array".to_owned(),
+        Shape::Value(Builtin::Int { .. } | Builtin::Bool, _) => return Resolution::Found(Reference::Field(path)),
         Shape::Value(_, written) => format!("a `{written}`"),
         Shape::Structure(_) => "a structure".to_owned(),
         Shape::Type { name, .. } => format!("a Field of the Type `{name}`"),
@@ -207,6 +213,11 @@ fn explain(miss: &Miss, key: &str, segments: &[String]) -> (Name, String, Notes)
             Name::UnknownField,
             format!("`{field}` has no Fields"),
             vec![(format!("`{key}` goes into `{field}`, which is not a structure"), None)],
+        ),
+        Miss::IntoArray(array) => (
+            Name::UnknownField,
+            format!("`{array}` is an array, whose Fields are read once per element"),
+            vec![(format!("only Fields inside an element of `{array}` can read its Fields"), None)],
         ),
         Miss::NonNumeric { what, span } => {
             let last = segments.last().expect("a path has a name");

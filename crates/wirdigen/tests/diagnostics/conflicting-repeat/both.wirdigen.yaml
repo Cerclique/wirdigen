@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - name: items
+    count: 2
+    repeat: to_end
+    fields: [ {name: id, type: uint8} ]

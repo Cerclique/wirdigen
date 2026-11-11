@@ -13,7 +13,7 @@
 - [Cheat sheet](reference/cheat-sheet.md)
 - [Fields and Types](reference/fields.md)
 - [Sizes]()
-- [Arrays]()
+- [Arrays](reference/arrays.md)
 - [Bitfields](reference/bitfields.md)
 - [`if` and `switch`]()
 - [Registration]()

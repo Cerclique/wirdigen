@@ -1,7 +1,7 @@
 # Expressions
 
 An Expression is a small formula that computes a number from constants and Fields read
-earlier: a size, and later a count, a condition or a `switch` subject. It is written as a YAML
+earlier: a size, a count, and later a condition or a `switch` subject. It is written as a YAML
 string.
 
 ```yaml
@@ -12,7 +12,7 @@ fields:
   - { name: records, type: bytes, size: "count * 8" }
 ```
 
-This version reads Expressions in `size:`.
+This version reads Expressions in `size:` and in the `count:` of an [array](arrays.md).
 
 ## Writing an Expression in YAML {#yaml}
 
@@ -98,7 +98,8 @@ fields:
 ```
 
 A constant `size:` that is negative, divides by zero or shifts by a count outside 0 to 63 is
-[`invalid-size`](../diagnostics.md#invalid-size).
+[`invalid-size`](../diagnostics.md#invalid-size), and such a `count:` is
+[`invalid-count`](../diagnostics.md#invalid-count).
 
 ```yaml,diagnostic=invalid-size
 name: demo
@@ -118,6 +119,9 @@ A name in an Expression reads the value of a Field read earlier in the packet.
   [`forward-reference`](../diagnostics.md#forward-reference). A name that matches nothing is
   [`unknown-field`](../diagnostics.md#unknown-field), and so is a path into the structure still
   being read: inside `hdr`, write `len`, not `hdr.len`.
+- **Not into arrays.** A Field inside an element of an [array](arrays.md) can be read only from
+  inside that element: after `items`, `items.len` is
+  [`unknown-field`](../diagnostics.md#unknown-field), since each element has its own `len`.
 - **Only numbers.** Integer and `bool` Fields and bitfield sub-Fields can be read; a `bool`
   or a boolean sub-Field reads as 1 or 0. A
   `string`, `bytes`, float, address, timestamp or structure is
@@ -194,8 +198,8 @@ expert info error on the Field, filtered as `<protocol>._malformed.expression`, 
 
 - a division or remainder by zero;
 - a shift by a count outside 0 to 63;
-- a negative size, which includes a `uint64` size above `0x7FFF_FFFF_FFFF_FFFF`.
+- a negative size or count, which includes a `uint64` above `0x7FFF_FFFF_FFFF_FFFF`.
 
-A size larger than what is left of the packet is a truncation, as for any Field that does not
+A size or count larger than what is left of the packet is a truncation, as for any Field that does not
 fit: "Malformed: truncated", filtered as `<protocol>._malformed.truncated`.
 

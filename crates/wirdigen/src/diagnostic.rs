@@ -81,6 +81,10 @@ names! {
     InvalidBits => "invalid-bits", Error;
     InvalidBitWidth => "invalid-bit-width", Error;
     MismatchedBitWidths => "mismatched-bit-widths", Error;
+    ConflictingRepeat => "conflicting-repeat", Error;
+    InvalidRepeat => "invalid-repeat", Error;
+    InvalidCount => "invalid-count", Error;
+    InvalidArray => "invalid-array", Error;
     ExpressionSyntax => "expression-syntax", Error;
     LeadingZeroLiteral => "leading-zero-literal", Error;
     ChainedComparison => "chained-comparison", Error;

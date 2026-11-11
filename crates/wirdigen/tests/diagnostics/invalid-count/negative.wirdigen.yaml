@@ -1,0 +1,11 @@
+name: demo
+fields:
+  - name: items
+    count: -1
+    fields: [ {name: id, type: uint8} ]
+  - name: others
+    count: "2 - 3"
+    fields: [ {name: id, type: uint8} ]
+  - name: more
+    count: "4 / (2 - 2)"
+    fields: [ {name: id, type: uint8} ]

@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - name: items
+    count: items
+    fields: [ {name: id, type: uint8} ]
