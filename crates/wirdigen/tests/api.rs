@@ -46,3 +46,17 @@ fn diagnostic_accessors() {
     assert_eq!(d.notes()[0].span(), None);
     assert_ne!(d.notes()[0].message(), "");
 }
+
+#[test]
+fn json_schema_is_pretty_deterministic_json_listing_top_level_keys_in_documentation_order() {
+    let schema = wirdigen::json_schema();
+    assert_eq!(schema, wirdigen::json_schema());
+    assert!(schema.starts_with("{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n"), "{schema}");
+    assert!(schema.ends_with("}\n"));
+    let parsed: serde_json::Value = serde_json::from_str(&schema).expect("JSON");
+    let top: Vec<&String> = parsed["properties"].as_object().expect("properties").keys().collect();
+    assert_eq!(
+        top,
+        ["name", "title", "registration", "framing", "endian", "info", "fields", "types", "enums", "allow"]
+    );
+}

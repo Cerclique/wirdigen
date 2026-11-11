@@ -14,10 +14,10 @@ use crate::types::{self, NamedType, RawType};
 use crate::yaml::{Node, Value};
 
 /// The longest protocol name Wireshark filters accept here (spec §3.3, ADR 0014).
-const MAX_NAME_LEN: usize = 32;
+pub(crate) const MAX_NAME_LEN: usize = 32;
 
 /// The ten top-level keys, in documentation order (spec §3.2).
-const KEYS: [&str; 10] =
+pub(crate) const KEYS: [&str; 10] =
     ["name", "title", "registration", "framing", "endian", "info", "fields", "types", "enums", "allow"];
 
 /// The top level of a Protocol Description, as written.

@@ -151,6 +151,11 @@ impl Builtin {
         BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
     }
 
+    /// Every built-in with its name, in documentation order.
+    pub(crate) fn all() -> impl Iterator<Item = (&'static str, Self)> {
+        BUILTINS.into_iter()
+    }
+
     /// The type's name, as written in `type:`.
     pub(crate) fn name(self) -> &'static str {
         BUILTINS.iter().find(|(_, b)| *b == self).map(|(n, _)| *n).expect("every built-in has a name")

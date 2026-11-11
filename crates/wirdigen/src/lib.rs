@@ -51,6 +51,7 @@ mod prelude;
 mod registration;
 mod render;
 mod scalar;
+mod schema;
 mod scope;
 mod source;
 mod switch;
@@ -85,6 +86,16 @@ impl ValidDescription {
     pub fn generate(&self) -> String {
         emit::emit(&lower::lower(&self.protocol, &self.source_name))
     }
+}
+
+/// The JSON Schema of a Protocol Description (`*.wirdigen.yaml`), for editor completion and hover.
+///
+/// Draft-07 JSON, pretty-printed with a trailing newline; the same Wirdigen version always gives
+/// the same bytes. It accepts every description [`validate`] accepts, but only Wirdigen itself
+/// validates: its exact text is not stable, and it never replaces [`validate`].
+#[must_use]
+pub fn json_schema() -> String {
+    schema::json_schema()
 }
 
 /// Checks a Protocol Description.

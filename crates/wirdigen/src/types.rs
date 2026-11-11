@@ -11,7 +11,7 @@ use crate::scope::{FreeRef, Scope};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Type body, in documentation order.
-const KEYS: [&str; 2] = ["fields", "endian"];
+pub(crate) const KEYS: [&str; 2] = ["fields", "endian"];
 
 /// A Type as written, after stage 2.
 #[derive(Debug, Clone)]

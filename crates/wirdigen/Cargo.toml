@@ -17,7 +17,10 @@ workspace = true
 [dependencies]
 annotate-snippets = "0.12"
 saphyr-parser = "0.3.3"
+schemars = { version = "1.2.3", default-features = false, features = ["derive", "std", "preserve_order"] }
+serde_json = "1.0.154"
 
 [dev-dependencies]
+jsonschema = { version = "0.61.1", default-features = false }
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }

@@ -15,7 +15,7 @@ use crate::mapping::{self, Enums, Mapping, Subject};
 use crate::yaml::{Node, Value};
 
 /// The keys of a sub-Field, in documentation order (spec §3.8).
-const KEYS: [&str; 11] =
+pub(crate) const KEYS: [&str; 11] =
     ["name", "width", "display", "values", "unit", "true", "false", "hidden", "expect", "label", "description"];
 
 /// The `bits:` of a Field as written, after stage 2.

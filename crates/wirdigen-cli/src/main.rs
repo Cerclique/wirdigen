@@ -83,6 +83,8 @@ enum Command {
     Validate(ValidationArgs),
     /// Validate Protocol Descriptions and write their Dissectors.
     Generate(GenerateArgs),
+    /// Print the JSON Schema of Protocol Descriptions, for editor completion.
+    Schema(SchemaArgs),
 }
 
 #[derive(clap::Args)]
@@ -114,6 +116,13 @@ struct GenerateArgs {
     check: bool,
 }
 
+#[derive(clap::Args)]
+struct SchemaArgs {
+    /// Write the JSON Schema to this file instead of standard output (`-`).
+    #[arg(short = 'o', value_name = "FILE|-")]
+    output: Option<PathBuf>,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let color = color::use_color(
@@ -124,6 +133,7 @@ fn main() -> ExitCode {
     );
     let verbosity = Verbosity::from_flags(cli.quiet, cli.verbose);
     let (subcommand, validation, placement, check) = match cli.command {
+        Command::Schema(SchemaArgs { output }) => return schema(output),
         Command::Validate(validation) => ("validate", validation, None, false),
         Command::Generate(GenerateArgs { validation, output, out_dir, check }) => {
             ("generate", validation, Some(Placement::from_args(output, out_dir)), check)
@@ -174,6 +184,18 @@ fn main() -> ExitCode {
     }
     run.print_summary(inputs.len());
     if run.failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+/// `wirdigen schema`: writes the JSON Schema to `output`, standard output by default.
+fn schema(output: Option<PathBuf>) -> ExitCode {
+    let output = output.map_or(Output::Stdout, Output::from_arg);
+    match write(&output, &wirdigen::json_schema()) {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(message) => {
+            report_error(&message);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// What happens to one input once it is valid.
