@@ -101,7 +101,7 @@ type gives its length with exactly one of these keys.
 
 | Key | The value ends |
 |---|---|
-| `size: <n>` | after `n` bytes, a constant of zero or more |
+| `size: <n>` | after `n` bytes: a constant of zero or more, or an [Expression](expressions.md) written as a string |
 | `prefix: <type>` | after as many bytes as the unsigned integer just before it says: `uint8` to `uint64`, in the Field's byte order |
 | `terminator: <byte>` | before the first byte of that value, from 0 to 255; the terminator is read but not shown |
 
@@ -121,7 +121,7 @@ than one is [`conflicting-length`](../diagnostics.md#conflicting-length). A nega
 [`invalid-size`](../diagnostics.md#invalid-size), a `prefix:` that is not an unsigned integer
 type is [`invalid-prefix`](../diagnostics.md#invalid-prefix), and a `terminator:` outside 0 to
 255 is [`invalid-terminator`](../diagnostics.md#invalid-terminator). This version takes only a
-constant `size:`; a size computed from earlier Fields is not read yet
+constant `size:`, such as `"4 * 6 + 2"`; a size computed from earlier Fields is not read yet
 ([`not-supported-yet`](../diagnostics.md#not-supported-yet)).
 
 The tree shows the value bytes only: the `prefix:` count and the terminator are read but not

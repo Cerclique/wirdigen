@@ -398,11 +398,18 @@ fields: [ {name: user, type: string, size: 8, terminator: 0} ]
 
 **Severity**: error
 
-A `size:` is a negative number of bytes.
+A constant `size:` is a negative number of bytes, or an Expression that has no value: it
+divides by zero, or shifts by a count outside 0 to 63. The error points at the dividing or
+shifting operator.
 
 ```yaml,diagnostic=invalid-size
 name: demo
 fields: [ {name: data, type: bytes, size: -4} ]
+```
+
+```yaml,diagnostic=invalid-size
+name: demo
+fields: [ {name: data, type: bytes, size: "16 / (4 - 4)"} ]
 ```
 
 **Fix**: write the length in bytes, zero or more.
@@ -562,13 +569,62 @@ enums:
 **Fix**: correct the name, here `MsgType`, or declare the Enum under `enums:`. To label the
 values of this Field only, write the table inline: `values: { 1: Request }`.
 
+## `expression-syntax` {#expression-syntax}
+
+**Severity**: error
+
+An [Expression](reference/expressions.md) cannot be read: a missing or extra value, operator or
+parenthesis, a character Expressions do not use (such as `=` or a quote), a malformed or
+oversized integer literal, a built-in other than `_offset` and `_remaining`, or a Field path
+with an empty segment. The error points at the offending token; in an escaped or multi-line
+YAML string, at the whole value. Only the first error of each Expression is reported.
+
+```yaml,diagnostic=expression-syntax
+name: demo
+fields: [ {name: data, type: bytes, size: "(4 + 2"} ]
+```
+
+**Fix**: correct the Expression, here by closing the parenthesis: `"(4 + 2)"`.
+
+## `leading-zero-literal` {#leading-zero-literal}
+
+**Severity**: error
+
+An integer literal in an Expression starts with `0` and has more digits, such as `010`. In C
+that would be octal; Expressions have no octal, so the number is ambiguous.
+
+```yaml,diagnostic=leading-zero-literal
+name: demo
+fields: [ {name: data, type: bytes, size: "4 * 010"} ]
+```
+
+**Fix**: write the decimal number without the zeros (`10`), or use `0x` or `0b` for hexadecimal
+or binary (`0x10`, `0b10`).
+
+## `chained-comparison` {#chained-comparison}
+
+**Severity**: error
+
+Two comparisons follow each other without parentheses, as in `a < b < c`. Comparisons do not
+chain: in C, `1 < 3 < 2` compares the 1 of `1 < 3` with 2, which is rarely what was meant. The
+error points at the second comparison.
+
+```yaml,diagnostic=chained-comparison
+name: demo
+fields: [ {name: data, type: bytes, size: "1 < 2 < 3"} ]
+```
+
+**Fix**: join the two comparisons with `&&`, as in `a < b && b < c`, or add parentheses to
+compare the 1 or 0 of the first: `(a < b) < c`.
+
 ## `not-supported-yet` {#not-supported-yet}
 
 **Severity**: error
 
 The description uses part of the format that this version of Wirdigen does not read yet: a
-`switch:` Field, or a `size:` given as an Expression (including `"_remaining"`) rather than a
-constant. A newer Wirdigen will accept it.
+`switch:` Field, or a `size:` Expression that reads a Field or a built-in such as
+`"_remaining"`. Constant Expressions such as `"4 * 6"` are read. A newer Wirdigen will accept
+the rest.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo

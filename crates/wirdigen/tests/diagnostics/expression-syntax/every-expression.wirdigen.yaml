@@ -1,0 +1,4 @@
+name: demo
+fields:
+  - { name: a, type: bytes, size: "1 +" }
+  - { name: b, type: bytes, size: "_size" }

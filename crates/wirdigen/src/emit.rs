@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 
 use crate::lower::{
-    Args, Decode, Dissector, Length, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt, Strings, TableRef,
+    Args, Decode, Dissector, Length, LuaExpr, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt, Strings, TableRef,
 };
 use crate::prelude;
 
@@ -304,6 +304,16 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                     w.line(&add(&format!("tvb(offset, {size})")));
                     w.line(&format!("offset = offset + {size}"));
                 }
+                Length::Expression(expr) => w.block(
+                    "do",
+                    |w| {
+                        w.line(&format!("local len = {}", lua_expr(expr)));
+                        w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
+                        w.line(&add("tvb(offset, len)"));
+                        w.line("offset = offset + len");
+                    },
+                    "end",
+                ),
                 Length::Prefix { size, read } => w.block(
                     "do",
                     |w| {
@@ -328,6 +338,21 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 ),
             }
         }
+    }
+}
+
+/// An Expression as Lua: helper calls, and Lua's short-circuit `and`/`or` for `&&`/`||`.
+fn lua_expr(expr: &LuaExpr) -> String {
+    match expr {
+        // A decimal literal above `i64::MAX` would be a float; a hexadecimal one wraps.
+        LuaExpr::Int(value) if i64::try_from(*value).is_ok() => value.to_string(),
+        LuaExpr::Int(value) => format!("0x{value:X}"),
+        LuaExpr::Call { helper, args } => {
+            let args: Vec<String> = args.iter().map(lua_expr).collect();
+            format!("{helper}({})", args.join(", "))
+        }
+        LuaExpr::And(left, right) => format!("wd_bool({} ~= 0 and {} ~= 0)", lua_expr(left), lua_expr(right)),
+        LuaExpr::Or(left, right) => format!("wd_bool({} ~= 0 or {} ~= 0)", lua_expr(left), lua_expr(right)),
     }
 }
 

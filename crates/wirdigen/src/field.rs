@@ -3,9 +3,10 @@
 //! Stage 2 reads each entry's keys into a [`RawField`]; stage 4 turns the raw Fields into the
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
-use std::ops::RangeInclusive;
+use std::ops::{Range, RangeInclusive};
 
 use crate::diagnostic::{Diagnostic, Name, record};
+use crate::expr::{self, Expr, ExprKind, Fault};
 use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping};
 use crate::scalar::{Kind, resolve_plain};
@@ -375,10 +376,13 @@ impl Encoding {
 }
 
 /// How many bytes a validated Field reads (spec §3.6).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Length {
     /// A constant number of bytes: a fixed-size type's, or a constant `size:`.
     Constant(usize),
+    /// As many bytes as a `size:` Expression with operators gives. This version accepts only
+    /// constant Expressions, whose value validation checked is a size.
+    Expression(Expr),
     /// The number of bytes is an unsigned integer of this many bytes just before the value
     /// (`prefix:`), in the Field's byte order.
     Prefix(usize),
@@ -392,8 +396,8 @@ pub(crate) enum Length {
 enum RawLength {
     /// `size:` with a constant.
     Size(i64),
-    /// `size:` with an Expression, which this version does not read yet.
-    SizeExpression,
+    /// `size:` with an Expression, parsed in stage 2; stage 3 reports its syntax error.
+    Expression(Result<Expr, Diagnostic>),
     /// `prefix:` with a type name.
     Prefix(String),
     /// `terminator:` with a constant.
@@ -411,7 +415,7 @@ struct LengthKey {
 fn read_size(node: &Node) -> Result<RawLength, Diagnostic> {
     match &node.value {
         Value::Scalar { text, plain, .. } if !*plain || resolve_plain(text) == Kind::Str => {
-            Ok(RawLength::SizeExpression)
+            Ok(RawLength::Expression(expr::parse(node, text)))
         }
         _ => expect_integer(node, "size").map(RawLength::Size),
     }
@@ -435,12 +439,9 @@ impl LengthKey {
             RawLength::Size(size) => usize::try_from(*size).map(Length::Constant).map_err(|_| {
                 Diagnostic::new(Name::InvalidSize, span, format!("a size cannot be negative, found `{size}`"))
             }),
-            RawLength::SizeExpression => Err(Diagnostic::new(
-                Name::NotSupportedYet,
-                span,
-                "`size` Expressions are not supported by this version of Wirdigen yet",
-            )
-            .with_note("write the size as a constant integer", None)),
+            RawLength::Expression(expression) => {
+                check_size(expression.as_ref().expect("stage 3 reported every syntax error"), span)
+            }
             RawLength::Prefix(name) => {
                 if let Some(bytes) = Builtin::from_name(name).and_then(Builtin::unsigned_bytes) {
                     return Ok(Length::Prefix(bytes));
@@ -463,6 +464,58 @@ impl LengthKey {
             },
         }
     }
+}
+
+/// Stage 4: the length a `size:` Expression at `span` gives. This version reads no references,
+/// and a constant must be a size: zero or more, reached without a fault (spec §3.6, §4.4).
+fn check_size(expression: &Expr, span: Range<usize>) -> Result<Length, Diagnostic> {
+    if let Some(first) = expression.references().first() {
+        let message = match &first.kind {
+            ExprKind::Builtin(builtin) => {
+                format!("`{}` is not supported by this version of Wirdigen yet", builtin.as_str())
+            }
+            _ => "Field references in Expressions are not supported by this version of Wirdigen yet".to_owned(),
+        };
+        return Err(Diagnostic::new(Name::NotSupportedYet, first.span.clone(), message)
+            .with_note("write the size as a constant", None));
+    }
+    let value = match expression.constant().expect("an Expression without references is constant") {
+        Ok(value) => value,
+        Err(fault) => {
+            let message = match fault.value {
+                Fault::DivisionByZero => "this size divides by zero".to_owned(),
+                Fault::ShiftOutOfRange(count) => format!("this size shifts by {count}, outside 0 to 63"),
+            };
+            return Err(Diagnostic::new(Name::InvalidSize, fault.span, message));
+        }
+    };
+    let Ok(size) = usize::try_from(value) else {
+        return Err(Diagnostic::new(
+            Name::InvalidSize,
+            span,
+            format!("a size cannot be negative, this one is `{value}`"),
+        ));
+    };
+    Ok(match expression.kind {
+        ExprKind::Int(_) => Length::Constant(size),
+        _ => Length::Expression(expression.clone()),
+    })
+}
+
+/// Stage 3: the syntax errors of the Expressions of `fields` and of their inline structures.
+pub(crate) fn expression_errors(fields: &[RawField]) -> Vec<Diagnostic> {
+    let mut errors = Vec::new();
+    for field in fields {
+        for length in &field.lengths {
+            if let RawLength::Expression(Err(error)) = &length.value.value {
+                errors.push(error.clone());
+            }
+        }
+        if let RawKind::Structure { fields, .. } = &field.kind {
+            errors.extend(expression_errors(fields));
+        }
+    }
+    errors
 }
 
 /// Byte order (spec §3.11).

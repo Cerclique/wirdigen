@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use crate::description::Protocol;
+use crate::expr::{BinaryOp, Expr, ExprKind, UnaryOp};
 use crate::field::{self, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
@@ -210,16 +211,32 @@ pub(crate) enum Stmt {
 }
 
 /// Where the value of a read ends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Length {
     /// After this many bytes.
     Fixed(usize),
+    /// After as many bytes as this Expression gives.
+    Expression(LuaExpr),
     /// After as many bytes as the unsigned integer of `size` bytes just before the value says,
     /// read with the `TvbRange` call `read` (`uint()`).
     Prefix { size: usize, read: &'static str },
     /// Before the first `width`-byte run of `terminator`, searched in steps of `width`. The
     /// terminator is consumed but is not part of the value.
     Terminator { terminator: u8, width: usize },
+}
+
+/// An Expression compiled to prelude helper calls (ADR 0010): the emitter prints no native
+/// bitwise operator or `//`, so the file parses under Lua 5.2.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LuaExpr {
+    /// A literal, wrapping above `i64::MAX` as Lua's hexadecimal integers do.
+    Int(u64),
+    /// A call of the prelude helper `helper` (`wd_add`).
+    Call { helper: &'static str, args: Vec<LuaExpr> },
+    /// C's `&&`: 1 when both are non-zero, evaluating the right side only when the left is.
+    And(Box<LuaExpr>, Box<LuaExpr>),
+    /// C's `||`: 1 when either is non-zero, evaluating the right side only when the left is zero.
+    Or(Box<LuaExpr>, Box<LuaExpr>),
 }
 
 /// Who decodes the bytes of a read, and how.
@@ -383,11 +400,70 @@ impl<'p> Lowering<'p> {
 
     /// The statement reading a Field of a built-in type through `field`, at `path`.
     fn read(&mut self, value: &BuiltinField, field: Ref, path: String) -> Stmt {
-        let length = length(value);
-        if matches!(length, Length::Terminator { .. }) && !self.chunks.contains(&prelude::TERMINATED) {
-            self.chunks.push(prelude::TERMINATED);
+        let length = match &value.length {
+            field::Length::Expression(expr) => Length::Expression(self.expression(expr)),
+            _ => length(value),
+        };
+        if matches!(length, Length::Terminator { .. }) {
+            self.use_chunk(prelude::TERMINATED);
         }
         Stmt::Read { field, length, decode: decode(value), path }
+    }
+
+    /// Adds a prelude chunk the Dissector needs, once.
+    fn use_chunk(&mut self, chunk: &'static str) {
+        if !self.chunks.contains(&chunk) {
+            self.chunks.push(chunk);
+        }
+    }
+
+    /// Compiles an Expression to helper calls, using the prelude chunks that define them.
+    fn expression(&mut self, expr: &Expr) -> LuaExpr {
+        let (helper, chunk, args) = match &expr.kind {
+            ExprKind::Int(value) => return LuaExpr::Int(*value),
+            ExprKind::Path(_) | ExprKind::Builtin(_) => unreachable!("validation accepts only constant Expressions"),
+            ExprKind::Unary { op, operand } => {
+                let (helper, chunk) = match op.value {
+                    UnaryOp::Not => ("wd_not", prelude::LOGIC),
+                    UnaryOp::Complement => ("wd_bnot", prelude::BITWISE),
+                    UnaryOp::Negate => ("wd_neg", prelude::ARITHMETIC),
+                };
+                (helper, chunk, vec![operand])
+            }
+            ExprKind::Binary { op, left, right } => {
+                let (helper, chunk) = match op.value {
+                    BinaryOp::And | BinaryOp::Or => {
+                        // `wd_bool` turns Lua's `and`/`or`, which short-circuit, into 1 or 0.
+                        self.use_chunk(prelude::LOGIC);
+                        let (left, right) = (Box::new(self.expression(left)), Box::new(self.expression(right)));
+                        return if op.value == BinaryOp::And {
+                            LuaExpr::And(left, right)
+                        } else {
+                            LuaExpr::Or(left, right)
+                        };
+                    }
+                    BinaryOp::Mul => ("wd_mul", prelude::ARITHMETIC),
+                    BinaryOp::Add => ("wd_add", prelude::ARITHMETIC),
+                    BinaryOp::Sub => ("wd_sub", prelude::ARITHMETIC),
+                    BinaryOp::Div => ("wd_div", prelude::DIVISION),
+                    BinaryOp::Rem => ("wd_mod", prelude::DIVISION),
+                    BinaryOp::Shl => ("wd_shl", prelude::BITWISE),
+                    BinaryOp::Shr => ("wd_shr", prelude::BITWISE),
+                    BinaryOp::BitAnd => ("wd_band", prelude::BITWISE),
+                    BinaryOp::BitXor => ("wd_bxor", prelude::BITWISE),
+                    BinaryOp::BitOr => ("wd_bor", prelude::BITWISE),
+                    BinaryOp::Eq => ("wd_eq", prelude::LOGIC),
+                    BinaryOp::Ne => ("wd_ne", prelude::LOGIC),
+                    BinaryOp::Lt => ("wd_lt", prelude::LOGIC),
+                    BinaryOp::Le => ("wd_le", prelude::LOGIC),
+                    BinaryOp::Gt => ("wd_gt", prelude::LOGIC),
+                    BinaryOp::Ge => ("wd_ge", prelude::LOGIC),
+                };
+                (helper, chunk, vec![left, right])
+            }
+        };
+        self.use_chunk(chunk);
+        LuaExpr::Call { helper, args: args.into_iter().map(|arg| self.expression(arg)).collect() }
     }
 
     /// Registers the `ProtoField` of a Field at the path `segments`, returning its index.
@@ -576,6 +652,7 @@ fn base(display: Display) -> &'static str {
 /// that long, so the bounds check still fails it.
 fn length(field: &BuiltinField) -> Length {
     match field.length {
+        field::Length::Expression(_) => unreachable!("`Lowering::read` compiles Expressions"),
         field::Length::Constant(size) => Length::Fixed(size),
         field::Length::Prefix(size) => {
             let read = match (size, size > 1 && field.endian == Endian::Little) {
@@ -658,7 +735,7 @@ mod tests {
         d.layout
             .iter()
             .map(|stmt| match stmt {
-                Stmt::Read { length, decode, .. } => (*length, *decode),
+                Stmt::Read { length, decode, .. } => (length.clone(), *decode),
                 Stmt::Structure { path, .. } | Stmt::Call { path, .. } => panic!("{path} is not a read"),
             })
             .collect()
@@ -937,6 +1014,49 @@ mod tests {
             decodes,
             [Decode::Little, Decode::Big, Decode::Big, Decode::Big, Decode::Lua("le_int64"), Decode::Lua("uint64")]
         );
+    }
+
+    /// ADR 0010: every operator is a prelude helper call, and `&&`/`||` keep C's short-circuit.
+    #[test]
+    fn expressions_lower_to_helper_calls() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: bytes, size: \"4 / -2 + 3\"}\n  - {name: b, type: bytes, size: \"0 && 1 << 2\"}\n  - {name: c, type: bytes, size: \"(2)\"}\n",
+            "x",
+        );
+        let call = |helper, args| LuaExpr::Call { helper, args };
+        let lengths: Vec<Length> = reads(&d).into_iter().map(|(length, _)| length).collect();
+        assert_eq!(
+            lengths,
+            [
+                Length::Expression(call(
+                    "wd_add",
+                    vec![call("wd_div", vec![LuaExpr::Int(4), call("wd_neg", vec![LuaExpr::Int(2)])]), LuaExpr::Int(3)]
+                )),
+                Length::Expression(LuaExpr::And(
+                    Box::new(LuaExpr::Int(0)),
+                    Box::new(call("wd_shl", vec![LuaExpr::Int(1), LuaExpr::Int(2)]))
+                )),
+                Length::Fixed(2),
+            ]
+        );
+    }
+
+    /// Spec §7.3: a Dissector carries only the operator chunks its Expressions use.
+    #[test]
+    fn expressions_select_only_the_chunks_they_use() {
+        let chunks = |size: &str| {
+            let d = lowered(&format!("name: demo\nfields: [ {{name: a, type: bytes, size: \"{size}\"}} ]\n"), "x");
+            let operators = [prelude::ARITHMETIC, prelude::DIVISION, prelude::BITWISE, prelude::LOGIC];
+            let mut used: Vec<&str> = d.chunks.into_iter().filter(|c| operators.contains(c)).collect();
+            used.sort_unstable();
+            used
+        };
+        assert_eq!(chunks("8"), Vec::<&str>::new());
+        assert_eq!(chunks("1 + 2"), ["arithmetic"]);
+        assert_eq!(chunks("4 % 3 * 2"), ["arithmetic", "division"]);
+        assert_eq!(chunks("~0 & 3"), ["bitwise"]);
+        assert_eq!(chunks("(1 < 2) + !0"), ["arithmetic", "logic"]);
+        assert_eq!(chunks("1 || 0"), ["logic"]);
     }
 
     #[test]

@@ -35,6 +35,7 @@ mod book;
 mod description;
 mod diagnostic;
 mod emit;
+mod expr;
 mod field;
 mod keys;
 mod lower;
@@ -89,6 +90,10 @@ impl ValidDescription {
 pub fn validate(source: &Source) -> Result<ValidDescription, Diagnostics> {
     let root = yaml::parse(source.text()).map_err(Diagnostics::new)?;
     let description = description::deserialize(root.as_ref()).map_err(Diagnostics::new)?;
+    let syntax = description.expression_errors();
+    if !syntax.is_empty() {
+        return Err(Diagnostics::new(syntax));
+    }
     let (protocol, mut checked) = description::check(&description);
     checked.retain(|d| !description.allows(d));
     let diagnostics = Diagnostics::new(checked);

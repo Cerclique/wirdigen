@@ -16,6 +16,14 @@ pub(crate) const MALFORMED: &str = "malformed";
 pub(crate) const BOUNDS: &str = "bounds";
 /// Finding the end of a `terminator:` Field.
 pub(crate) const TERMINATED: &str = "terminated";
+/// Expression operators (ADR 0007): `+ - *` and negation, wrapping.
+pub(crate) const ARITHMETIC: &str = "arithmetic";
+/// Expression operators: C's truncating `/` and dividend-signed `%`.
+pub(crate) const DIVISION: &str = "division";
+/// Expression operators: 64-bit `& | ^ ~ << >>`, `>>` arithmetic.
+pub(crate) const BITWISE: &str = "bitwise";
+/// Expression operators: comparisons, `!`, and the 1 or 0 of `&&` and `||`.
+pub(crate) const LOGIC: &str = "logic";
 
 #[derive(Debug)]
 struct Chunk {

@@ -1,6 +1,6 @@
 # Dissectors are generated from a lowered model, an emitter and a chunked Lua prelude
 
-Wirdigen turns a validated Protocol Description into Lua in two steps. A **lowering** pass builds a private, Dissector-shaped model: the ProtoFields and value strings to register, one dissect function per Type, and for each a list of statements (bounds-checked read, add to tree, evaluate an Expression into a local, branch, loop, hand off), with every Expression already compiled to helper calls. An **emitter** then prints that model as Lua through an indenting writer. The fixed runtime (version guard, bounds-checked readers, C-style division and modulo, `bit`-based operators, string readers, the Framing loop, malformed-packet reporting) is a hand-written Lua prelude embedded with `include_str!`.
+Wirdigen turns a validated Protocol Description into Lua in two steps. A **lowering** pass builds a private, Dissector-shaped model: the ProtoFields and value strings to register, one dissect function per Type, and for each a list of statements (bounds-checked read, add to tree, evaluate an Expression into a local, branch, loop, hand off), with every Expression already compiled to helper calls. An **emitter** then prints that model as Lua through an indenting writer. The fixed runtime (version guard, bounds-checked readers, C-style division and modulo, 64-bit bitwise operators, string readers, the Framing loop, malformed-packet reporting) is a hand-written Lua prelude embedded with `include_str!`.
 
 The `arise` branch did placeholder substitution on a flat `template.lua`. That cannot express nested Types, `if`/`switch`, arrays and Framing, which all recurse, and a template engine would split the logic that decides what code a Field needs between template and Rust.
 
@@ -12,7 +12,7 @@ The `arise` branch did placeholder substitution on a flat `template.lua`. That c
 
 ## Consequences
 
-- The Lua 5.2 parse rule of ADR 0006 is enforced in one place: the emitter never prints a native bitwise operator or `//`, and each prelude chunk can be parse-checked on its own.
+- The Lua 5.2 parse rule of ADR 0006 is enforced in one place: the emitter never prints a native bitwise operator or `//`, and each prelude chunk can be parse-checked on its own. The prelude chunks that need those operators for 64-bit integers keep them in a string compiled with `load` after the version guard.
 - Lowering can be unit-tested on its own (description to model), and deterministic output makes golden-file tests and "is the committed Dissector up to date" checks possible.
 - A small Dissector stays mostly the user's own protocol rather than hundreds of lines of unused helpers, at the cost of a chunk parser and a test that every chunk loads on its own.
 - The version in the header changes every generated file on upgrade; per ADR 0001 the Lua text is not stable anyway.

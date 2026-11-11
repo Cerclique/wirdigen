@@ -273,7 +273,7 @@ A variable-length Field (string, bytes, …) states its length with exactly one 
 | `prefix: <int type>` | Length read from an unsigned integer type (`uint8` … `uint64`) just before the value, in the Field's byte order (`prefix: uint16`). |
 | `terminator: <byte>` | Ends at that byte, 0 to 255 (NUL-terminated strings). The terminator is consumed but not part of the value. |
 
-None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
+None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, and so is a constant Expression that is negative, divides by zero or shifts by a count outside 0..63 (#60: rejected when building rather than reported at runtime as in §4.4), any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
 
 A Field placed after a `size: "_remaining"` Field in the same structure is a warning.
 
@@ -423,7 +423,7 @@ Literals: decimal, `0x` hex (case-insensitive), `0b` binary, with `_` separators
 - One value type: signed 64-bit integer (Lua 5.3/5.4 integers). A `uint64` above 2⁶³ reads as negative.
 - Truthiness is C's: comparisons and logic give 1 or 0, and any non-zero value is true.
 - `/` truncates toward zero and `%` takes the dividend's sign (C, not Lua floor division). `>>` is arithmetic. Overflow wraps.
-- Operators compile to prelude helper calls, never native Lua bitwise operators or `//`, so the file parses under Lua 5.2 (§5.4).
+- Operators compile to prelude helper calls, never native Lua bitwise operators or `//` in the parsed file, so it parses under Lua 5.2 (§5.4); the helpers that need Lua 5.3 operators compile them from strings with `load`, after the version guard.
 - Division or modulo by zero, a negative size, count, padding or framing length, and a shift count outside 0..63 are a "Malformed" expert info error on that Field. The Dissector stops cleanly and never raises a Lua error.
 - An oversized size or count is a truncation (§5.3).
 
@@ -474,7 +474,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Lua only; no C plugin.
 - Supports Wireshark **≥ 4.4** (Lua 5.3/5.4), with rolling support and no ceiling: misbehaviour on a new upstream release is a bug. Raising the floor is a minor release, and only after upstream end of life.
 - At load, the Dissector checks `get_version()`. Below 4.4 it fails with a clear error naming the version it needs.
-- For that guard to run, the whole file must **parse under Lua 5.2**: no native bitwise operators, no `//`. Generated code uses the bundled `bit` library and `math.floor` through prelude helpers.
+- For that guard to run, the whole file must **parse under Lua 5.2**: no native bitwise operators, no `//`. Expression operators go through prelude helpers; those needing Lua 5.3 operators are compiled at load with `load`, after the guard. Confirmed on 4.4.19 and 4.6.9 (#60): the bundled `bit` library works on 32 bits (`bit.band(0x100000001, 0x1FFFFFFFF)` is 1), so it cannot give 64-bit Expressions, while `load`ed native operators can.
 
 ### 5.5 Columns and preferences
 
@@ -515,7 +515,7 @@ Errors:
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`);
 - `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6);
 - `framing:` `length` breaking the header-only rule;
-- a YAML float or bool where an integer is required; a leading-zero literal; a non-associative comparison chain;
+- a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - invalid ports and port ranges (§3.12);
 - `invalid-protocol-name`, `invalid-protocol-title`;
 - `conflicting-filter-name`;
@@ -585,7 +585,7 @@ Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─�
 ### 7.3 Generated code
 
 - **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Locals exist only for Fields some Expression or `info:` template references. Outer scopes are reached through a context table.
-- **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, `bit`-based operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
+- **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, 64-bit bitwise operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
 - **Names**: user names are always mangled (`f_<name>`, `dissect_<Type>`), and prelude names start with `wd_`, so a Field called `end` or `type` is safe.
 - **Format**: 4-space indent, fixed by the emitter (no external formatter). Comments name each Type (`-- Type: X`) and each Field's path, with no source line numbers.
 - **Header**: the Wirdigen version, the Source name's last `/`- or `\`-separated component, and "Requires Wireshark >= 4.4".
