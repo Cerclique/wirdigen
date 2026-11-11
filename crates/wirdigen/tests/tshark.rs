@@ -316,6 +316,14 @@ mod registration {
     }
 
     #[test]
+    fn a_port_inside_a_declared_range_is_claimed() {
+        if !enabled() {
+            return;
+        }
+        dissect("range", Transport::Udp, 6005, &[]).unwrap();
+    }
+
+    #[test]
     fn a_changed_preference_releases_the_old_ports() {
         if !enabled() {
             return;

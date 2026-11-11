@@ -9,11 +9,10 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, BitItem, Branch, Computed, Decode, Dissector, ExpectCheck, Export, Length, LuaExpr, LuaTable, ProtoField,
-    Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
+    Args, BitItem, Branch, Computed, Decode, Dissector, ExpectCheck, Export, Length, LuaExpr, LuaTable, PortPreference,
+    ProtoField, Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
 };
 use crate::prelude;
-use crate::registration::Ports;
 
 const INDENT: &str = "    ";
 
@@ -154,8 +153,8 @@ pub(crate) fn emit(model: &Dissector) -> String {
     );
     w.line("");
 
-    if !model.ports.is_empty() {
-        registration(&mut w, &model.ports, &model.short_name);
+    if !model.port_preferences.is_empty() {
+        port_preferences(&mut w, &model.port_preferences);
     }
     w.line("-- Decode As");
     w.line("DissectorTable.get(\"udp.port\"):add_for_decode_as(wd_proto)");
@@ -163,29 +162,21 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.out
 }
 
-/// Declares a range preference per transport with declared ports, defaulting to them, and
-/// registers on the ports the preferences hold (spec §3.12, §5.5).
-fn registration(w: &mut Writer, ports: &[Ports], short_name: &str) {
+/// Declares the range preferences and registers on the ports they hold (spec §3.12, §5.5).
+fn port_preferences(w: &mut Writer, preferences: &[PortPreference]) {
     w.line("-- Registration");
-    for Ports { transport, ranges } in ports {
-        let default = ranges
-            .iter()
-            .map(|&(low, high)| if low == high { low.to_string() } else { format!("{low}-{high}") })
-            .collect::<Vec<_>>()
-            .join(",");
-        let label = transport.label();
+    for p in preferences {
         w.line(&format!(
-            "wd_proto.prefs.{} = Pref.range({}, {}, {}, 65535)",
-            transport.preference(),
-            lua_string(&format!("{label} port(s)")),
-            lua_string(&default),
-            lua_string(&format!("The {label} ports decoded as {short_name}")),
+            "wd_proto.prefs.{} = Pref.range({}, {}, {}, {})",
+            p.name,
+            lua_string(&p.label),
+            lua_string(&p.default),
+            lua_string(&p.description),
+            u16::MAX,
         ));
     }
-    let pairs: Vec<String> = ports
-        .iter()
-        .map(|p| format!("{{ {}, {} }}", lua_string(p.transport.preference()), lua_string(p.transport.table())))
-        .collect();
+    let pairs: Vec<String> =
+        preferences.iter().map(|p| format!("{{ {}, {} }}", lua_string(p.name), lua_string(p.table))).collect();
     w.line(&format!("wd_register_ports(wd_proto, {{ {} }})", pairs.join(", ")));
     w.line("");
 }
