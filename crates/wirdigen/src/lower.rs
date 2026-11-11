@@ -256,6 +256,8 @@ pub(crate) enum Stmt {
         check_read: Option<ValueRead>,
         /// The check of the Field's own `expect:`.
         expect: Option<ExpectCheck>,
+        /// The name of the Dissector the bytes are handed to, after the item (spec §3.10).
+        handoff: Option<String>,
     },
     /// An inline structure: a subtree item holding the statements of its Fields, as long as
     /// the bytes they read.
@@ -1091,8 +1093,12 @@ impl<'p> Lowering<'p> {
         if check_read == Some(ValueRead::Bool) {
             self.use_chunk(prelude::LOGIC);
         }
+        let handoff = field_value.dissector.clone();
+        if handoff.is_some() {
+            self.use_chunk(prelude::HANDOFF);
+        }
         let decode = decode(field_value);
-        Stmt::Read { field, length, decode, path, value, hidden, bits, check_read, expect }
+        Stmt::Read { field, length, decode, path, value, hidden, bits, check_read, expect, handoff }
     }
 
     /// Compiles a `size:` or `count:` Expression whose paths read `references`, with the

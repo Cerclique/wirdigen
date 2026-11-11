@@ -1,0 +1,63 @@
+[
+  {
+    "handoff.len": "7",
+    "handoff.payload": "7b:22:61:22:3a:31:7d",
+    "json": {
+      "json.object": "{\"a\":1}",
+      "json.object_tree": {
+        "json.member": "a",
+        "json.member_tree": {
+          "json.path_with_value": "/a:1",
+          "json.member_with_value": "a:1",
+          "json.value.number": "1",
+          "json.key": "a",
+          "json.path": "/a"
+        }
+      }
+    },
+    "handoff.raw": "aa:bb",
+    "data": {
+      "data.data": "aa:bb",
+      "data.len": "2"
+    },
+    "handoff.wrapped": {
+      "handoff.wrapped.body": "5b:5d",
+      "json": {
+        "json.array": ""
+      }
+    },
+    "handoff.rest": "01:02",
+    "_ws.expert": {
+      "handoff._undecoded.dissector": "",
+      "_ws.expert.message": "Unknown Dissector no_such_dissector: rest",
+      "_ws.expert.severity": "6291456",
+      "_ws.expert.group": "83886080"
+    }
+  },
+  {
+    "handoff.len": "0",
+    "handoff.payload": "",
+    "handoff.raw": "cc:dd",
+    "data": {
+      "data.data": "cc:dd",
+      "data.len": "2"
+    },
+    "handoff.wrapped": {
+      "handoff.wrapped.body": "5b:31:5d",
+      "json": {
+        "json.array": {
+          "json.path_with_value": "/[]:1",
+          "json.member_with_value": "[]:1",
+          "json.value.number": "1"
+        }
+      }
+    },
+    "handoff.rest": "",
+    "_ws.expert": {
+      "handoff._undecoded.dissector": "",
+      "_ws.expert.message": "Unknown Dissector no_such_dissector: rest",
+      "_ws.expert.severity": "6291456",
+      "_ws.expert.group": "83886080"
+    }
+  }
+]

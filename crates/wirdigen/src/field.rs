@@ -21,7 +21,7 @@ use crate::types::Types;
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-pub(crate) const KEYS: [&str; 24] = [
+pub(crate) const KEYS: [&str; 25] = [
     "name",
     "type",
     "fields",
@@ -42,6 +42,7 @@ pub(crate) const KEYS: [&str; 24] = [
     "false",
     "unit",
     "expect",
+    "dissector",
     "label",
     "description",
     "hidden",
@@ -736,13 +737,34 @@ impl Endian {
 
 /// The keys only a Field read as a value takes, in documentation order: an inline structure
 /// takes none of them (spec §3.4.3).
-const VALUE_KEYS: [&str; 10] =
-    ["size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit", "expect"];
+const VALUE_KEYS: [&str; 11] =
+    ["size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit", "expect", "dissector"];
 
 /// The keys a Field of a Type does not take, in documentation order: the value keys, and
 /// `endian:`, since a Type is read in its own byte order (spec §3.5, §3.11).
-const TYPE_USE_KEYS: [&str; 11] =
-    ["endian", "size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit", "expect"];
+const TYPE_USE_KEYS: [&str; 12] = [
+    "endian",
+    "size",
+    "prefix",
+    "terminator",
+    "encoding",
+    "display",
+    "values",
+    "true",
+    "false",
+    "unit",
+    "expect",
+    "dissector",
+];
+
+/// `dissector:` as written (spec §3.10).
+#[derive(Debug, Clone)]
+struct RawDissector {
+    /// Where the `dissector` key is written, where a Field that takes none is reported.
+    key: Range<usize>,
+    /// The Dissector's name.
+    name: String,
+}
 
 /// What a Field is, as written.
 #[derive(Debug, Clone)]
@@ -811,6 +833,8 @@ pub(crate) struct RawField {
     mappings: mapping::RawMappings,
     /// `expect:`, the values the Field should hold (spec §3.10).
     expect: Option<RawExpect>,
+    /// `dissector:`, the Dissector the bytes are handed to (spec §3.10), at its key.
+    dissector: Option<RawDissector>,
     /// The sub-Fields, when the Field is a bitfield (spec §3.8).
     bits: Option<RawBits>,
     /// How the Field repeats, when it is an array (spec §3.7), at its key.
@@ -1014,6 +1038,9 @@ pub(crate) struct BuiltinField {
     pub(crate) mapping: Option<Mapping>,
     /// The values the Field should hold, when it has `expect:` (spec §3.10).
     pub(crate) expect: Option<Expect>,
+    /// The name of the Dissector a `bytes` Field's bytes are handed to, when it has
+    /// `dissector:` (spec §3.10).
+    pub(crate) dissector: Option<String>,
     /// The sub-Fields of a bitfield, most significant first; empty for any other Field.
     pub(crate) bits: Vec<Bit>,
 }
@@ -1066,6 +1093,10 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
         .collect();
     let mappings = mapping::read(&keys, errors);
     let expect = expect::read(&keys, errors);
+    let dissector = keys.key_of("dissector").zip(keys.get("dissector")).and_then(|(key, value)| {
+        let name = record(read_dissector(value), errors)?;
+        Some(RawDissector { key: key.span.clone(), name })
+    });
     let bits = keys.key_of("bits").zip(keys.get("bits")).and_then(|(key, value)| bits::read(key, value, errors));
     let array = read_array(&keys, errors);
     let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
@@ -1086,6 +1117,7 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
             lengths,
             mappings,
             expect,
+            dissector,
             bits,
             array,
             hidden,
@@ -1093,6 +1125,17 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
         }),
         _ => None,
     }
+}
+
+/// `dissector:` names a Dissector: a string of one word. Whether Wireshark has a Dissector by that
+/// name is only known when the packet is read (spec §3.10).
+fn read_dissector(node: &Node) -> Result<String, Diagnostic> {
+    let name = expect_string(node, "dissector", Name::WrongValueType)?;
+    if name.value.is_empty() || name.value.contains(char::is_whitespace) {
+        return Err(Diagnostic::new(Name::WrongValueType, name.span, "`dissector` must name a Dissector")
+            .with_note("a Dissector name is one word, such as `json`", None));
+    }
+    Ok(name.value)
 }
 
 /// Stage 2: reads a structure, the value of a `fields:` key, pushing its errors (spec §3.4.1).
@@ -1369,9 +1412,24 @@ fn check_builtin<'a>(
         }
         (Some(_), None) => None,
     };
-    let (ty, endian, length, encoding, display, mapping, expect, bits) =
-        (ty?, endian?, length?, encoding?, display?, mapping?, expect?, bits?);
-    Some(BuiltinField { ty, endian, length, encoding, display, mapping, expect, bits })
+    let dissector = match (ty, &field.dissector) {
+        (_, None) | (None, _) => Some(None),
+        (Some(Builtin::Bytes), Some(raw)) => Some(Some(raw.name.clone())),
+        (Some(_), Some(raw)) => {
+            diagnostics.push(
+                Diagnostic::new(
+                    Name::IncompatibleDisplay,
+                    raw.key.clone(),
+                    format!("`{}` takes no `dissector`", ty_name.value),
+                )
+                .with_note("only `bytes` Fields take `dissector`", None),
+            );
+            None
+        }
+    };
+    let (ty, endian, length, encoding, display, mapping, expect, dissector, bits) =
+        (ty?, endian?, length?, encoding?, display?, mapping?, expect?, dissector?, bits?);
+    Some(BuiltinField { ty, endian, length, encoding, display, mapping, expect, dissector, bits })
 }
 
 /// Checks how an array Field repeats (spec §3.7): only an inline structure or a Field of a Type

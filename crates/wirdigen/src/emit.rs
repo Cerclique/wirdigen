@@ -110,7 +110,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
         w.line(&format!("-- Type: {}", function.name));
         let context = if function.context { ", ctx" } else { "" };
         w.block(
-            &format!("local function dissect_{}(tvb, tree, offset, site{context})", function.name),
+            &format!("local function dissect_{}(tvb, pinfo, tree, offset, site{context})", function.name),
             |w| {
                 declare(w, &function.locals);
                 for stmt in &function.body {
@@ -129,7 +129,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
 
     w.line("-- Layout");
     w.block(
-        "local function dissect_top(tvb, tree, offset)",
+        "local function dissect_top(tvb, pinfo, tree, offset)",
         |w| {
             declare(w, &model.locals);
             for stmt in &model.layout {
@@ -146,7 +146,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
         |w| {
             w.line(&format!("pinfo.cols.protocol = {}", lua_string(&model.short_name)));
             w.line(&format!("local root = tree:add(wd_proto, tvb(0, tvb:len()), {})", lua_string(&model.full_name)));
-            w.line("dissect_top(tvb, root, 0)");
+            w.line("dissect_top(tvb, pinfo, root, 0)");
             w.line("return tvb:len()");
         },
         "end",
@@ -175,6 +175,10 @@ fn experts(w: &mut Writer, model: &Dissector, proto: &str) {
     if model.chunks.contains(&prelude::UNEXPECTED) {
         w.line(&format!("local wd_ei_unexpected = wd_expert_unexpected({proto})"));
         experts.push("wd_ei_unexpected");
+    }
+    if model.chunks.contains(&prelude::HANDOFF) {
+        w.line(&format!("local wd_ei_dissector = wd_expert_dissector({proto})"));
+        experts.push("wd_ei_dissector");
     }
     w.line(&format!("wd_proto.experts = {{ {} }}", experts.join(", ")));
     w.line("");
@@ -385,7 +389,7 @@ fn call(w: &mut Writer, model: &Dissector, ty: &str, site: &Ref, context: &[(Str
         args.push(format!("{{ {} }}", entries.join(", ")));
     }
     let assigned = result.map_or_else(|| "offset".to_owned(), |r| format!("offset, {r}"));
-    w.line(&format!("{assigned} = dissect_{ty}(tvb, tree, offset, {})", args.join(", ")));
+    w.line(&format!("{assigned} = dissect_{ty}(tvb, pinfo, tree, offset, {})", args.join(", ")));
     w.block("if not offset then", |w| w.line("return nil"), "end");
 }
 
@@ -607,7 +611,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             w.block("do", |w| subtree(w, model, stmt, scope, None), "end");
         }
         Stmt::Array { path, repeat, element } => array(w, model, path, repeat, element, scope),
-        Stmt::Read { field, length, decode, path, value, hidden, bits, check_read, expect } => {
+        Stmt::Read { field, length, decode, path, value, hidden, bits, check_read, expect, handoff } => {
             let local = field_ref(model, field);
             let reported = reported_path(path, scope);
             let truncated = |w: &mut Writer| {
@@ -626,6 +630,14 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             };
             // Only a fixed-size read can be a bitfield, whose item `add_item` keeps.
             let add_line = |range: &str| format!("{}{}", add(range), hide(*hidden));
+            // The handed-off Dissector's layer follows the item, in the same structure, whether
+            // the item is hidden or not (spec §3.10).
+            let hand_off = |w: &mut Writer, range: &str| {
+                if let Some(name) = handoff {
+                    let name = lua_string(name);
+                    w.line(&format!("wd_handoff({name}, {range}, pinfo, tree, wd_ei_dissector, {reported})"));
+                }
+            };
             w.line(&format!("-- Field: {path}"));
             // A variable length goes in a `len` local, scoped by `do` so locals never pile up
             // against Lua's limit of 200 per function.
@@ -643,6 +655,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         expect: expect.as_ref(),
                     };
                     add_item(w, model, &item, scope);
+                    hand_off(w, &range);
                     if let Some(value) = value {
                         w.line(&format!("{} = {}", value.local, read_value(&value.read, *size)));
                     }
@@ -654,6 +667,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         evaluate(w, "len", "size", size, &invalid);
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
                         w.line(&add_line("tvb(offset, len)"));
+                        hand_off(w, "tvb(offset, len)");
                         w.line("offset = offset + len");
                     },
                     "end",
@@ -666,6 +680,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         w.line(&format!("offset = offset + {size}"));
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
                         w.line(&add_line("tvb(offset, len)"));
+                        hand_off(w, "tvb(offset, len)");
                         w.line("offset = offset + len");
                     },
                     "end",
@@ -676,6 +691,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         w.line(&format!("local len = wd_terminated(tvb, offset, {terminator}, {width})"));
                         w.block("if not len then", truncated, "end");
                         w.line(&add_line("tvb(offset, len)"));
+                        hand_off(w, "tvb(offset, len)");
                         w.line(&format!("offset = offset + len + {width}"));
                     },
                     "end",

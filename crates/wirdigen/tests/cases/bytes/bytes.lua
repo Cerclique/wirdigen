@@ -67,7 +67,7 @@ local wd_ei_truncated = wd_expert_truncated("bytes")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: raw
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "raw")
@@ -135,7 +135,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "BYTES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "BYTES")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

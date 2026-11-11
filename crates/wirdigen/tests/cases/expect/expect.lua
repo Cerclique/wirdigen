@@ -134,7 +134,7 @@ local wd_ei_unexpected = wd_expert_unexpected("expect")
 wd_proto.experts = { wd_ei_truncated, wd_ei_unexpected }
 
 -- Type: Point
-local function dissect_Point(tvb, tree, offset, site)
+local function dissect_Point(tvb, pinfo, tree, offset, site)
     -- Field: x
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".x")
@@ -150,7 +150,7 @@ local function dissect_Point(tvb, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: magic
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "magic")
@@ -235,7 +235,7 @@ local function dissect_top(tvb, tree, offset)
     do
         local start = offset
         local tree = tree:add(f_point, tvb(offset, tvb:len() - offset))
-        offset = dissect_Point(tvb, tree, offset, site_point)
+        offset = dissect_Point(tvb, pinfo, tree, offset, site_point)
         if not offset then
             return nil
         end
@@ -247,7 +247,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "EXPECT"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "EXPECT")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

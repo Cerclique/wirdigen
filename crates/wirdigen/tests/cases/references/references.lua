@@ -186,7 +186,7 @@ local wd_ei_invalid = wd_expert_invalid("references")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Items
-local function dissect_Items(tvb, tree, offset, site, ctx)
+local function dissect_Items(tvb, pinfo, tree, offset, site, ctx)
     local v_end
     -- Field: end
     if not wd_fits(tvb, offset, 1) then
@@ -214,7 +214,7 @@ local function dissect_Items(tvb, tree, offset, site, ctx)
 end
 
 -- Type: Record
-local function dissect_Record(tvb, tree, offset, site, ctx)
+local function dissect_Record(tvb, pinfo, tree, offset, site, ctx)
     local v_count, v_items
     -- Field: count
     if not wd_fits(tvb, offset, 1) then
@@ -228,7 +228,7 @@ local function dissect_Record(tvb, tree, offset, site, ctx)
     do
         local start = offset
         local tree = tree:add(site.f_items, tvb(offset, tvb:len() - offset))
-        offset, v_items = dissect_Items(tvb, tree, offset, site.t_items, { count = v_count, len = ctx.len })
+        offset, v_items = dissect_Items(tvb, pinfo, tree, offset, site.t_items, { count = v_count, len = ctx.len })
         if not offset then
             return nil
         end
@@ -238,7 +238,7 @@ local function dissect_Record(tvb, tree, offset, site, ctx)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     local v_first, v_hdr__len, v_hdr__more, v_inner__len, v_inner__second, v_len
     -- Field: len
     if not wd_fits(tvb, offset, 1) then
@@ -316,7 +316,7 @@ local function dissect_top(tvb, tree, offset)
     do
         local start = offset
         local tree = tree:add(f_first, tvb(offset, tvb:len() - offset))
-        offset, v_first = dissect_Record(tvb, tree, offset, site_first, { len = v_len })
+        offset, v_first = dissect_Record(tvb, pinfo, tree, offset, site_first, { len = v_len })
         if not offset then
             return nil
         end
@@ -338,7 +338,7 @@ local function dissect_top(tvb, tree, offset)
         do
             local start = offset
             local tree = tree:add(f_inner__second, tvb(offset, tvb:len() - offset))
-            offset, v_inner__second = dissect_Record(tvb, tree, offset, site_inner__second, { len = v_inner__len })
+            offset, v_inner__second = dissect_Record(tvb, pinfo, tree, offset, site_inner__second, { len = v_inner__len })
             if not offset then
                 return nil
             end
@@ -398,7 +398,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "REFERENCES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "REFERENCES")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

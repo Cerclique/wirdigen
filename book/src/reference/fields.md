@@ -394,7 +394,7 @@ A structure takes `name:`, `label:`, `description:`, `count:` or `repeat:` to ma
 set their own (see [Byte order](#byte-order)). The keys that
 say how a value is read or shown belong on the Fields inside: a length key on a structure is
 [`unexpected-length`](../diagnostics.md#unexpected-length), and `display:`, `encoding:`,
-`values:`, `true:`, `false:`, `unit:` or [`expect:`](#expect) is
+`values:`, `true:`, `false:`, `unit:`, [`expect:`](#expect) or [`dissector:`](#dissector) is
 [`incompatible-display`](../diagnostics.md#incompatible-display).
 
 Only the Fields of one structure need different names: `header.length` and a top-level
@@ -435,7 +435,8 @@ types:
   [`if:`](conditionals.md) and [`hidden:`](#hidden) only: `endian:`
   on it is [`invalid-endian`](../diagnostics.md#invalid-endian),
   a length key [`unexpected-length`](../diagnostics.md#unexpected-length), and a display or
-  value-mapping key, or [`expect:`](#expect), [`incompatible-display`](../diagnostics.md#incompatible-display).
+  value-mapping key, [`expect:`](#expect) or [`dissector:`](#dissector),
+  [`incompatible-display`](../diagnostics.md#incompatible-display).
 - Using a Type nobody declared is [`unknown-type`](../diagnostics.md#unknown-type), reported
   once however many Fields use it. Declaring a name twice is
   [`duplicate-key`](../diagnostics.md#duplicate-key). A Type that contains itself, directly or
@@ -523,6 +524,33 @@ nor a range, a range whose first bound is the higher, and an empty list are
 values the Field's type can hold, such as `256` on a `uint8`, never matches: it is the warning
 [`unreachable-expect`](../diagnostics.md#unreachable-expect), and every packet gets the expert
 info.
+
+## Handing bytes to another Dissector {#dissector}
+
+`dissector:` on a `bytes` Field passes its bytes to a Dissector Wireshark already has, by the
+name Wireshark registers it under: `json`, `http`, `data`, and so on. The Field is shown as
+usual, then the other Dissector's layer right after it, in the same structure.
+
+```yaml
+name: demo
+fields:
+  - { name: length, type: uint16 }
+  - { name: payload, type: bytes, size: length, dissector: json }
+  - { name: trailer, type: bytes, prefix: uint8, dissector: data, hidden: true }
+```
+
+- The other layer is shown even when the Field is [hidden](#hidden): `hidden: true` with
+  `dissector:` shows the decoded bytes but not the raw ones.
+- A Field with no bytes passes nothing.
+- Whether Wireshark has a Dissector by that name is known only when a packet is read. A name it
+  does not know adds an expert info **warning**, "Unknown Dissector <name>: payload", filtered
+  as `<protocol>._undecoded.dissector`, and the dissection goes on.
+- Bytes the other Dissector cannot read are its own malformed packet, shown in its layer; the
+  dissection of this protocol goes on.
+
+The name is one word: an empty name, one with a space, or a value that is not a string is
+[`wrong-value-type`](../diagnostics.md#wrong-value-type). `dissector:` on any other type is
+[`incompatible-display`](../diagnostics.md#incompatible-display).
 
 ## Filter names {#filter-names}
 

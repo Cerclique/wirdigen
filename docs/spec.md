@@ -326,6 +326,9 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 - `expect:` goes on integer and `bool` Fields and on sub-Fields; elsewhere it is `incompatible-display`, like a value-mapping key. Its values are read like `values:` keys (§3.4.7), and an empty list is `wrong-value-type`. A `bool` holds 0 or 1, as Expressions read it (§4.4), and a `uint64` is compared as the unsigned value it is.
 - An `expect:` is `unreachable-expect` when none of its values is in the range of the Field's type or the sub-Field's width; it is kept, so every packet gets the warning.
 - A mismatch is an expert info warning (group Protocol) on the Field's item, hidden or not: "Unexpected value: <path> (expected <values as written>)", filtered `<protocol>._protocol.unexpected`.
+- `dissector:` goes on `bytes` Fields only; elsewhere it is `incompatible-display`, like a value-mapping key. Its value is a one-word string; anything else (empty, with whitespace, not a string) is `wrong-value-type`.
+- The handed-off Dissector's layer goes into the Field's structure, right after the Field's item, hidden or not, and the dissection goes on after it. A Field with no bytes hands nothing off.
+- The Dissector is looked up by name when a packet first needs it. An unknown name is an expert info warning (group Undecoded) on the structure: "Unknown Dissector <name>: <path>", filtered `<protocol>._undecoded.dissector`. An error in the handed-off Dissector is shown in its own layer and never raises a Lua error.
 
 There is no `align:` in v1.
 
@@ -453,7 +456,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
+- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`, a `dissector:` naming no Dissector (§3.10) `<protocol>._undecoded.dissector`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
@@ -503,7 +506,7 @@ Errors:
 
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
 - `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `invalid-bits`: `bits:` on anything but a fixed-size unsigned integer;
-- `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
+- `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key, `expect:` or `dissector:` on a type that does not take it (§3.10);
 - `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - `mismatched-bit-widths`: bitfield widths not adding up to the container; `invalid-bit-width`: a width below 1;

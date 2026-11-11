@@ -178,7 +178,7 @@ local wd_ei_invalid = wd_expert_invalid("conditionals")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Point
-local function dissect_Point(tvb, tree, offset, site)
+local function dissect_Point(tvb, pinfo, tree, offset, site)
     local v_n
     -- Field: n
     if not wd_fits(tvb, offset, 1) then
@@ -205,7 +205,7 @@ local function dissect_Point(tvb, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, tree, offset)
+local function dissect_top(tvb, pinfo, tree, offset)
     local v_ext__len, v_flags
     -- Field: flags
     if not wd_fits(tvb, offset, 1) then
@@ -270,7 +270,7 @@ local function dissect_top(tvb, tree, offset)
             do
                 local start = offset
                 local tree = tree:add(f_point, tvb(offset, tvb:len() - offset))
-                offset = dissect_Point(tvb, tree, offset, site_point)
+                offset = dissect_Point(tvb, pinfo, tree, offset, site_point)
                 if not offset then
                     return nil
                 end
@@ -358,7 +358,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "CONDITIONALS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "CONDITIONALS")
-    dissect_top(tvb, root, 0)
+    dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 
