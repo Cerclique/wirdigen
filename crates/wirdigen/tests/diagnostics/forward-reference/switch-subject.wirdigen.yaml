@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - name: body
+    switch: kind
+    cases:
+      1: [ { name: a, type: uint8 } ]
+  - { name: kind, type: uint8 }

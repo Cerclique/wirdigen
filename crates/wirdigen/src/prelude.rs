@@ -26,6 +26,10 @@ pub(crate) const BITWISE: &str = "bitwise";
 pub(crate) const LOGIC: &str = "logic";
 /// Reporting a size known only when the packet is read that has no value or is negative.
 pub(crate) const INVALID: &str = "invalid";
+/// Naming a `switch` subject's value from its Field's labels.
+pub(crate) const NAMES: &str = "names";
+/// Showing the bytes a `switch` with no matching case and no `default` leaves unread.
+pub(crate) const UNMATCHED: &str = "unmatched";
 
 #[derive(Debug)]
 struct Chunk {

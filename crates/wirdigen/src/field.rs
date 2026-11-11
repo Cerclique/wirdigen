@@ -15,15 +15,18 @@ use crate::keys::{
 use crate::mapping::{self, Enums, Mapping, Subject};
 use crate::scalar::{Kind, resolve_plain};
 use crate::scope::{self, Level, Reference, Scope};
+use crate::switch::{self, RawBody, RawSwitch, Switch};
 use crate::types::Types;
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-const KEYS: [&str; 21] = [
+pub(crate) const KEYS: [&str; 23] = [
     "name",
     "type",
     "fields",
     "switch",
+    "cases",
+    "default",
     "bits",
     "count",
     "repeat",
@@ -44,7 +47,7 @@ const KEYS: [&str; 21] = [
 ];
 
 /// The keys that say what a Field is; exactly one is required (spec §3.4.3).
-const KIND_KEYS: [&str; 3] = ["type", "fields", "switch"];
+pub(crate) const KIND_KEYS: [&str; 3] = ["type", "fields", "switch"];
 
 /// How stage 2 reads the value of one length key.
 type ReadLength = fn(&Node) -> Result<RawLength, Diagnostic>;
@@ -141,8 +144,13 @@ impl Builtin {
         }
     }
 
-    fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
+    }
+
+    /// The type's name, as written in `type:`.
+    pub(crate) fn name(self) -> &'static str {
+        BUILTINS.iter().find(|(_, b)| *b == self).map(|(n, _)| *n).expect("every built-in has a name")
     }
 
     /// The number of bytes read, or `None` when something else says: the length key of a
@@ -405,9 +413,9 @@ pub(crate) enum Length {
     Terminator(u8),
 }
 
-/// A `size:` or `count:` value as written, after stage 2.
+/// A `size:`, `count:`, `if:` or `switch:` value as written, after stage 2.
 #[derive(Debug, Clone)]
-enum RawAmount {
+pub(crate) enum RawAmount {
     /// A constant.
     Constant(i64),
     /// An Expression, parsed in stage 2; stage 3 reports its syntax error.
@@ -455,8 +463,9 @@ fn read_size(node: &Node) -> Result<RawLength, Diagnostic> {
     read_amount(node, "size").map(RawLength::Size)
 }
 
-/// The value of `key`, `size:` or `count:`: an integer, or an Expression written as a string.
-fn read_amount(node: &Node, key: &str) -> Result<RawAmount, Diagnostic> {
+/// The value of `key`, `size:`, `count:`, `if:` or `switch:`: an integer, or an Expression
+/// written as a string.
+pub(crate) fn read_amount(node: &Node, key: &str) -> Result<RawAmount, Diagnostic> {
     match &node.value {
         Value::Scalar { text, plain, .. } if !*plain || resolve_plain(text) == Kind::Str => {
             Ok(RawAmount::Expression(expr::parse(node, text)))
@@ -671,8 +680,16 @@ pub(crate) fn expression_errors(fields: &[RawField]) -> Vec<Diagnostic> {
     let mut errors = Vec::new();
     for field in fields {
         errors.extend(field.amounts().filter_map(RawAmount::syntax_error).cloned());
-        if let RawKind::Structure { fields, .. } = &field.kind {
-            errors.extend(expression_errors(fields));
+        match &field.kind {
+            RawKind::Structure { fields, .. } => errors.extend(expression_errors(fields)),
+            RawKind::Switch(switch) => {
+                for (_, body) in switch.bodies() {
+                    if let RawBody::Fields(fields) = body {
+                        errors.extend(expression_errors(fields));
+                    }
+                }
+            }
+            RawKind::Type { .. } => {}
         }
     }
     errors
@@ -723,6 +740,8 @@ enum RawKind {
     Type { name: Spanned<String>, type_use_keys: Vec<Spanned<&'static str>> },
     /// `fields:` with an inline structure, and the keys present that only a value takes.
     Structure { fields: Vec<RawField>, value_keys: Vec<Spanned<&'static str>> },
+    /// `switch:`, with its cases (spec §3.9).
+    Switch(RawSwitch),
 }
 
 /// A Field as written, after stage 2: its keys are known and of the right kinds.
@@ -757,6 +776,8 @@ pub(crate) enum Shape<'a> {
     Structure(&'a [RawField]),
     /// A Field of a Type, with the Type's Fields.
     Type { name: &'a str, fields: &'a [RawField] },
+    /// A `switch` Field, with its cases.
+    Switch(&'a RawSwitch),
     /// A `type:` naming nothing known, which is an error of its own.
     Unknown,
 }
@@ -775,6 +796,7 @@ impl RawField {
     pub(crate) fn shape<'a>(&'a self, types: &Types<'a>) -> Shape<'a> {
         match &self.kind {
             RawKind::Structure { fields, .. } => Shape::Structure(fields),
+            RawKind::Switch(switch) => Shape::Switch(switch),
             RawKind::Type { name, .. } => match (Builtin::from_name(&name.value), types.body(&name.value)) {
                 (Some(builtin), _) => Shape::Value(builtin, &name.value),
                 (None, Some(fields)) => Shape::Type { name: &name.value, fields },
@@ -788,12 +810,13 @@ impl RawField {
         self.expressions().flat_map(paths).collect()
     }
 
-    /// The Expressions the Field evaluates before reading itself: its `if:`, `size:` and `count:`.
+    /// The Expressions the Field evaluates before reading itself: its `if:`, `switch:`, `size:`
+    /// and `count:`.
     fn expressions(&self) -> impl Iterator<Item = &Expr> {
         self.amounts().filter_map(RawAmount::expression)
     }
 
-    /// The values of the Field's `if:`, `size:` and `count:`.
+    /// The values of the Field's `if:`, `switch:`, `size:` and `count:`.
     fn amounts(&self) -> impl Iterator<Item = &RawAmount> {
         let sizes = self.lengths.iter().filter_map(|l| match &l.value.value {
             RawLength::Size(amount) => Some(amount),
@@ -803,7 +826,11 @@ impl RawField {
             Some(RawArray::Count(count)) => Some(&count.value),
             Some(RawArray::ToEnd) | None => None,
         };
-        self.condition.iter().map(|c| &c.value).chain(sizes).chain(count)
+        let subject = match &self.kind {
+            RawKind::Switch(switch) => Some(&switch.subject.value),
+            RawKind::Type { .. } | RawKind::Structure { .. } => None,
+        };
+        self.condition.iter().map(|c| &c.value).chain(subject).chain(sizes).chain(count)
     }
 
     /// Where the `if:` value is written, when the Field is read under one (spec §3.9).
@@ -849,13 +876,16 @@ pub(crate) struct Field {
     pub(crate) kind: FieldKind,
     /// How the Field repeats, when it is an array of its kind (spec §3.7).
     pub(crate) array: Option<Array>,
-    /// The condition the Field is read under, when it has `if:` (spec §3.9).
-    pub(crate) condition: Option<Condition>,
+    /// The condition the Field is read under, when it has `if:` (spec §3.9): it is read only
+    /// when the value is not zero (§4.4).
+    pub(crate) condition: Option<Operand>,
+    /// Where the name is written, for Diagnostics about the validated layout.
+    pub(crate) span: Range<usize>,
 }
 
-/// A validated `if:`: the Field is read only when its value is not zero (spec §3.9, §4.4).
+/// A validated `if:` or `switch:` value, any integer (spec §3.9).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Condition {
+pub(crate) enum Operand {
     /// A constant, written as an integer.
     Constant(i64),
     /// An Expression, evaluated when the packet is read: a fault, even in a constant one, is
@@ -890,6 +920,8 @@ pub(crate) enum FieldKind {
         /// declare resolves to here, by the name as written (spec §4.3).
         context: Vec<(String, Reference)>,
     },
+    /// A `switch` Field, shown as a subtree holding the case read (spec §3.9).
+    Switch(Switch),
 }
 
 /// How a Field of a built-in type is read and shown.
@@ -1007,6 +1039,36 @@ pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Optio
 /// supported kind is pushed as an error.
 fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<RawKind> {
     let kinds: Vec<(&str, &Node)> = KIND_KEYS.iter().filter_map(|k| keys.key_of(k).map(|key| (*k, key))).collect();
+    // `cases:` and `default:` go only with `switch:` (spec §3.9).
+    let case_key = ["cases", "default"].into_iter().find_map(|k| keys.key_of(k).map(|key| (k, key)));
+    match (kinds.as_slice(), case_key) {
+        ([], Some((case, _))) if !keys.misspelt("switch") => {
+            errors.push(
+                Diagnostic::new(
+                    Name::MissingFieldKind,
+                    node.span.clone(),
+                    format!("this Field has `{case}` but no `switch`"),
+                )
+                .with_note("`cases` and `default` belong to a `switch` Field: add `switch: <Expression>`", None),
+            );
+            return None;
+        }
+        ([(kind @ ("type" | "fields"), kind_key)], Some((case, case_key))) => {
+            errors.push(
+                Diagnostic::new(
+                    Name::ConflictingFieldKind,
+                    case_key.span.clone(),
+                    format!("a Field cannot have both `{kind}` and `{case}`"),
+                )
+                .with_note(
+                    format!("`{kind}` is here; `{case}` belongs to a `switch` Field"),
+                    Some(kind_key.span.clone()),
+                ),
+            );
+            return None;
+        }
+        _ => {}
+    }
     match kinds.as_slice() {
         [] => {
             if !KIND_KEYS.iter().any(|k| keys.misspelt(k)) {
@@ -1026,13 +1088,9 @@ fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Opti
             let fields = read_structure(keys.get("fields").expect("the key was found"), errors)?;
             Some(RawKind::Structure { fields, value_keys: present(keys, &VALUE_KEYS) })
         }
-        [(kind, key)] => {
-            errors.push(Diagnostic::new(
-                Name::NotSupportedYet,
-                key.span.clone(),
-                format!("`{kind}` Fields are not supported by this version of Wirdigen yet"),
-            ));
-            None
+        [(_, _)] => {
+            let subject = keys.get("switch").expect("the only other kind key is `switch`");
+            switch::read(subject, node, keys, errors).map(RawKind::Switch)
         }
         [(first, first_key), rest @ ..] => {
             for (kind, key) in rest {
@@ -1055,8 +1113,8 @@ fn present(keys: &Keys<'_>, names: &[&'static str]) -> Vec<Spanned<&'static str>
     names.iter().filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() })).collect()
 }
 
-/// The `type:` names of `fields` that are not built-ins, inline structures included, in source
-/// order: the Types they use, and names [`check`] reports as unknown.
+/// The `type:` names of `fields` that are not built-ins and the Types of `switch` cases, inline
+/// structures and cases included, in source order: the Types they use, and names [`check`] reports as unknown.
 pub(crate) fn type_uses(fields: &[RawField]) -> Vec<&Spanned<String>> {
     fields
         .iter()
@@ -1064,6 +1122,13 @@ pub(crate) fn type_uses(fields: &[RawField]) -> Vec<&Spanned<String>> {
             RawKind::Type { name, .. } if Builtin::from_name(&name.value).is_none() => vec![name],
             RawKind::Type { .. } => Vec::new(),
             RawKind::Structure { fields, .. } => type_uses(fields),
+            RawKind::Switch(switch) => switch
+                .bodies()
+                .flat_map(|(_, body)| match body {
+                    RawBody::Type(name) => vec![name],
+                    RawBody::Fields(fields) => type_uses(fields),
+                })
+                .collect(),
         })
         .collect()
 }
@@ -1136,6 +1201,7 @@ pub(crate) fn check<'a>(
                 }
                 Some(FieldKind::Structure(check(fields, endian, enums, types, scope, diagnostics)))
             }
+            RawKind::Switch(raw) => switch::check(raw, endian, enums, types, scope, diagnostics).map(FieldKind::Switch),
         };
         let array = match &field.array {
             None => Some(None),
@@ -1143,7 +1209,7 @@ pub(crate) fn check<'a>(
         };
         let condition = match &field.condition {
             None => Some(None),
-            Some(condition) => check_condition(&condition.value, scope, types, diagnostics).map(Some),
+            Some(condition) => check_operand(&condition.value, scope, types, diagnostics).map(Some),
         };
         check_text(field.label.as_ref(), field.description.as_ref(), diagnostics);
         if let (Some(kind), Some(array), Some(condition)) = (kind, array, condition) {
@@ -1156,6 +1222,7 @@ pub(crate) fn check<'a>(
                 kind,
                 array,
                 condition,
+                span: name.span.clone(),
             });
         }
     }
@@ -1219,7 +1286,7 @@ fn check_array<'a>(
 ) -> Option<Array> {
     if let Some(name) = match &field.kind {
         RawKind::Type { name, .. } if Builtin::from_name(&name.value).is_some() => Some(name),
-        RawKind::Type { .. } | RawKind::Structure { .. } => None,
+        RawKind::Type { .. } | RawKind::Structure { .. } | RawKind::Switch(_) => None,
     } {
         diagnostics.push(
             Diagnostic::new(
@@ -1240,20 +1307,20 @@ fn check_array<'a>(
     }
 }
 
-/// Checks an `if:` (spec §3.9): an Expression's paths are resolved from `scope` like a `size:`'s.
-/// Any value is a condition, so a constant is never wrong.
-fn check_condition<'a>(
-    condition: &RawAmount,
+/// Checks an `if:` or a `switch:` (spec §3.9): an Expression's paths are resolved from `scope`
+/// like a `size:`'s. Any value is a condition or a subject, so a constant is never wrong.
+pub(crate) fn check_operand<'a>(
+    operand: &RawAmount,
     scope: Scope<'a, '_>,
     types: &Types<'a>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Option<Condition> {
-    let expr = match condition {
-        RawAmount::Constant(value) => return Some(Condition::Constant(*value)),
+) -> Option<Operand> {
+    let expr = match operand {
+        RawAmount::Constant(value) => return Some(Operand::Constant(*value)),
         RawAmount::Expression(expr) => expr.as_ref().expect("stage 3 reported every syntax error"),
     };
     let references = scope::resolve_paths(&paths(expr), scope, types, diagnostics)?;
-    Some(Condition::Expression { expr: expr.clone(), references })
+    Some(Operand::Expression { expr: expr.clone(), references })
 }
 
 /// `bits:` on a Field that is not a fixed-size unsigned integer, saying why in `message`.
@@ -1394,4 +1461,11 @@ fn is_field_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// The default tree text of a Field: `msg_type` becomes "Msg type" (spec §3.4.8).
+pub(crate) fn default_label(name: &str) -> String {
+    let spaced = name.replace('_', " ");
+    let mut chars = spaced.chars();
+    chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
 }

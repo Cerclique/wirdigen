@@ -1,0 +1,9 @@
+# `18446744073709551615` and `-1` are one 64-bit value as a subject has it (spec §4.4).
+name: demo
+fields:
+  - { name: kind, type: uint64 }
+  - name: body
+    switch: kind
+    cases:
+      -1: [ { name: a, type: uint8 } ]
+      18446744073709551615: [ { name: b, type: uint8 } ]

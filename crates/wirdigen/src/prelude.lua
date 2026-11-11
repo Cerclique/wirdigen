@@ -166,3 +166,37 @@ local function wd_evaluate(compute)
     if type(value) == "table" and value.wd_fault then return nil, value.wd_fault end
     error(value, 0)
 end
+
+--@chunk names
+-- The name of a `switch` subject's value (spec §3.9): its label in `names`, a list of
+-- `{ low, high, label }`, or else the number.
+local function wd_case_name(names, value)
+    for _, entry in ipairs(names) do
+        if value >= entry[1] and value <= entry[2] then
+            return entry[3]
+        end
+    end
+    return tostring(value)
+end
+
+--@chunk unmatched
+-- Showing what a `switch` with no case for its subject's value, and no `default`, leaves
+-- unread (spec §3.9): the rest of the message, raw, with an expert info note. The `_` segment
+-- is reserved: no Field path can reach it (spec §3.4.2, §5.2).
+local function wd_field_unmatched(filter_name)
+    return ProtoField.bytes(filter_name .. "._unmatched", "Unmatched bytes")
+end
+
+local function wd_expert_unmatched(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._undecoded.unmatched",
+        "No case matches the switch value",
+        expert.group.UNDECODED,
+        expert.severity.NOTE
+    )
+end
+
+local function wd_unmatched(tree, field, expert_info, tvb, offset, value, path)
+    local item = tree:add(field, tvb(offset, tvb:len() - offset))
+    item:add_proto_expert_info(expert_info, "No case for " .. value .. ": " .. path)
+end

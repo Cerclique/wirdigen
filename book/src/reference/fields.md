@@ -18,7 +18,8 @@ Each Field is shown in the protocol tree and can be filtered as `<protocol>.<nam
 
 A Field is a mapping with a `name:` and exactly one key saying what it is. This chapter covers
 `type:` with a built-in type or a [Type](#types), and `fields:` with an
-[inline structure](#inline-structures).
+[inline structure](#inline-structures); `switch:` picks a layout among several (see
+[`switch:`](conditionals.md#switch)).
 
 - Leaving all of them out is the error
   [`missing-field-kind`](../diagnostics.md#missing-field-kind); giving more than one is
@@ -452,7 +453,8 @@ example above they are `demo.msg_type`, `demo.header`, `demo.header.length`,
 `demo.header.flags`, `demo.header.flags.urgent`, `demo.header.flags.priority` and
 `demo.payload`. A filter on a structure, such as `demo.header.flags`, matches every packet
 that has it. The sub-Fields of a [bitfield](bitfields.md) extend their container's name:
-`demo.flags.ext`.
+`demo.flags.ext`. The cases of a [`switch`](conditionals.md#switch-tree) add no segment, so
+Fields of two cases can reach one filter name and share it.
 
 Filter names are part of a Dissector's behaviour: users save filters and colouring rules
 against them. Renaming a Field, or moving it into or out of a structure, changes its filter

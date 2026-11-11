@@ -1,0 +1,12 @@
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: Login
+      2: [ { name: user_id, type: uint32, label: User } ]
+types:
+  Login:
+    fields:
+      - { name: user_id, type: uint32 }

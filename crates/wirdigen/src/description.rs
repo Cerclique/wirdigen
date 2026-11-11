@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Endian, Field, RawField};
+use crate::filter;
 use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, RawEnum, Table};
 use crate::types::{self, NamedType, RawType};
@@ -159,6 +160,10 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
     let mut enums = Enums::check(&description.enums, &mut diagnostics);
     let (fields, types) = types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
     let enums = enums.finish(&mut diagnostics);
+    // Filter names are walked through every use of every Type, which needs Types without cycles.
+    if !diagnostics.iter().any(|d| d.severity() == Severity::Error) {
+        filter::check(&fields, &types, &mut diagnostics);
+    }
     let has_errors = diagnostics.iter().any(|d| d.severity() == Severity::Error);
     let protocol = (!has_errors).then(|| Protocol {
         name: description.name.value.clone(),

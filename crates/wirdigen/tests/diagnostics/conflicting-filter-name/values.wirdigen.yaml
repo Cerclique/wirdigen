@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: [ { name: op, type: uint8, values: { 1: Get } } ]
+      2: [ { name: op, type: uint8, values: { 1: Put } } ]

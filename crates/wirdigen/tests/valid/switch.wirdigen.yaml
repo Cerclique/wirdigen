@@ -1,0 +1,38 @@
+# `switch` Fields (spec §3.9): integer and range cases, Type and inline cases, a default, a
+# subject from a bitfield sub-Field, and Fields inside a case reading each other and the Fields
+# before the switch. Cases reaching one filter name with matching Fields share a ProtoField.
+name: demo
+fields:
+  - { name: kind, type: uint8, values: Kind }
+  - { name: len, type: uint8 }
+  - name: body
+    label: Message
+    switch: kind
+    cases:
+      1: Login
+      2:
+        - { name: user_id, type: uint32 }
+        - { name: reason, type: bytes, size: "len - 4" }
+      "16-31": Vendor
+    default:
+      - { name: raw, type: bytes, size: len }
+  - name: flags
+    type: uint8
+    bits: [ { name: op, width: 4 }, { name: rest, width: 4 } ]
+  - name: extra
+    switch: "flags.op"
+    if: "flags.rest == 0"
+    cases:
+      0: [ { name: none, type: uint8 } ]
+types:
+  Login:
+    fields:
+      - { name: user_id, type: uint32 }
+      - { name: name, type: string, size: "len - 4" }
+  Vendor:
+    fields:
+      - { name: code, type: uint16 }
+enums:
+  Kind:
+    1: Login
+    2: Logout

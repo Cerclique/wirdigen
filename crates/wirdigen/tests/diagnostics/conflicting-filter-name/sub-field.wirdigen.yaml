@@ -1,0 +1,14 @@
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1:
+        - name: flags
+          type: uint8
+          bits: [ { name: a, width: 4 }, { name: b, width: 4 } ]
+      2:
+        - name: flags
+          type: uint8
+          bits: [ { name: a, width: 2 }, { name: b, width: 6 } ]

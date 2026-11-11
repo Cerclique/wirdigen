@@ -64,4 +64,5 @@ cases! {
     bitfield_references => "bitfield-references",
     arrays => "arrays",
     conditionals => "conditionals",
+    switch => "switch",
 }

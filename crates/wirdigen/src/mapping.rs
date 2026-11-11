@@ -235,8 +235,9 @@ fn read_table(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawEntry>
     (errors.len() == before).then_some(entries)
 }
 
-/// A table key: a YAML integer, or a string `"low-high"` with two integers.
-fn read_key(node: &Node) -> Result<Key, Diagnostic> {
+/// A table key, or a `switch` case key (spec §3.9): a YAML integer, or a string `"low-high"` with
+/// two integers.
+pub(crate) fn read_key(node: &Node) -> Result<Key, Diagnostic> {
     let not_a_key = |text: &str| {
         wrong_type(node.span.clone(), format!("`{text}` is not an integer or a range"))
             .with_note("a key is an integer, or a range written as a string such as \"16-31\"", None)
