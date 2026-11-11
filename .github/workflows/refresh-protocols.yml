@@ -1,0 +1,109 @@
+# Refreshes the built-in protocols snapshot behind `protocol-name-taken` (spec §10.9) each week,
+# when the tshark-stable image may pick up a new Wireshark from the stable PPA. A changed
+# snapshot is force-pushed as one commit on main to chore/refresh-protocols, with one PR opened
+# or updated from it. Pushes and PR calls use a GitHub App token rather than GITHUB_TOKEN, so
+# the pull_request workflows run on the PR; docker/README.md lists the App and its secrets.
+# The failing tshark-stable check in ci.yml stays as the safety net.
+
+name: Refresh protocols
+
+on:
+  schedule:
+    # Monday 01:17 UTC, just after the ISO week (and so the tshark-stable cache scope) rolls over.
+    - cron: "17 1 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: refresh-protocols
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      BRANCH: chore/refresh-protocols
+      SNAPSHOT: crates/wirdigen/src/builtin_protocols.tsv
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # The same image and weekly cache scope as the tshark-stable job of ci.yml, so they share it.
+      - name: Week of the year
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Build the tshark-stable image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/tshark-stable/Dockerfile
+          tags: wirdigen-tshark-stable
+          load: true
+          cache-from: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }}
+          cache-to: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }},mode=max
+      - run: make docker-refresh-protocols DOCKER_PREBUILT=1
+      - name: Check the snapshot
+        id: snapshot
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- "$SNAPSHOT"; then
+            echo "The snapshot is current."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(sed -n '1s/^# tshark -G protocols, Wireshark \([^:]*\):.*$/\1/p' "$SNAPSHOT")
+          if [ -z "$version" ]; then
+            echo "::error::no Wireshark version on the first line of $SNAPSHOT"
+            exit 1
+          fi
+          echo "The snapshot changed, Wireshark $version."
+          {
+            echo "changed=true"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+      - name: Mint the GitHub App token
+        if: steps.snapshot.outputs.changed == 'true'
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.PROTOCOLS_APP_ID }}
+          private-key: ${{ secrets.PROTOCOLS_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Push the branch and open or update the PR
+        if: steps.snapshot.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          VERSION: ${{ steps.snapshot.outputs.version }}
+        run: |
+          set -euo pipefail
+          title="chore: refresh built-in protocols for Wireshark $VERSION"
+
+          bot="$APP_SLUG[bot]"
+          bot_id=$(gh api "/users/$bot" --jq .id)
+          git -c user.name="$bot" -c user.email="$bot_id+$bot@users.noreply.github.com" \
+            commit --quiet --message "$title" -- "$SNAPSHOT"
+
+          # Skip the push when the branch already holds this tree, so CI does not rerun for nothing.
+          if git fetch --quiet --depth=1 origin "$BRANCH" 2>/dev/null && git diff --quiet FETCH_HEAD HEAD; then
+            echo "$BRANCH is already up to date."
+          else
+            git push --quiet --force "https://x-access-token:$GH_TOKEN@github.com/$GH_REPO.git" "HEAD:refs/heads/$BRANCH"
+          fi
+
+          body="Refreshes \`$SNAPSHOT\` from \`tshark -G protocols\` of Wireshark $VERSION, as \`make docker-refresh-protocols\` does. Opened by the [Refresh protocols]($GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID) workflow."
+          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body "$body"
+            echo "Updated PR #$pr."
+          else
+            gh pr create --head "$BRANCH" --base main --title "$title" --body "$body"
+          fi
