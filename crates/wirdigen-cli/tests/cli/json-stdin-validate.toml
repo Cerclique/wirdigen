@@ -1,0 +1,9 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["validate", "--message-format", "json", "-"]
+stdin = "name: demo\nfields: [ { name: id, type: uint8 } ]\n"
+stdout = """
+{"type":"file","input":"<stdin>","output":null,"status":"valid"}
+{"type":"summary","errors":0,"warnings":0,"exit_code":0}
+"""
+stderr = ""

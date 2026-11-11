@@ -1,6 +1,7 @@
 //! The `wirdigen` command (spec §9, ADR 0013).
 
 mod color;
+mod json;
 mod placement;
 
 use std::fs;
@@ -13,6 +14,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use wirdigen::{Diagnostic, RenderOptions, Severity, Source};
 
 use crate::color::ColorChoice;
+use crate::json::FileStatus;
 use crate::placement::{Input, Output, Placement};
 
 /// Generate Wireshark Lua dissectors from YAML protocol descriptions.
@@ -33,6 +35,20 @@ struct Cli {
     /// List each Dissector as written or unchanged.
     #[arg(short, long, global = true)]
     verbose: bool,
+
+    /// How to report Diagnostics and results: `human` on stderr, or `json` Lines on stdout.
+    #[arg(long, value_enum, default_value_t, global = true)]
+    message_format: MessageFormat,
+}
+
+/// Where and how `validate` and `generate` report (spec §9.7).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+enum MessageFormat {
+    /// Rendered Diagnostics and status lines on stderr.
+    #[default]
+    Human,
+    /// One JSON object per line on stdout: `diagnostic`, `file` and `summary` records.
+    Json,
 }
 
 /// How much `validate` and `generate` say on stderr besides errors.
@@ -124,10 +140,29 @@ fn main() -> ExitCode {
             actions(&inputs, placement, check).unwrap_or_else(|message| usage_error(subcommand, &message))
         }
     };
+    if cli.message_format == MessageFormat::Json {
+        if let Some(input) = inputs
+            .iter()
+            .zip(&actions)
+            .find_map(|(input, action)| matches!(action, Action::Write(Output::Stdout)).then_some(input))
+        {
+            let message = if matches!(placement, Some(Placement::Single(_))) {
+                "`--message-format json` writes to standard output, so it cannot be used with `-o -`".to_owned()
+            } else {
+                format!(
+                    "`--message-format json` writes to standard output, but so does the Dissector of `{}`; \
+                     give `-o <FILE>`",
+                    input.name()
+                )
+            };
+            usage_error(subcommand, &message);
+        }
+    }
 
     let mut run = Run {
         options,
         verbosity,
+        format: cli.message_format,
         failed: false,
         rendered_any: false,
         errors: 0,
@@ -150,6 +185,17 @@ enum Action {
     Write(Output),
     /// `generate --check`: compare its Dissector with this file.
     Check(PathBuf),
+}
+
+impl Action {
+    /// The file or `-` its Dissector goes to, as the `output` of a `file` record.
+    fn output_name(&self) -> Option<String> {
+        match self {
+            Action::Validate => None,
+            Action::Write(Output::Stdout) => Some("-".to_owned()),
+            Action::Write(Output::File(path)) | Action::Check(path) => Some(path.to_string_lossy().into_owned()),
+        }
+    }
 }
 
 /// The `generate` action of each input, in order, from where its Dissector goes.
@@ -175,6 +221,7 @@ fn usage_error(subcommand: &str, message: &str) -> ! {
 struct Run {
     options: RenderOptions,
     verbosity: Verbosity,
+    format: MessageFormat,
     failed: bool,
     /// Whether a Diagnostic was rendered yet, so the next one is set apart by a blank line.
     rendered_any: bool,
@@ -186,6 +233,17 @@ struct Run {
 impl Run {
     /// Validates one input and, if it is valid, carries out its `action`.
     fn process(&mut self, input: &Input, action: &Action) {
+        let status = self.run_action(input, action);
+        if status.is_failure() {
+            self.failed = true;
+        }
+        if self.format == MessageFormat::Json {
+            println!("{}", json::file(&input.name(), action.output_name().as_deref(), status));
+        }
+    }
+
+    /// The part of [`Run::process`] that does the work, saying how it went.
+    fn run_action(&mut self, input: &Input, action: &Action) -> FileStatus {
         let name = input.name();
         let text = match input {
             Input::Stdin => io::read_to_string(io::stdin()),
@@ -193,52 +251,92 @@ impl Run {
         };
         let text = match text {
             Ok(text) => text,
-            Err(err) => return self.fail(&format!("cannot read `{name}`: {err}")),
+            Err(err) => {
+                report_error(&format!("cannot read `{name}`: {err}"));
+                return FileStatus::Failed;
+            }
         };
-        let source = Source::new(name.as_ref(), text);
+        let source = Source::new(name.as_ref(), text.as_str());
         let valid = wirdigen::validate(&source);
         let diagnostics = match &valid {
             Ok(valid) => valid.warnings(),
             Err(diagnostics) => diagnostics.iter().as_slice(),
         };
-        self.report(&source, diagnostics);
+        self.report(&source, &text, diagnostics);
         match valid {
-            Err(_) => self.failed = true,
-            Ok(valid) if self.options.deny_warnings && !valid.warnings().is_empty() => self.failed = true,
+            Err(_) => FileStatus::Failed,
+            Ok(valid) if self.options.deny_warnings && !valid.warnings().is_empty() => FileStatus::Failed,
             Ok(valid) => match action {
-                Action::Validate => {}
+                Action::Validate => FileStatus::Valid,
                 Action::Write(output) => match write(output, &valid.generate()) {
-                    Ok(outcome) => self.report_outcome(output, outcome),
-                    Err(message) => self.fail(&message),
+                    Ok(outcome) => {
+                        self.report_outcome(output, outcome);
+                        match outcome {
+                            WriteOutcome::Written => FileStatus::Written,
+                            WriteOutcome::Unchanged => FileStatus::Unchanged,
+                        }
+                    }
+                    Err(message) => {
+                        report_error(&message);
+                        FileStatus::Failed
+                    }
                 },
                 Action::Check(path) => {
                     let display = path.display();
                     match check(path, &valid.generate()) {
-                        Ok(Freshness::Fresh) => self.report_verbose(&format!("unchanged `{display}`")),
-                        Ok(Freshness::Stale) => self.fail(&format!("`{display}` is stale")),
-                        Ok(Freshness::Missing) => self.fail(&format!("`{display}` is stale (missing)")),
-                        Err(err) => self.fail(&format!("cannot read `{display}`: {err}")),
+                        Ok(Freshness::Fresh) => {
+                            self.report_verbose(&format!("unchanged `{display}`"));
+                            FileStatus::Unchanged
+                        }
+                        Ok(Freshness::Stale) => {
+                            report_error(&format!("`{display}` is stale"));
+                            FileStatus::Stale
+                        }
+                        Ok(Freshness::Missing) => {
+                            report_error(&format!("`{display}` is stale (missing)"));
+                            FileStatus::Stale
+                        }
+                        Err(err) => {
+                            report_error(&format!("cannot read `{display}`: {err}"));
+                            FileStatus::Failed
+                        }
                     }
                 }
             },
         }
     }
 
-    /// Renders one input's Diagnostics to stderr, each block separated from the previous one.
-    fn report(&mut self, source: &Source, diagnostics: &[Diagnostic]) {
+    /// Reports one input's Diagnostics: rendered to stderr, each block separated from the previous
+    /// one, or as `diagnostic` records on stdout.
+    fn report(&mut self, source: &Source, text: &str, diagnostics: &[Diagnostic]) {
         if diagnostics.is_empty() {
             return;
         }
         for diagnostic in diagnostics {
             let is_error = diagnostic.severity() == Severity::Error || self.options.deny_warnings;
-            if is_error || self.verbosity.shows_warnings() {
-                if self.rendered_any {
-                    eprintln!();
+            match self.format {
+                MessageFormat::Json => {
+                    let mut plain = self.options.clone();
+                    plain.color = false;
+                    let rendered = diagnostic.render(source, &plain);
+                    let denied = self.options.deny_warnings && diagnostic.severity() == Severity::Warning;
+                    println!("{}", json::diagnostic(source.name(), text, diagnostic, &rendered, denied));
                 }
-                eprint!("{}", diagnostic.render(source, &self.options));
-                self.rendered_any = true;
+                MessageFormat::Human if is_error || self.verbosity.shows_warnings() => {
+                    if self.rendered_any {
+                        eprintln!();
+                    }
+                    eprint!("{}", diagnostic.render(source, &self.options));
+                    self.rendered_any = true;
+                }
+                MessageFormat::Human => {}
             }
-            if is_error {
+            // The JSON summary counts by severity, as its records keep a denied warning's.
+            let counts_as_error = match self.format {
+                MessageFormat::Json => diagnostic.severity() == Severity::Error,
+                MessageFormat::Human => is_error,
+            };
+            if counts_as_error {
                 self.errors += 1;
             } else {
                 self.warnings += 1;
@@ -259,21 +357,22 @@ impl Run {
         }
     }
 
-    /// Prints `line` to stderr under `-v` only.
+    /// Prints `line` to stderr under `-v` only, in the human format.
     fn report_verbose(&self, line: &str) {
-        if self.verbosity == Verbosity::Verbose {
+        if self.format == MessageFormat::Human && self.verbosity == Verbosity::Verbose {
             eprintln!("{line}");
         }
     }
 
-    fn fail(&mut self, message: &str) {
-        eprintln!("error: {message}");
-        self.failed = true;
-    }
-
     /// The `error: 2 errors, 1 warning in 1 of 3 files` line, only when there were Diagnostics
     /// and not under `-q`.
+    ///
+    /// In the JSON format, the `summary` record instead, always.
     fn print_summary(&self, files: usize) {
+        if self.format == MessageFormat::Json {
+            println!("{}", json::summary(self.errors, self.warnings, u8::from(self.failed)));
+            return;
+        }
         if self.errors + self.warnings == 0 || !self.verbosity.shows_warnings() {
             return;
         }
@@ -286,6 +385,11 @@ impl Run {
         let level = if self.errors > 0 { "error" } else { "warning" };
         eprintln!("\n{level}: {} in {} of {}", counts.join(", "), self.files_with_diagnostics, plural(files, "file"));
     }
+}
+
+/// Prints why an input failed to stderr, in either message format.
+fn report_error(message: &str) {
+    eprintln!("error: {message}");
 }
 
 /// What writing a Dissector did.

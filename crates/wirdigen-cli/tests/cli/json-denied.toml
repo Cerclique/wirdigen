@@ -1,0 +1,12 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "--message-format", "json", "--deny-warnings", "unused.wirdigen.yaml"]
+fs.base = "../../../wirdigen/tests/diagnostics/unused-type"
+fs.sandbox = true
+status.code = 1
+stdout = """
+{"type":"diagnostic","file":"unused.wirdigen.yaml","name":"unused-type","severity":"warning","message":"the Type `Header` is never used","span":{"start":58,"end":64,"line":5,"column":3,"end_line":5,"end_column":9},"notes":[{"message":"use it as `type: Header`, or remove it"}],"rendered":"error[unused-type]: the Type `Header` is never used/n --> unused.wirdigen.yaml:5:3/n  |/n5 |   Header:/n  |   ^^^^^^/n  |/n  = note: use it as `type: Header`, or remove it/n  = note: warnings are denied for this run/n  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unused-type/n","denied":true}
+{"type":"file","input":"unused.wirdigen.yaml","output":"unused.lua","status":"failed"}
+{"type":"summary","errors":0,"warnings":1,"exit_code":1}
+"""
+stderr = ""

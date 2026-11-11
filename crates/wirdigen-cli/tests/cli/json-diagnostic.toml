@@ -1,0 +1,11 @@
+# trycmd normalizes `\` to `/`, so the `\n` escapes of `rendered` read `/n` here.
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["validate", "--message-format", "json", "unused.wirdigen.yaml"]
+fs.cwd = "../../../wirdigen/tests/diagnostics/unused-type"
+stdout = """
+{"type":"diagnostic","file":"unused.wirdigen.yaml","name":"unused-type","severity":"warning","message":"the Type `Header` is never used","span":{"start":58,"end":64,"line":5,"column":3,"end_line":5,"end_column":9},"notes":[{"message":"use it as `type: Header`, or remove it"}],"rendered":"warning[unused-type]: the Type `Header` is never used/n --> unused.wirdigen.yaml:5:3/n  |/n5 |   Header:/n  |   ^^^^^^/n  |/n  = note: use it as `type: Header`, or remove it/n  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unused-type/n"}
+{"type":"file","input":"unused.wirdigen.yaml","output":null,"status":"valid"}
+{"type":"summary","errors":0,"warnings":1,"exit_code":0}
+"""
+stderr = ""

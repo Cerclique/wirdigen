@@ -694,11 +694,11 @@ There is no `check` subcommand. `--version` is clap's default. Completions and m
 
 | `type` | Fields |
 |---|---|
-| `diagnostic` | `file`, `name`, `severity`, `message`, `span {start, end, line, column, end_line, end_column}` (byte offsets, 1-based line and column), `notes [{message, span?}]`, `rendered` (uncoloured), and `denied: true` when promoted by `--deny-warnings` |
-| `file` | `input`, `output`, `status`: `written`, `unchanged`, `stale`, `failed` or `valid` |
-| `summary` | counts by severity, and the exit code |
+| `diagnostic` | `file`, `name`, `severity`, `message`, `span {start, end, line, column, end_line, end_column}` (byte offsets, 1-based line and column, the column counted in characters), `notes [{message, span?}]`, `rendered` (uncoloured), and `denied: true` when promoted by `--deny-warnings` |
+| `file` | `input`, `output` (`null` under `validate`), `status`: `written`, `unchanged`, `stale`, `failed` or `valid` |
+| `summary` | counts by severity (`errors`, `warnings`; a denied warning counts as a warning), and the `exit_code` |
 
-Adding fields or record types is minor; removing or renaming one is major. Consumers must ignore unknown fields. The CLI alone owns this shape. A `github` annotations format can come after v1 as an additive change.
+Every record is emitted whatever `-q` or `-v` say; stderr then only carries `error:` lines for inputs or outputs that cannot be read or written, and stale files. Adding fields or record types is minor; removing or renaming one is major. Consumers must ignore unknown fields. The CLI alone owns this shape. A `github` annotations format can come after v1 as an additive change.
 
 ### 9.8 Exit codes
 

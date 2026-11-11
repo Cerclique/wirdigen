@@ -1,0 +1,13 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "--check", "--message-format", "json", "one.wirdigen.yaml", "two.wirdigen.yaml"]
+fs.sandbox = true
+status.code = 1
+stdout = """
+{"type":"file","input":"one.wirdigen.yaml","output":"one.lua","status":"unchanged"}
+{"type":"file","input":"two.wirdigen.yaml","output":"two.lua","status":"stale"}
+{"type":"summary","errors":0,"warnings":0,"exit_code":1}
+"""
+stderr = """
+error: `two.lua` is stale
+"""
