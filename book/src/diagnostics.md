@@ -608,9 +608,9 @@ key its type does not take. Unsigned integers take `dec`, `hex`, `oct`, `dec_hex
 `colon` and `space`; `abs_time` takes `local`, `utc` and `doy_utc`; `string`, `rel_time`,
 `bool`, the floats and the address types take no `display:` at all. Only `string`, `abs_time`
 and `rel_time` take `encoding:`, each its own values: `ntp` is an `abs_time` encoding only.
-Only integers take `values:`, only `bool` takes `true:` and `false:`, and only integers and
-floats take `unit:`. Only `bytes` take `dissector:`. An inline structure takes none of these keys: they belong on the Fields
-inside it. A bitfield sub-Field takes the displays of an unsigned integer, and `true:` and
+Only integers take `values:`, only `bool` takes `true:` and `false:`, only integers and floats
+take `unit:`, and only `bytes` take `dissector:`. An inline structure takes none of these keys:
+they belong on the Fields inside it. A bitfield sub-Field takes the displays of an unsigned integer, and `true:` and
 `false:` only when it is boolean: 1 bit wide, without `values:`, `unit:` or `display:`.
 
 ```yaml,diagnostic=incompatible-display

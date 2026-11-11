@@ -327,8 +327,8 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 - An `expect:` is `unreachable-expect` when none of its values is in the range of the Field's type or the sub-Field's width; it is kept, so every packet gets the warning.
 - A mismatch is an expert info warning (group Protocol) on the Field's item, hidden or not: "Unexpected value: <path> (expected <values as written>)", filtered `<protocol>._protocol.unexpected`.
 - `dissector:` goes on `bytes` Fields only; elsewhere it is `incompatible-display`, like a value-mapping key. Its value is a one-word string; anything else (empty, with whitespace, not a string) is `wrong-value-type`.
-- The handed-off Dissector's layer goes into the Field's structure, right after the Field's item, hidden or not, and the dissection goes on after it. A Field with no bytes hands nothing off.
-- The Dissector is looked up by name when a packet first needs it. An unknown name is an expert info warning (group Undecoded) on the structure: "Unknown Dissector <name>: <path>", filtered `<protocol>._undecoded.dissector`. An error in the handed-off Dissector is shown in its own layer and never raises a Lua error.
+- The handed-off Dissector's layer goes into the Field's structure, right after the Field's item, hidden or not, and the dissection goes on after it. A Field with no bytes calls no Dissector. The Protocol column keeps the short name (§5.5).
+- The Dissector is looked up by name the first time a packet reads the Field, empty or not. An unknown name is an expert info warning (group Undecoded) on the structure: "Unknown Dissector <name>: <path>", filtered `<protocol>._undecoded.dissector`. An error in the handed-off Dissector is shown in its own layer and never raises a Lua error.
 
 There is no `align:` in v1.
 
@@ -444,7 +444,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 ### 5.1 Tree
 
 - The tree root shows the full name (§3.3). Each structure Field is a subtree, and each array element is its own subtree item (`items[0]`).
-- Padding is one "Padding" item. Hidden Fields are not shown. Unmatched `switch` bytes are shown raw with an expert info note (§3.9).
+- Padding is one "Padding" item. Hidden Fields are not shown, but the layer a `dissector:` hands their bytes to is (§3.10). Unmatched `switch` bytes are shown raw with an expert info note (§3.9).
 
 ### 5.2 Filter names
 

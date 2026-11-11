@@ -632,7 +632,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             let add_line = |range: &str| format!("{}{}", add(range), hide(*hidden));
             // The handed-off Dissector's layer follows the item, in the same structure, whether
             // the item is hidden or not (spec §3.10).
-            let hand_off = |w: &mut Writer, range: &str| {
+            let handoff_line = |w: &mut Writer, range: &str| {
                 if let Some(name) = handoff {
                     let name = lua_string(name);
                     w.line(&format!("wd_handoff({name}, {range}, pinfo, tree, wd_ei_dissector, {reported})"));
@@ -655,7 +655,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         expect: expect.as_ref(),
                     };
                     add_item(w, model, &item, scope);
-                    hand_off(w, &range);
+                    handoff_line(w, &range);
                     if let Some(value) = value {
                         w.line(&format!("{} = {}", value.local, read_value(&value.read, *size)));
                     }
@@ -667,7 +667,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         evaluate(w, "len", "size", size, &invalid);
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
                         w.line(&add_line("tvb(offset, len)"));
-                        hand_off(w, "tvb(offset, len)");
+                        handoff_line(w, "tvb(offset, len)");
                         w.line("offset = offset + len");
                     },
                     "end",
@@ -680,7 +680,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         w.line(&format!("offset = offset + {size}"));
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
                         w.line(&add_line("tvb(offset, len)"));
-                        hand_off(w, "tvb(offset, len)");
+                        handoff_line(w, "tvb(offset, len)");
                         w.line("offset = offset + len");
                     },
                     "end",
@@ -691,7 +691,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                         w.line(&format!("local len = wd_terminated(tvb, offset, {terminator}, {width})"));
                         w.block("if not len then", truncated, "end");
                         w.line(&add_line("tvb(offset, len)"));
-                        hand_off(w, "tvb(offset, len)");
+                        handoff_line(w, "tvb(offset, len)");
                         w.line(&format!("offset = offset + len + {width}"));
                     },
                     "end",

@@ -240,8 +240,9 @@ end
 local wd_dissectors = {}
 
 -- Passes the bytes of `range` to the Dissector named `name`, whose layer goes into `tree`. An
--- unknown name adds a warning to `tree` instead; no bytes are passed to no Dissector. An error
--- in the Dissector is shown in its own layer by Wireshark, and never escapes as a Lua error.
+-- unknown name adds a warning to `tree` instead, even when there are no bytes to pass. An error
+-- in the Dissector is shown in its own layer by Wireshark, and never escapes as a Lua error. The
+-- Protocol column keeps this Dissector's short name (spec §5.5).
 local function wd_handoff(name, range, pinfo, tree, expert_info, path)
     local dissector = wd_dissectors[name]
     if dissector == nil then
@@ -254,6 +255,8 @@ local function wd_handoff(name, range, pinfo, tree, expert_info, path)
         return
     end
     if range:len() > 0 then
+        local protocol = tostring(pinfo.cols.protocol)
         pcall(dissector.call, dissector, range:tvb(), pinfo, tree)
+        pinfo.cols.protocol = protocol
     end
 end
