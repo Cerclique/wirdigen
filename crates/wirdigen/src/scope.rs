@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
+use crate::bits::Lookup;
 use crate::diagnostic::{Diagnostic, Name};
 use crate::field::{Builtin, RawField, Shape};
 use crate::keys::closest;
@@ -21,6 +22,9 @@ pub(crate) enum Reference {
     /// A Field read by the same function: its path from the function's root (the top-level
     /// layout or the Type body), through inline structures and Fields of Types.
     Field(Vec<String>),
+    /// A bitfield sub-Field (spec §3.8): `width` bits, `shift` bits up from the least significant
+    /// one, of the value of the container Field at `container`, read by the same function.
+    Bits { container: Vec<String>, shift: u32, width: u32 },
     /// A value the caller passes in the context table, under the path as written in the Type.
     Context(String),
 }
@@ -76,7 +80,7 @@ enum Miss {
 
 /// What resolving a path gives.
 enum Resolution {
-    Found(Vec<String>),
+    Found(Reference),
     /// Not read in the Type: its uses resolve it.
     Free {
         later: Option<Range<usize>>,
@@ -124,11 +128,29 @@ fn resolve<'a>(segments: &[String], scope: Scope<'a, '_>, types: &Types<'a>) -> 
 
 /// Follows the rest of a path from `field`, found at `path`.
 fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, types: &Types<'a>) -> Resolution {
-    for segment in rest {
+    for (index, segment) in rest.iter().enumerate() {
         let children = match field.shape(types) {
             Shape::Structure(children) | Shape::Type { fields: children, .. } => children,
             Shape::Unknown => return Resolution::Suppressed,
-            Shape::Value(..) => return Resolution::Miss(Miss::NotStructure(field.name().value.clone())),
+            Shape::Value(builtin, _) => {
+                let Some(bits) = field.bits() else {
+                    return Resolution::Miss(Miss::NotStructure(field.name().value.clone()));
+                };
+                return match bits.lookup(segment, builtin) {
+                    Lookup::Missing => Resolution::Miss(Miss::NoMember {
+                        parent: field.name().value.clone(),
+                        member: segment.clone(),
+                        candidates: bits.names(),
+                    }),
+                    Lookup::Found { .. } if index + 1 < rest.len() => {
+                        Resolution::Miss(Miss::NotStructure(segment.clone()))
+                    }
+                    Lookup::Found { shift, width } => {
+                        Resolution::Found(Reference::Bits { container: path, shift, width })
+                    }
+                    Lookup::Invalid => Resolution::Suppressed,
+                };
+            }
         };
         let Some(child) = children.iter().find(|f| f.name().value == *segment) else {
             let candidates = children.iter().map(|f| f.name().value.clone()).collect();
@@ -139,7 +161,7 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
         path.push(segment.clone());
     }
     let what = match field.shape(types) {
-        Shape::Value(Builtin::Int { .. } | Builtin::Bool, _) => return Resolution::Found(path),
+        Shape::Value(Builtin::Int { .. } | Builtin::Bool, _) => return Resolution::Found(Reference::Field(path)),
         Shape::Unknown => return Resolution::Suppressed,
         Shape::Value(_, written) => format!("a `{written}`"),
         Shape::Structure(_) => "a structure".to_owned(),
@@ -213,7 +235,7 @@ pub(crate) fn resolve_paths<'a>(
     for (segments, span) in paths {
         let key = segments.join(".");
         let reference = match resolve(segments, scope, types) {
-            Resolution::Found(path) => Reference::Field(path),
+            Resolution::Found(reference) => reference,
             Resolution::Free { .. } => Reference::Context(key),
             Resolution::Suppressed => {
                 ok = false;
@@ -246,7 +268,7 @@ pub(crate) fn resolve_context<'a>(
     for free in free_refs(types, ty) {
         let segments = &free.segments;
         let reference = match resolve(segments, scope, types) {
-            Resolution::Found(path) => Reference::Field(path),
+            Resolution::Found(reference) => reference,
             Resolution::Free { .. } => Reference::Context(free.key.clone()),
             Resolution::Suppressed => {
                 ok = false;

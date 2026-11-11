@@ -78,6 +78,9 @@ names! {
     OverlappingValues => "overlapping-values", Error;
     ConflictingMappings => "conflicting-mappings", Error;
     UnknownEnum => "unknown-enum", Error;
+    InvalidBits => "invalid-bits", Error;
+    InvalidBitWidth => "invalid-bit-width", Error;
+    MismatchedBitWidths => "mismatched-bit-widths", Error;
     ExpressionSyntax => "expression-syntax", Error;
     LeadingZeroLiteral => "leading-zero-literal", Error;
     ChainedComparison => "chained-comparison", Error;

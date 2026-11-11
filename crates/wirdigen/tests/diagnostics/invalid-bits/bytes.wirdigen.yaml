@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: id, type: bytes, size: 2, bits: [ { name: a, width: 16 } ] }

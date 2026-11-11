@@ -113,12 +113,13 @@ A name in an Expression reads the value of a Field read earlier in the packet.
   Expression is in, then among the earlier Fields of each enclosing structure, out to the
   top-level `fields:`. The nearest Field of that name wins.
 - **Dotted paths** go into a structure or a Field of a Type read earlier: `hdr.len`,
-  `request.header.flags`.
+  `request.header.flags`, and into the sub-Fields of a [bitfield](bitfields.md): `flags.ext`.
 - **Only earlier Fields.** A Field read later, or the Field the Expression belongs to, is
   [`forward-reference`](../diagnostics.md#forward-reference). A name that matches nothing is
   [`unknown-field`](../diagnostics.md#unknown-field), and so is a path into the structure still
   being read: inside `hdr`, write `len`, not `hdr.len`.
-- **Only numbers.** Integer and `bool` Fields can be read; a `bool` reads as 1 or 0. A
+- **Only numbers.** Integer and `bool` Fields and bitfield sub-Fields can be read; a `bool`
+  or a boolean sub-Field reads as 1 or 0. A
   `string`, `bytes`, float, address, timestamp or structure is
   [`non-numeric-reference`](../diagnostics.md#non-numeric-reference).
 

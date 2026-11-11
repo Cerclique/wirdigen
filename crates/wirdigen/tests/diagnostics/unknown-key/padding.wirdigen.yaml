@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits: [ { padding: 4, name: a }, { name: b, width: 4 } ]

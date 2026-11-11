@@ -1,0 +1,31 @@
+# Bitfield sub-Fields in Expressions (spec §3.8, §4.3), and hidden bitfields. The comments give
+# each size for the first packet.
+name: bitfield-references
+fields:
+  - name: flags
+    type: uint8
+    hidden: true                                  # neither it nor its sub-Fields are shown
+    bits:
+      - { name: has_extra, width: 1 }             # 1
+      - { name: count, width: 3 }                 # 2
+      - { name: shift, width: 4 }                 # 1
+  - { name: extra, type: bytes, size: "flags.has_extra * 2" }  # 2: a boolean sub-Field reads 1
+  - { name: items, type: bytes, size: "flags.count" }          # 2
+  - name: options
+    type: uint16
+    bits:
+      - { name: secret, width: 4, hidden: true }  # left out of the tree, still filtered
+      - { name: len, width: 12 }                  # 3
+  - { name: opt, type: bytes, size: "options.len" }            # 3
+  - { name: rec, type: Record }
+  - { name: tail, type: bytes, size: "rec.head.size" }         # 2: inside a Type
+types:
+  Record:
+    fields:
+      - name: head
+        type: uint8
+        bits:
+          - { name: size, width: 4 }              # 2
+          - { padding: 4 }
+      # `head.size` is the Record's own; `flags.shift` comes from the use of the Record.
+      - { name: body, type: bytes, size: "head.size + flags.shift" } # 3

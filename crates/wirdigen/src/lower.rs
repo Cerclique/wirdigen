@@ -4,7 +4,9 @@
 //! a Wirdigen bug and panics, it is never a Diagnostic.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
 
+use crate::bits::Bit;
 use crate::description::Protocol;
 use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
 use crate::field::{self, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind};
@@ -53,6 +55,17 @@ pub(crate) struct ProtoField {
     pub(crate) field_type: FieldType,
     /// What Wireshark shows in place of, or after, the value.
     pub(crate) strings: Option<Strings>,
+    /// The bits of the container a bitfield sub-Field holds (spec §3.8).
+    pub(crate) mask: Option<Mask>,
+}
+
+/// The mask of a bitfield sub-Field's `ProtoField`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Mask {
+    /// The bits of the container the sub-Field holds.
+    pub(crate) bits: u64,
+    /// The bytes of the container, which the mask is written as wide as.
+    pub(crate) bytes: usize,
 }
 
 /// The labels of a `ProtoField`, in the argument a constructor calls its valuestring.
@@ -208,6 +221,10 @@ pub(crate) enum Stmt {
         path: String,
         /// The local its value is kept in, when an Expression reads it.
         value: Option<Value>,
+        /// Whether the item is hidden: left out of the tree, still filtered.
+        hidden: bool,
+        /// The sub-Fields of a bitfield, added under its item from the same bytes.
+        bits: Vec<BitItem>,
     },
     /// An inline structure: a subtree item holding the statements of its Fields, as long as
     /// the bytes they read.
@@ -233,6 +250,18 @@ pub(crate) enum Stmt {
         /// The local the table the Type returns is kept in, when an Expression reads inside it.
         result: Option<String>,
     },
+}
+
+/// A bitfield sub-Field: a masked `ProtoField` added under its container's item, from the
+/// container's bytes, which Wireshark masks and shifts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BitItem {
+    /// The sub-Field's `ProtoField`.
+    pub(crate) field: Ref,
+    /// Whether the item is hidden, as every sub-Field of a hidden container is.
+    pub(crate) hidden: bool,
+    /// Whether the container is read little-endian (`add_le`).
+    pub(crate) little: bool,
 }
 
 /// Where the value of a read is kept for Expressions, and how it is read (spec §4.4).
@@ -396,7 +425,7 @@ impl Plan {
         let mut read = Vec::new();
         let mut context = false;
         references(fields, &mut |reference| match reference {
-            Reference::Field(path) => read.push(path.clone()),
+            Reference::Field(path) | Reference::Bits { container: path, .. } => read.push(path.clone()),
             Reference::Context(_) => context = true,
         });
         let mut plan = Self { context, ..Self::default() };
@@ -453,10 +482,21 @@ impl Plan {
         self.results.iter().find(|(prefix, _)| path.starts_with(prefix))
     }
 
-    /// How an Expression reads `reference`.
+    /// How an Expression reads `reference`. A sub-Field is its container's value shifted down and
+    /// masked, which needs the bitwise prelude chunk.
     fn read(&self, reference: &Reference) -> LuaExpr {
         match reference {
             Reference::Context(key) => LuaExpr::Context(key.clone()),
+            Reference::Bits { container, shift, width } => {
+                let mut value = self.read(&Reference::Field(container.clone()));
+                if *shift > 0 {
+                    value = LuaExpr::Call { helper: "wd_shr", args: vec![value, LuaExpr::Int(u64::from(*shift))] };
+                }
+                if *width < 64 {
+                    value = LuaExpr::Call { helper: "wd_band", args: vec![value, LuaExpr::Int((1 << width) - 1)] };
+                }
+                value
+            }
             Reference::Field(path) => match self.result_for(path) {
                 Some((prefix, local)) => LuaExpr::Local { local: local.clone(), keys: path[prefix.len()..].to_vec() },
                 None => LuaExpr::Local { local: self.values[path].clone(), keys: Vec::new() },
@@ -514,6 +554,8 @@ struct Slot<'p> {
 enum SlotKind<'p> {
     /// The `ProtoField` of this Field.
     Field(&'p Field),
+    /// The `ProtoField` of this sub-Field of the bitfield.
+    Bit(&'p BuiltinField, &'p Bit),
     /// The site table of this Type, which the Field is of.
     Site(&'p str),
 }
@@ -546,7 +588,17 @@ impl<'p> Lowering<'p> {
         let path = segments.join(".");
         let index = self.proto_field(field, &segments);
         match &field.kind {
-            FieldKind::Builtin(value) => self.read(value, Ref::Local(index), &segments),
+            FieldKind::Builtin(value) => {
+                let bits = value
+                    .bits
+                    .iter()
+                    .map(|bit| {
+                        let path: Vec<&str> = segments.iter().copied().chain([bit.name.as_str()]).collect();
+                        (Ref::Local(self.proto_field_bit(value, bit, &path)), bit)
+                    })
+                    .collect();
+                self.read(value, Ref::Local(index), &segments, field.hidden, bits)
+            }
             FieldKind::Structure(fields) => {
                 Stmt::Structure { field: Ref::Local(index), body: self.structure(fields, &segments), path }
             }
@@ -569,20 +621,30 @@ impl<'p> Lowering<'p> {
             .map(|field| {
                 let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
                 let path = segments.join(".");
-                let mut slot = |prefix: &str, kind: SlotKind<'p>| {
+                let slot = |slots: &mut Vec<Slot<'p>>, prefix: &str, segments: Vec<&'p str>, kind: SlotKind<'p>| {
                     let key = unique(&format!("{prefix}{}", segments.join("__")), |k| slots.iter().any(|s| s.key == k));
-                    slots.push(Slot { key: key.clone(), segments: segments.clone(), kind });
+                    slots.push(Slot { key: key.clone(), segments, kind });
                     Ref::Slot(key)
                 };
-                let field_ref = slot("f_", SlotKind::Field(field));
+                let field_ref = slot(slots, "f_", segments.clone(), SlotKind::Field(field));
                 match &field.kind {
-                    FieldKind::Builtin(value) => self.read(value, field_ref, &segments),
+                    FieldKind::Builtin(value) => {
+                        let bits = value
+                            .bits
+                            .iter()
+                            .map(|bit| {
+                                let path = segments.iter().copied().chain([bit.name.as_str()]).collect();
+                                (slot(slots, "f_", path, SlotKind::Bit(value, bit)), bit)
+                            })
+                            .collect();
+                        self.read(value, field_ref, &segments, field.hidden, bits)
+                    }
                     FieldKind::Structure(fields) => {
                         let body = self.type_structure(fields, &segments, slots);
                         Stmt::Structure { field: field_ref, path, body }
                     }
                     FieldKind::Type { name, context } => {
-                        let site = slot("t_", SlotKind::Site(name));
+                        let site = slot(slots, "t_", segments.clone(), SlotKind::Site(name));
                         self.call(field_ref, &segments, name, site, context)
                     }
                 }
@@ -600,6 +662,7 @@ impl<'p> Lowering<'p> {
                 let path: Vec<&str> = segments.iter().copied().chain(slot.segments).collect();
                 let entry = match slot.kind {
                     SlotKind::Field(field) => SiteEntry::Field(self.proto_field(field, &path)),
+                    SlotKind::Bit(container, bit) => SiteEntry::Field(self.proto_field_bit(container, bit, &path)),
                     SlotKind::Site(ty) => SiteEntry::Site(self.site(ty, &path)),
                 };
                 (slot.key, entry)
@@ -610,13 +673,29 @@ impl<'p> Lowering<'p> {
 
     /// The statement calling the dissect function of the Type `ty` for the Field at `segments`.
     fn call(&mut self, field: Ref, segments: &[&str], ty: &str, site: Ref, context: &[(String, Reference)]) -> Stmt {
-        let context = context.iter().map(|(key, reference)| (key.clone(), self.plan.read(reference))).collect();
+        let context = context.iter().map(|(key, reference)| (key.clone(), self.reference(reference))).collect();
         let result = self.plan.results.get(&owned(segments)).cloned();
         Stmt::Call { field, path: segments.join("."), ty: ty.to_owned(), site, context, result }
     }
 
-    /// The statement reading a Field of a built-in type through `field`, at `segments`.
-    fn read(&mut self, field_value: &BuiltinField, field: Ref, segments: &[&str]) -> Stmt {
+    /// How an Expression reads `reference`, using the prelude chunk a sub-Field needs.
+    fn reference(&mut self, reference: &Reference) -> LuaExpr {
+        if matches!(reference, Reference::Bits { .. }) {
+            self.use_chunk(prelude::BITWISE);
+        }
+        self.plan.read(reference)
+    }
+
+    /// The statement reading a Field of a built-in type through `field`, at `segments`, hidden or
+    /// not, with the `ProtoField`s of its sub-Fields when it is a bitfield.
+    fn read(
+        &mut self,
+        field_value: &BuiltinField,
+        field: Ref,
+        segments: &[&str],
+        hidden: bool,
+        bits: Vec<(Ref, &Bit)>,
+    ) -> Stmt {
         let length = match &field_value.length {
             field::Length::Expression { expr, references } => {
                 let checked = expr.constant().is_none();
@@ -636,7 +715,10 @@ impl<'p> Lowering<'p> {
         if value.as_ref().is_some_and(|v| v.read == ValueRead::Bool) {
             self.use_chunk(prelude::LOGIC);
         }
-        Stmt::Read { field, length, decode: decode(field_value), path: segments.join("."), value }
+        let little = field_value.endian == Endian::Little && field_value.ty.has_byte_order();
+        let bits =
+            bits.into_iter().map(|(field, bit)| BitItem { field, hidden: hidden || bit.hidden, little }).collect();
+        Stmt::Read { field, length, decode: decode(field_value), path: segments.join("."), value, hidden, bits }
     }
 
     /// Adds a prelude chunk the Dissector needs, once.
@@ -651,7 +733,7 @@ impl<'p> Lowering<'p> {
     fn expression(&mut self, expr: &Expr, references: &BTreeMap<Vec<String>, Reference>) -> LuaExpr {
         let (helper, chunk, args) = match &expr.kind {
             ExprKind::Int(value) => return LuaExpr::Int(*value),
-            ExprKind::Path(segments) => return self.plan.read(&references[segments]),
+            ExprKind::Path(segments) => return self.reference(&references[segments]),
             ExprKind::Builtin(expr::Builtin::Offset) => return LuaExpr::Offset,
             ExprKind::Builtin(expr::Builtin::Remaining) => return LuaExpr::Remaining,
             ExprKind::Unary { op, operand } => {
@@ -705,7 +787,10 @@ impl<'p> Lowering<'p> {
         let (field_type, strings) = match &field.kind {
             FieldKind::Builtin(value) => (
                 field_type(value),
-                value.mapping.as_ref().and_then(|m| strings(m, value.ty, self.enums, &mut self.tables)),
+                value
+                    .mapping
+                    .as_ref()
+                    .and_then(|m| strings(m, KeyRange::of(value.ty).as_ref(), self.enums, &mut self.tables)),
             ),
             FieldKind::Structure(_) | FieldKind::Type { .. } => (FieldType::new("none", Args::Plain), None),
         };
@@ -716,6 +801,42 @@ impl<'p> Lowering<'p> {
             description: field.description.clone(),
             field_type,
             strings,
+            mask: None,
+        });
+        self.proto_fields.len() - 1
+    }
+
+    /// Registers the `ProtoField` of the sub-Field `bit` of the bitfield `container` at the path
+    /// `segments`, returning its index. It is masked, and declared as wide as the container, as
+    /// Wireshark requires: an unsigned integer, or a boolean whose display is the container's
+    /// number of bits.
+    fn proto_field_bit(&mut self, container: &BuiltinField, bit: &Bit, segments: &[&str]) -> usize {
+        let Builtin::Int { signed: false, bytes } = container.ty else {
+            panic!("validation gives `bits` only to unsigned integers")
+        };
+        let (field_type, strings) = if let Some(display) = bit.display {
+            let keys = KeyRange { range: 0..=(1_i128 << bit.width) - 1, signed32: false };
+            let strings = bit.mapping.as_ref().and_then(|m| strings(m, Some(&keys), self.enums, &mut self.tables));
+            (FieldType::new(field_type(container).constructor, Args::Display(base(display))), strings)
+        } else {
+            let (when_true, when_false) = match &bit.mapping {
+                Some(Mapping::Bool { when_true, when_false }) => (when_true.clone(), when_false.clone()),
+                _ => (None, None),
+            };
+            let strings = Strings::TrueFalse {
+                when_true: when_true.unwrap_or_else(|| "Set".to_owned()),
+                when_false: when_false.unwrap_or_else(|| "Not set".to_owned()),
+            };
+            (FieldType::new("bool", Args::Display(bool_width(bytes))), Some(strings))
+        };
+        self.proto_fields.push(ProtoField {
+            local: self.local(segments),
+            abbrev: format!("{}.{}", self.filter_name, segments.join(".")),
+            label: bit.label.clone().unwrap_or_else(|| default_label(&bit.name)),
+            description: bit.description.clone(),
+            field_type,
+            strings,
+            mask: Some(Mask { bits: bit.mask(), bytes }),
         });
         self.proto_fields.len() - 1
     }
@@ -799,18 +920,53 @@ fn field_type(field: &BuiltinField) -> FieldType {
     }
 }
 
-/// The labels of a Field of type `ty`. An Enum's table is shared by every Field it lowers to the
-/// same table for. A table left empty by the type (every key `unreachable-value`) gives no
-/// labels at all: an empty table would only make every value "Unknown".
+/// The display of a boolean sub-Field's `ProtoField`: the number of bits of its container.
+fn bool_width(bytes: usize) -> &'static str {
+    match bytes {
+        1 => "8",
+        2 => "16",
+        3 => "24",
+        4 => "32",
+        5 => "40",
+        6 => "48",
+        7 => "56",
+        8 => "64",
+        _ => panic!("validation gives `bits` only to integers of 1 to 8 bytes"),
+    }
+}
+
+/// The values a Field's table keys can reach, as its `ProtoField` compares them.
+#[derive(Debug, Clone)]
+struct KeyRange {
+    /// The values of the Field: its type's, or a sub-Field's.
+    range: RangeInclusive<i128>,
+    /// Whether it is a signed integer of 32 bits or fewer, whose negative values Wireshark
+    /// compares as their 32-bit two's complement.
+    signed32: bool,
+}
+
+impl KeyRange {
+    /// The keys of a Field of type `ty`, `None` when it is not an integer.
+    fn of(ty: Builtin) -> Option<Self> {
+        let Builtin::Int { signed, bytes } = ty else { return None };
+        Some(Self { range: ty.int_range()?, signed32: signed && bytes <= 4 })
+    }
+}
+
+/// The labels of a Field whose table keys can reach `keys`. An Enum's table is shared by every
+/// Field it lowers to the same table for. A table left empty by the type (every key
+/// `unreachable-value`) gives no labels at all: an empty table would only make every value
+/// "Unknown".
 fn strings(
     mapping: &Mapping,
-    ty: Builtin,
+    keys: Option<&KeyRange>,
     enums: &BTreeMap<String, Table>,
     tables: &mut Vec<SharedTable>,
 ) -> Option<Strings> {
+    let table_keys = || keys.expect("validation gives `values` only to integers");
     Some(match mapping {
         Mapping::Values(Values::Inline(table)) => {
-            let lua = lua_table(table, ty);
+            let lua = lua_table(table, table_keys());
             if lua.is_empty() {
                 return None;
             }
@@ -818,7 +974,7 @@ fn strings(
         }
         Mapping::Values(Values::Enum(name)) => {
             let table = &enums[name];
-            let lua = lua_table(table, ty);
+            let lua = lua_table(table, table_keys());
             if lua.is_empty() {
                 return None;
             }
@@ -843,7 +999,7 @@ fn strings(
     })
 }
 
-/// A validated table as Wireshark reads it for a `ProtoField` of integer type `ty`.
+/// A validated table as Wireshark reads it for a `ProtoField` whose values reach `keys`.
 ///
 /// Wireshark converts each key and bound to an unsigned integer of the `ProtoField`'s width
 /// (32 or 64 bits), so:
@@ -853,10 +1009,8 @@ fn strings(
 /// - a range string compares values as unsigned integers, so a range crossing zero is split in
 ///   two, and a negative bound of a 32-bit or narrower signed type is written as its 32-bit two's
 ///   complement, which is what the value is compared as.
-fn lua_table(table: &[Entry], ty: Builtin) -> LuaTable {
-    let Builtin::Int { signed, bytes } = ty else { panic!("validation gives `values` only to integer types") };
-    let range = ty.int_range().expect("an integer type has a range");
-    let (min, max) = (*range.start(), *range.end());
+fn lua_table(table: &[Entry], keys: &KeyRange) -> LuaTable {
+    let (min, max) = (*keys.range.start(), *keys.range.end());
     let reachable = table.iter().filter_map(|e| {
         let (low, high) = (e.key.low.max(min), e.key.high.min(max));
         (low <= high).then(|| (low, high, e.label.clone()))
@@ -868,7 +1022,7 @@ fn lua_table(table: &[Entry], ty: Builtin) -> LuaTable {
     if !mapping::has_range(table) {
         return LuaTable::Values(reachable.map(|(value, _, label)| (wire(value), label)).collect());
     }
-    let unsigned = |value: i128| wire(if signed && bytes <= 4 && value < 0 { value + (1 << 32) } else { value });
+    let unsigned = |value: i128| wire(if keys.signed32 && value < 0 { value + (1 << 32) } else { value });
     LuaTable::Ranges(
         reachable
             .flat_map(|(low, high, label)| {

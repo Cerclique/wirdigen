@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: kind, width: 2, values: { 3: Max, 4: Never } }
+      - { padding: 6 }

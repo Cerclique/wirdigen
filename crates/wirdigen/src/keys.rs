@@ -155,6 +155,16 @@ pub(crate) fn expect_integer(node: &Node, key: &str) -> Result<i64, Diagnostic> 
     parse_int(text).and_then(|value| i64::try_from(value).ok()).ok_or_else(|| wrong("is out of range"))
 }
 
+/// Reads a key that takes a YAML bool, `true` or `false`.
+pub(crate) fn expect_bool(node: &Node, key: &str) -> Result<Spanned<bool>, Diagnostic> {
+    match &node.value {
+        Value::Scalar { text, plain: true, .. } if resolve_plain(text) == Kind::Bool => {
+            Ok(Spanned { value: text.eq_ignore_ascii_case("true"), span: node.span.clone() })
+        }
+        _ => Err(wrong_type(node.span.clone(), format!("`{key}` must be `true` or `false`"))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

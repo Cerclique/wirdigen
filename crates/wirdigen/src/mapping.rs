@@ -127,6 +127,14 @@ pub(crate) struct RawMappings {
     unit: Option<MappingKey<RawUnit>>,
 }
 
+impl RawMappings {
+    /// Whether the keys make a 1-bit sub-Field an unsigned integer rather than a boolean: `values:`
+    /// or `unit:` (spec §3.8).
+    pub(crate) fn makes_integer(&self) -> bool {
+        self.values.is_some() || self.unit.is_some()
+    }
+}
+
 /// A `unit:` as written, after stage 2: its forms are strings, not yet checked to be non-empty
 /// single lines.
 #[derive(Debug, Clone)]
@@ -384,35 +392,77 @@ impl<'a> Enums<'a> {
 #[derive(Debug)]
 pub(crate) struct Invalid;
 
-/// Stage 4: the labels of a Field of type `builtin`, written `ty`.
+/// What a Field whose value mappings are checked holds, which says which keys it takes.
+pub(crate) struct Subject {
+    /// How messages name it: "`uint8`", "a 3-bit sub-Field".
+    what: String,
+    /// Where it is written, which the note of `unreachable-value` points at.
+    span: Range<usize>,
+    /// Its values, when it is an integer: only integers take `values:`.
+    range: Option<RangeInclusive<i128>>,
+    /// Whether it takes `true:` and `false:`.
+    states: bool,
+    /// Whether it takes `unit:`.
+    unit: bool,
+    /// Which Fields take `true:` and `false:`, for the note when this one does not.
+    state_takers: &'static str,
+}
+
+impl Subject {
+    /// A Field of the built-in type `builtin`, written `ty`.
+    pub(crate) fn builtin(ty: &Spanned<String>, builtin: Builtin) -> Self {
+        let range = builtin.int_range();
+        Self {
+            what: format!("`{}`", ty.value),
+            span: ty.span.clone(),
+            unit: range.is_some() || matches!(builtin, Builtin::Float32 | Builtin::Float64),
+            range,
+            states: builtin == Builtin::Bool,
+            state_takers: "`bool` Fields",
+        }
+    }
+
+    /// A bitfield sub-Field `width` bits wide whose name is at `name`: a boolean, or an
+    /// unsigned integer of `width` bits (spec §3.8).
+    pub(crate) fn sub_field(name: &Range<usize>, width: u32, boolean: bool) -> Self {
+        Self {
+            what: format!("a {width}-bit sub-Field"),
+            span: name.clone(),
+            range: (!boolean).then(|| 0..=(1_i128 << width) - 1),
+            states: boolean,
+            unit: !boolean,
+            state_takers: "1-bit sub-Fields without `values`, `unit` or `display`",
+        }
+    }
+}
+
+/// Stage 4: the labels of a Field holding `subject`.
 ///
 /// Returns [`Invalid`] after an error, which is already pushed, and `Ok(None)` for a Field without
 /// value mappings.
 pub(crate) fn check(
     raw: &RawMappings,
-    ty: &Spanned<String>,
-    builtin: Builtin,
+    subject: &Subject,
     enums: &mut Enums<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Option<Mapping>, Invalid> {
     let start = diagnostics.len();
-    let range = builtin.int_range();
-    let takes_unit = range.is_some() || matches!(builtin, Builtin::Float32 | Builtin::Float64);
+    let range = subject.range.clone();
     let misplaced = |key: &Range<usize>, what: &str, takers: &str| {
-        Diagnostic::new(Name::IncompatibleDisplay, key.clone(), format!("`{}` takes no `{what}`", ty.value))
+        Diagnostic::new(Name::IncompatibleDisplay, key.clone(), format!("{} takes no `{what}`", subject.what))
             .with_note(format!("only {takers} take `{what}`"), None)
     };
     if let (Some(values), None) = (&raw.values, &range) {
         diagnostics.push(misplaced(&values.key, "values", "integer types"));
     }
-    if builtin != Builtin::Bool {
+    if !subject.states {
         for (label, what) in [(&raw.when_true, "true"), (&raw.when_false, "false")] {
             if let Some(label) = label {
-                diagnostics.push(misplaced(&label.key, what, "`bool` Fields"));
+                diagnostics.push(misplaced(&label.key, what, subject.state_takers));
             }
         }
     }
-    if let (Some(unit), false) = (&raw.unit, takes_unit) {
+    if let (Some(unit), false) = (&raw.unit, subject.unit) {
         diagnostics.push(misplaced(&unit.key, "unit", "integer and float types"));
     }
     if let (Some(values), Some(unit), Some(_)) = (&raw.values, &raw.unit, &range) {
@@ -435,9 +485,12 @@ pub(crate) fn check(
                 Diagnostic::new(
                     Name::UnreachableValue,
                     entry.key.span.clone(),
-                    format!("`{}` is never a `{}` value", entry.text, ty.value),
+                    format!("`{}` is never a value of {}", entry.text, subject.what),
                 )
-                .with_note(format!("`{}` holds {} to {}", ty.value, range.start(), range.end()), Some(ty.span.clone()))
+                .with_note(
+                    format!("{} holds {} to {}", subject.what, range.start(), range.end()),
+                    Some(subject.span.clone()),
+                )
             };
             Some(Mapping::Values(match &values.value {
                 RawValues::Inline(entries) => {

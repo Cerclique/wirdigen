@@ -1,0 +1,7 @@
+# flags=ab: version=5 ext=1 kind=3 | word=34 12 (0x1234): high=1 mid=0x23 flag=0 low=4
+# triple=12 34 56: middle=0x2345 tail=6 | wide=80 00 00 00 05: top=1 rest=5
+# huge=80 00 00 00 00 00 00 01: sign=1 value=1 | whole=00 00 00 2a: all=42
+0000  ab 34 12 12 34 56 80 00 00 00 05 80 00 00 00 00
+0010  00 00 01 00 00 00 2a
+# Zeroes, cut inside huge.
+0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00

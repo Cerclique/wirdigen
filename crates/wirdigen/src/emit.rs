@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt, Strings,
-    TableRef, Value, ValueRead,
+    Args, BitItem, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt,
+    Strings, TableRef, Value, ValueRead,
 };
 use crate::prelude;
 
@@ -180,16 +180,18 @@ fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
         }
     }
     let mut tail = Vec::new();
-    if let Some(description) = &field.description {
-        if mapping_slots {
-            // Slots before the blurb that nothing fills stay `nil`: the value string, the mask.
-            if field.strings.is_none() {
-                tail.push("nil".to_owned());
-            }
+    let description = field.description.as_deref().map(lua_string);
+    if mapping_slots && (field.mask.is_some() || description.is_some()) {
+        // Slots before the last one given that nothing fills stay `nil`: the value string, the
+        // mask. A mask is written in hexadecimal, as wide as its container.
+        if field.strings.is_none() {
             tail.push("nil".to_owned());
         }
-        tail.push(lua_string(description));
+        tail.push(
+            field.mask.map_or_else(|| "nil".to_owned(), |m| format!("0x{:0width$X}", m.bits, width = 2 * m.bytes)),
+        );
     }
+    tail.extend(description);
     let open = format!("local {} = ProtoField.{}({}", field.local, field.field_type.constructor, args.join(", "));
     let close = if tail.is_empty() { String::new() } else { format!(", {}", tail.join(", ")) };
     match inline {
@@ -372,7 +374,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 "end",
             );
         }
-        Stmt::Read { field, length, decode, path, value } => {
+        Stmt::Read { field, length, decode, path, value, hidden, bits } => {
             let local = field_ref(model, field);
             let reported = match scope {
                 Scope::Top => lua_string(path),
@@ -401,7 +403,8 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             match length {
                 Length::Fixed(size) => {
                     w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
-                    w.line(&add(&format!("tvb(offset, {size})")));
+                    let range = format!("tvb(offset, {size})");
+                    add_item(w, model, &add(&range), &range, *hidden, bits);
                     if let Some(value) = value {
                         keep_value(w, value, *size);
                     }
@@ -453,6 +456,32 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             }
         }
     }
+}
+
+/// Adds the item of a fixed-size read with `add`, the call adding it from `range`. A bitfield's
+/// sub-Fields go under its item, each from the same bytes, which Wireshark masks and shifts (spec
+/// §3.8): the item is then kept in a local scoped by `do`, so locals never pile up against Lua's
+/// limit of 200 per function.
+fn add_item(w: &mut Writer, model: &Dissector, add: &str, range: &str, hidden: bool, bits: &[BitItem]) {
+    if bits.is_empty() && !hidden {
+        w.line(add);
+        return;
+    }
+    w.block(
+        "do",
+        |w| {
+            w.line(&format!("local item = {add}"));
+            if hidden {
+                w.line("item:set_hidden(true)");
+            }
+            for bit in bits {
+                let method = if bit.little { "add_le" } else { "add" };
+                let hide = if bit.hidden { ":set_hidden(true)" } else { "" };
+                w.line(&format!("item:{method}({}, {range}){hide}", field_ref(model, &bit.field)));
+            }
+        },
+        "end",
+    );
 }
 
 /// An Expression as Lua: helper calls, and Lua's short-circuit `and`/`or` for `&&`/`||`.

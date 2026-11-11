@@ -299,9 +299,9 @@ The two are mutually exclusive; `repeat:` leaves room for `repeat: { until: <exp
 ```
 
 - `bits:` declares sub-Fields by bit width, most significant bit first. Wirdigen computes the masks.
-- Widths must add up to the container's size; gaps are named or `{ padding: n }` entries. A mismatch is an error.
+- Widths must add up to the container's size; gaps are named or `{ padding: n }` entries. A mismatch is the error `mismatched-bit-widths`, and a width below 1 is `invalid-bit-width`. Padding bits add no tree item.
 - Sub-Fields are usable in Expressions (`flags.ext`) and extend the container's filter name (`myproto.flags.ext`).
-- The container must be a fixed-size unsigned integer. It is shown as an unsigned integer (with its own `display:` and `values:`) whose subtree holds the sub-Fields. `hidden: true` on it hides the subtree, but the sub-Fields stay usable in Expressions and filters.
+- The container must be a fixed-size unsigned integer (else `invalid-bits`). It is shown as an unsigned integer (with its own `display:` and `values:`) whose subtree holds the sub-Fields. `hidden: true` on it hides the subtree, but the sub-Fields stay usable in Expressions and filters.
 - A width-1 sub-Field is boolean (Set / Not set, taking `true:`/`false:`) unless it carries `values:`, `unit:` or `display:`, which make it an unsigned integer. Wider sub-Fields are masked unsigned integers. There are no signed sub-Fields in v1.
 - Sub-Fields accept only `name`, `width`, `display`, `values`, `unit`, `true`, `false`, `hidden`, `expect`, `label` and `description`.
 
@@ -504,11 +504,11 @@ Each stage reports **all** its errors, and the next stage runs only if the curre
 Errors:
 
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
-- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `bits:` on anything but a fixed-size unsigned integer;
+- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `invalid-bits`: `bits:` on anything but a fixed-size unsigned integer;
 - `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key on a type that does not take it;
 - `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
-- bitfield widths not adding up to the container;
+- `mismatched-bit-widths`: bitfield widths not adding up to the container; `invalid-bit-width`: a width below 1;
 - `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; conditional Fields used outside their scope;
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - overlapping `switch` cases;

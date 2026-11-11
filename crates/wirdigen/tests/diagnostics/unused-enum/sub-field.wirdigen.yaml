@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - { name: a, type: uint8, bits: [ { name: k, width: 8, values: Kind } ] }
+enums:
+  Kind: { 1: One }
+  Unused: { 1: One }

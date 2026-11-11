@@ -1,0 +1,48 @@
+[
+  {
+    "bitfield-references.flags": "161",
+    "bitfield-references.flags_tree": {
+      "bitfield-references.flags.has_extra": "1",
+      "bitfield-references.flags.count": "2",
+      "bitfield-references.flags.shift": "1"
+    },
+    "bitfield-references.extra": "ee:ee",
+    "bitfield-references.items": "dd:dd",
+    "bitfield-references.options": "20483",
+    "bitfield-references.options_tree": {
+      "bitfield-references.options.secret": "5",
+      "bitfield-references.options.len": "3"
+    },
+    "bitfield-references.opt": "11:22:33",
+    "bitfield-references.rec": {
+      "bitfield-references.rec.head": "32",
+      "bitfield-references.rec.head_tree": {
+        "bitfield-references.rec.head.size": "2"
+      },
+      "bitfield-references.rec.body": "44:55:66"
+    },
+    "bitfield-references.tail": "77:88"
+  },
+  {
+    "bitfield-references.flags": "64",
+    "bitfield-references.flags_tree": {
+      "bitfield-references.flags.has_extra": "0",
+      "bitfield-references.flags.count": "4",
+      "bitfield-references.flags.shift": "0"
+    },
+    "bitfield-references.extra": "",
+    "bitfield-references.items": "dd:dd:dd:dd",
+    "bitfield-references.options": "5",
+    "bitfield-references.options_tree": {
+      "bitfield-references.options.secret": "0",
+      "bitfield-references.options.len": "5"
+    },
+    "_ws.expert": {
+      "bitfield-references._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: opt",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

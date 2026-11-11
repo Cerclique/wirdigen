@@ -1,0 +1,3 @@
+name: demo
+fields:
+  - { name: flags, type: uint8, bits: [] }

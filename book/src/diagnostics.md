@@ -443,6 +443,64 @@ fields: [ {name: user, type: string, encoding: utf16, terminator: 10} ]
 **Fix**: write the byte value of the terminator, such as `0` or `10` for a line feed. A
 `utf16` or `ucs2` string takes only `terminator: 0`.
 
+## `invalid-bits` {#invalid-bits}
+
+**Severity**: error
+
+A Field with `bits:` is not a fixed-size unsigned integer. Only `uint8` to `uint64` Fields can
+be split into sub-Fields: not a signed integer, `bytes`, an inline structure or a Field of a
+Type.
+
+```yaml,diagnostic=invalid-bits
+name: demo
+fields:
+  - name: flags
+    type: int8
+    bits: [ { name: low, width: 8 } ]
+```
+
+**Fix**: give the bitfield an unsigned integer type as wide as its sub-Fields, here `uint8`.
+See [Bitfields](reference/bitfields.md).
+
+## `invalid-bit-width` {#invalid-bit-width}
+
+**Severity**: error
+
+A sub-Field or a `{ padding: n }` entry of `bits:` is less than 1 bit wide.
+
+```yaml,diagnostic=invalid-bit-width
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: version, width: 0 }
+      - { name: rest, width: 8 }
+```
+
+**Fix**: give the width in bits, at least 1, or remove an entry that takes no bits.
+
+## `mismatched-bit-widths` {#mismatched-bit-widths}
+
+**Severity**: error
+
+The widths of a bitfield's sub-Fields and padding do not add up to the bits of its container:
+8 for a `uint8`, 16 for a `uint16`, and so on. Every bit must be named or padded, so that the
+masks Wirdigen computes leave no bit ambiguous.
+
+```yaml,diagnostic=mismatched-bit-widths
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: version, width: 3 }
+      - { name: ext, width: 1 }
+```
+
+**Fix**: cover the bits nothing names with a `{ padding: n }` entry, here `{ padding: 4 }`
+last, or correct a width.
+
 ## `incompatible-display` {#incompatible-display}
 
 **Severity**: error
@@ -455,7 +513,8 @@ key its type does not take. Unsigned integers take `dec`, `hex`, `oct`, `dec_hex
 and `rel_time` take `encoding:`, each its own values: `ntp` is an `abs_time` encoding only.
 Only integers take `values:`, only `bool` takes `true:` and `false:`, and only integers and
 floats take `unit:`. An inline structure takes none of these keys: they belong on the Fields
-inside it.
+inside it. A bitfield sub-Field takes the displays of an unsigned integer, and `true:` and
+`false:` only when it is boolean: 1 bit wide, without `values:`, `unit:` or `display:`.
 
 ```yaml,diagnostic=incompatible-display
 name: demo
@@ -683,7 +742,8 @@ fields:
 **Severity**: error
 
 The description uses part of the format that this version of Wirdigen does not read yet: a
-`switch:` Field. A newer Wirdigen will accept it.
+`switch:` Field, `hidden:` on a Field that is not a [bitfield](reference/bitfields.md), or
+`expect:` on a bitfield sub-Field. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo
