@@ -19,8 +19,8 @@ fn public_types_are_owned_send_and_sync() {
 fn minimum_description_validates_and_generates() {
     let source = Source::new("min.wirdigen.yaml", "name: demo\nfields:\n  - { name: a, type: uint8 }\n");
     let valid = wirdigen::validate(&source).expect("valid");
-    assert!(valid.warnings().is_empty());
-    assert!(!valid.generate().is_empty());
+    assert_eq!(valid.warnings(), []);
+    assert_ne!(valid.generate(), "");
 }
 
 #[test]
@@ -41,8 +41,8 @@ fn diagnostic_accessors() {
     assert_eq!(d.name(), "invalid-protocol-name");
     assert_eq!(d.severity(), Severity::Error);
     assert_eq!(d.span(), 6..10);
-    assert!(!d.message().is_empty());
+    assert_ne!(d.message(), "");
     assert_eq!(d.notes().len(), 1);
     assert_eq!(d.notes()[0].span(), None);
-    assert!(!d.notes()[0].message().is_empty());
+    assert_ne!(d.notes()[0].message(), "");
 }

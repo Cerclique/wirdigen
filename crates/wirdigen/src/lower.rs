@@ -1589,7 +1589,7 @@ mod tests {
             "x",
         );
         assert_eq!(d.proto_fields.iter().map(|f| f.strings.clone()).collect::<Vec<_>>(), [None, None]);
-        assert!(d.tables.is_empty());
+        assert_eq!(d.tables, []);
     }
 
     /// A `uint64` key above `i64::MAX` is written as the Lua integer with the same 64 bits.
