@@ -1,0 +1,5 @@
+bin.name = "wirdigen"
+args = ["validate", "arrays.wirdigen.yaml"]
+fs.cwd = "../../../wirdigen/tests/cases/arrays"
+stdout = ""
+stderr = ""

@@ -1,0 +1,33 @@
+bin.name = "wirdigen"
+args = ["validate", "several.wirdigen.yaml"]
+fs.cwd = "../../../wirdigen/tests/render"
+status.code = 1
+stdout = ""
+stderr = """
+error[invalid-protocol-name]: `Demo` is not a valid protocol name
+ --> several.wirdigen.yaml:1:7
+  |
+1 | name: Demo
+  |       ^^^^
+  |
+  = note: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, at most 32 characters
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-name
+
+error[invalid-protocol-title]: a title must be a non-empty single line
+ --> several.wirdigen.yaml:2:8
+  |
+2 | title: ""
+  |        ^^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-title
+
+warning[unknown-allow]: `unknown-key` is an error, and errors cannot be silenced
+ --> several.wirdigen.yaml:4:9
+  |
+4 | allow: [unknown-key]
+  |         ^^^^^^^^^^^
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unknown-allow
+
+error: 2 errors, 1 warning in 1 of 1 file
+"""

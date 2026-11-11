@@ -1,0 +1,5 @@
+bin.name = "wirdigen"
+args = ["generate", "proto.yml"]
+fs.sandbox = true
+stdout = ""
+stderr = ""

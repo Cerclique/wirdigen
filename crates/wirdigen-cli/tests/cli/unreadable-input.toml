@@ -1,0 +1,7 @@
+bin.name = "wirdigen"
+args = ["validate", "missing.wirdigen.yaml"]
+status.code = 1
+stdout = ""
+stderr = """
+error: cannot read `missing.wirdigen.yaml`: [..]
+"""

@@ -1,0 +1,5 @@
+bin.name = "wirdigen"
+args = ["--version"]
+stdout = """
+wirdigen [..]
+"""

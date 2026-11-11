@@ -1,0 +1,11 @@
+bin.name = "wirdigen"
+args = ["validate"]
+status.code = 2
+stderr = """
+error: the following required arguments were not provided:
+  <INPUTS>...
+
+Usage: wirdigen validate <INPUTS>...
+
+For more information, try '--help'.
+"""

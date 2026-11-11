@@ -1,0 +1,33 @@
+bin.name = "wirdigen"
+args = ["validate", "--color", "always", "several.wirdigen.yaml"]
+fs.cwd = "../../../wirdigen/tests/render"
+status.code = 1
+stdout = ""
+stderr = """
+\u001B[1m\u001B[91merror[invalid-protocol-name]\u001B[0m\u001B[1m: `Demo` is not a valid protocol name\u001B[0m
+ \u001B[1m\u001B[94m--> \u001B[0mseveral.wirdigen.yaml:1:7
+  \u001B[1m\u001B[94m|\u001B[0m
+\u001B[1m\u001B[94m1\u001B[0m \u001B[1m\u001B[94m|\u001B[0m name: Demo
+  \u001B[1m\u001B[94m|\u001B[0m       \u001B[1m\u001B[91m^^^^\u001B[0m
+  \u001B[1m\u001B[94m|\u001B[0m
+  \u001B[1m\u001B[94m= \u001B[0m\u001B[1mnote\u001B[0m: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, at most 32 characters
+  \u001B[1m\u001B[94m= \u001B[0m\u001B[1mnote\u001B[0m: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-name
+
+\u001B[1m\u001B[91merror[invalid-protocol-title]\u001B[0m\u001B[1m: a title must be a non-empty single line\u001B[0m
+ \u001B[1m\u001B[94m--> \u001B[0mseveral.wirdigen.yaml:2:8
+  \u001B[1m\u001B[94m|\u001B[0m
+\u001B[1m\u001B[94m2\u001B[0m \u001B[1m\u001B[94m|\u001B[0m title: ""
+  \u001B[1m\u001B[94m|\u001B[0m        \u001B[1m\u001B[91m^^\u001B[0m
+  \u001B[1m\u001B[94m|\u001B[0m
+  \u001B[1m\u001B[94m= \u001B[0m\u001B[1mnote\u001B[0m: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-title
+
+\u001B[1m\u001B[33mwarning[unknown-allow]\u001B[0m\u001B[1m: `unknown-key` is an error, and errors cannot be silenced\u001B[0m
+ \u001B[1m\u001B[94m--> \u001B[0mseveral.wirdigen.yaml:4:9
+  \u001B[1m\u001B[94m|\u001B[0m
+\u001B[1m\u001B[94m4\u001B[0m \u001B[1m\u001B[94m|\u001B[0m allow: [unknown-key]
+  \u001B[1m\u001B[94m|\u001B[0m         \u001B[1m\u001B[33m^^^^^^^^^^^\u001B[0m
+  \u001B[1m\u001B[94m|\u001B[0m
+  \u001B[1m\u001B[94m= \u001B[0m\u001B[1mnote\u001B[0m: see https://cerclique.github.io/wirdigen/diagnostics.html#unknown-allow
+
+error: 2 errors, 1 warning in 1 of 1 file
+"""
