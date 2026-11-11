@@ -131,11 +131,12 @@ fn resolve<'a>(segments: &[String], scope: Scope<'a, '_>, types: &Types<'a>) -> 
     Resolution::Miss(Miss::Unknown(earlier))
 }
 
-/// Follows the rest of a path from `field`, found at `path`, an earlier Field and so never one
-/// enclosing the reference: every Field on the way must be read unconditionally.
+/// Follows the rest of a path from `field`, found at `path`. Every Field on the way must be read
+/// unconditionally: `field` is an earlier Field, never one enclosing the reference, so no `if:`
+/// on the way encloses it either (spec §4.3).
 fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, types: &Types<'a>) -> Resolution {
     for (index, segment) in rest.iter().enumerate() {
-        if let Some(miss) = conditional(field) {
+        if let Some(miss) = conditional_miss(field) {
             return Resolution::Miss(miss);
         }
         if field.is_array() {
@@ -172,7 +173,7 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
         field = child;
         path.push(segment.clone());
     }
-    if let Some(miss) = conditional(field) {
+    if let Some(miss) = conditional_miss(field) {
         return Resolution::Miss(miss);
     }
     let what = match field.shape(types) {
@@ -187,7 +188,7 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
 }
 
 /// Why a path cannot go through `field`, when it is read under an `if:`.
-fn conditional(field: &RawField) -> Option<Miss> {
+fn conditional_miss(field: &RawField) -> Option<Miss> {
     let condition = field.condition_span()?.clone();
     Some(Miss::Conditional { field: field.name().value.clone(), condition })
 }
@@ -241,7 +242,10 @@ fn explain(miss: &Miss, key: &str, segments: &[String]) -> (Name, String, Notes)
             vec![
                 (format!("`{field}` is read only when this is not zero"), Some(condition.clone())),
                 (
-                    format!("move what reads `{key}` into an inline structure with that `if`, together with `{field}`"),
+                    format!(
+                        "only Fields inside the Field carrying that `if` can read `{key}`: read it from \
+                         an inline structure carrying the `if`"
+                    ),
                     None,
                 ),
             ],
