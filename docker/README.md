@@ -39,6 +39,27 @@ image with `docker/build-push-action`, caching the layers across workflow runs, 
 `wirdigen-<image>` image: the layer cache lives in a buildx builder that a plain
 `docker build` would not use.
 
+The `Refresh protocols` workflow (`.github/workflows/refresh-protocols.yml`) runs early each
+Monday UTC, just after the stable image's weekly cache scope rolls over, and on demand. It
+builds the `tshark-stable` image as the `tshark-stable` job does, sharing its cache, and runs
+`make docker-refresh-protocols DOCKER_PREBUILT=1`. When the snapshot changed, it force-pushes
+one commit on `main` to the branch `chore/refresh-protocols` and opens a PR from it, titled
+`chore: refresh built-in protocols for Wireshark <version>`, or updates the PR already open.
+Otherwise it pushes nothing.
+
+It pushes and calls the PR API with a token minted from a GitHub App, because pushes and PRs
+made with `GITHUB_TOKEN` do not trigger the `pull_request` workflows. The App is set up once
+by hand:
+
+- create a GitHub App with the repository permissions *Contents: Read and write* and
+  *Pull requests: Read and write*, and nothing else;
+- install it on this repository only;
+- add the repository secrets `PROTOCOLS_CLIENT_ID` (the App's Client ID) and
+  `PROTOCOLS_APP_PRIVATE_KEY` (a private key generated for the App).
+
+The minted token is limited to this repository with `contents: write` and
+`pull-requests: write`. The PR is not merged automatically.
+
 ## Notes
 
 - The containers run as the calling user, because tshark skips `-X lua_script` as root.
@@ -51,5 +72,7 @@ image with `docker/build-push-action`, caching the layers across workflow runs, 
 - `crates/wirdigen/src/builtin_protocols.tsv`, the snapshot of Wireshark's built-in protocols
   behind the warning `protocol-name-taken` (spec §3.3), comes from the stable image. The
   `tshark-stable` job fails once the image's Wireshark lists other protocols or is newer than
-  the snapshot; a tshark older than the snapshot, such as 4.4, is not compared. Refresh it
-  with `make docker-refresh-protocols` after rebuilding the stable image, and commit the file.
+  the snapshot; a tshark older than the snapshot, such as 4.4, is not compared. The
+  `Refresh protocols` workflow (see [CI](#ci)) opens a PR with the refreshed snapshot each
+  week. To refresh it by hand, run `make docker-refresh-protocols` after rebuilding the stable
+  image, and commit the file.

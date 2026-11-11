@@ -791,9 +791,10 @@ Shrunk failures become corpus cases.
 | `lua` (`WIRDIGEN_LUA=1`) | ubuntu-24.04 with `lua5.2`/`5.3`/`5.4` | yes |
 | `tshark-4.4` (`WIRDIGEN_TSHARK=1`): `dissected.json` + fixed-seed bad packets | `debian:trixie` container, non-root | yes |
 | `tshark-stable` | ubuntu-24.04 + PPA | yes |
+| weekly `Refresh protocols` (separate workflow): refreshes the `protocol-name-taken` snapshot | ubuntu-24.04, `tshark-stable` image | n/a; a changed snapshot opens or updates one PR |
 | weekly: large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions | ubuntu | n/a; a failure opens or updates one issue with the seed |
 
-The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date: `tshark-stable`, whose tshark is at least the snapshot's version, compares its `tshark -G protocols` with it. `make docker-refresh-protocols` rewrites the snapshot.
+The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date: `tshark-stable`, whose tshark is at least the snapshot's version, compares its `tshark -G protocols` with it. `make docker-refresh-protocols` rewrites the snapshot. The weekly `Refresh protocols` workflow, early each Monday UTC and on demand, runs it in the `tshark-stable` image built as that job builds it, sharing its weekly cache. A changed snapshot is force-pushed as one commit on `main` to `chore/refresh-protocols`, and one PR titled `chore: refresh built-in protocols for Wireshark <version>` is opened or updated from it; an unchanged one pushes nothing. Pushes and PR calls use a token minted by a GitHub App (secrets `PROTOCOLS_CLIENT_ID` and `PROTOCOLS_APP_PRIVATE_KEY`; installed on this repository only, with Contents and Pull requests read/write) so that CI runs on the PR. The PR is not merged automatically, and `tshark-stable` stays the safety net.
 
 ## 11. Documentation
 
