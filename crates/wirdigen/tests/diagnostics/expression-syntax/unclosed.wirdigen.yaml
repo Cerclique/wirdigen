@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - name: data
+    type: bytes
+    size: "(4 + 2"

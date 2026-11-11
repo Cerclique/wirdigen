@@ -1,0 +1,19 @@
+# Constant `size:` Expressions, one per operator family. Each size differs from what Lua's own
+# floor division, 32-bit `bit` library or eager `and` would give, so a wrong helper shows up
+# as a wrong length in tshark.
+name: expressions
+fields:
+  - { name: precedence, type: bytes, size: "1 + 2 * 3 - 6" }                       # 1
+  - { name: division, type: bytes, size: "-7 / 2 + 5" }                            # 2, not 1
+  - { name: remainder, type: bytes, size: "-7 % 4 + 4" }                           # 1, not 5
+  - { name: shifts, type: bytes, size: "1 << 2 >> 1" }                             # 2
+  - { name: arithmetic_shift, type: bytes, size: "(-8 >> 1) + 7" }                 # 3
+  - { name: bitwise, type: bytes, size: "6 & 3 | 1 ^ 1" }                          # 2
+  - { name: wide_mask, type: bytes, size: "(0x1_0000_0003 & 0xF_FFFF_FFFF) >> 32" } # 1, not 0
+  - { name: complement, type: bytes, size: "~-3" }                                 # 2
+  - { name: comparisons, type: bytes, size: "(3 > 2) + (2 <= 2) + (1 == 2) + (1 != 2)" } # 3
+  - { name: logic, type: bytes, size: "(0 || 5) + (2 && 0) + !0 + (0 && 1 / 0)" }  # 2
+  - { name: wrapping, type: bytes, size: "9223372036854775807 + 3 + 9223372036854775807" } # 1
+  - { name: literals, type: bytes, size: "0b1 + 0X1 + 1_0 - 0xFFFF_FFFF_FFFF_FFFF - 10" } # 3
+  - { name: plain, type: bytes, size: "4" }                                        # 4
+  - { name: tail, type: uint8 }

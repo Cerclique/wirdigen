@@ -30,7 +30,6 @@ pub(crate) enum Value {
 impl Node {
     /// The source span of `within`, a byte range of this scalar's value: the token itself in a
     /// string spelled verbatim, otherwise the whole value (spec §6.4).
-    #[cfg_attr(not(test), expect(dead_code, reason = "first used by the Expression parser"))]
     pub(crate) fn token_span(&self, within: Range<usize>) -> Range<usize> {
         match &self.value {
             Value::Scalar { text, value_start: Some(start), .. } if within.end <= text.len() => {

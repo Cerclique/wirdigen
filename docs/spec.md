@@ -474,7 +474,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Lua only; no C plugin.
 - Supports Wireshark **≥ 4.4** (Lua 5.3/5.4), with rolling support and no ceiling: misbehaviour on a new upstream release is a bug. Raising the floor is a minor release, and only after upstream end of life.
 - At load, the Dissector checks `get_version()`. Below 4.4 it fails with a clear error naming the version it needs.
-- For that guard to run, the whole file must **parse under Lua 5.2**: no native bitwise operators, no `//`. Generated code uses the bundled `bit` library and `math.floor` through prelude helpers.
+- For that guard to run, the whole file must **parse under Lua 5.2**: no native bitwise operators, no `//`. Expression operators go through prelude helpers; those needing Lua 5.3 operators are compiled at load with `load`, after the guard. Confirmed on 4.4.19 and 4.6.9 (#60): the bundled `bit` library works on 32 bits (`bit.band(0x100000001, 0x1FFFFFFFF)` is 1), so it cannot give 64-bit Expressions, while `load`ed native operators can.
 
 ### 5.5 Columns and preferences
 
@@ -515,7 +515,7 @@ Errors:
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`);
 - `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6);
 - `framing:` `length` breaking the header-only rule;
-- a YAML float or bool where an integer is required; a leading-zero literal; a non-associative comparison chain;
+- a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - invalid ports and port ranges (§3.12);
 - `invalid-protocol-name`, `invalid-protocol-title`;
 - `conflicting-filter-name`;
@@ -585,7 +585,7 @@ Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─�
 ### 7.3 Generated code
 
 - **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Locals exist only for Fields some Expression or `info:` template references. Outer scopes are reached through a context table.
-- **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, `bit`-based operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
+- **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, 64-bit bitwise operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
 - **Names**: user names are always mangled (`f_<name>`, `dissect_<Type>`), and prelude names start with `wd_`, so a Field called `end` or `type` is safe.
 - **Format**: 4-space indent, fixed by the emitter (no external formatter). Comments name each Type (`-- Type: X`) and each Field's path, with no source line numbers.
 - **Header**: the Wirdigen version, the Source name's last `/`- or `\`-separated component, and "Requires Wireshark >= 4.4".

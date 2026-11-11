@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - { name: hdr, type: Header }
+types:
+  Header:
+    fields:
+      - { name: data, type: bytes, size: "3 +* 1" }

@@ -18,7 +18,7 @@
 - [`if` and `switch`]()
 - [Registration]()
 - [Framing]()
-- [Expressions]()
+- [Expressions](reference/expressions.md)
 - [Info column]()
 - [Diagnostics](reference/diagnostics.md)
 

@@ -35,6 +35,15 @@ pub(crate) struct Description {
 }
 
 impl Description {
+    /// Stage 3: the syntax errors of every Expression, in the top-level layout and in the Types.
+    pub(crate) fn expression_errors(&self) -> Vec<Diagnostic> {
+        let mut errors = field::expression_errors(&self.fields);
+        for ty in &self.types {
+            errors.extend(field::expression_errors(ty.fields()));
+        }
+        errors
+    }
+
     /// Whether `allow:` silences this Diagnostic. Errors are never silenced (spec §6.4).
     pub(crate) fn allows(&self, diagnostic: &Diagnostic) -> bool {
         diagnostic.severity() == Severity::Warning && self.allow.iter().any(|a| a.value == diagnostic.name())

@@ -1,0 +1,35 @@
+[
+  {
+    "expressions.precedence": "01",
+    "expressions.division": "02:03",
+    "expressions.remainder": "04",
+    "expressions.shifts": "05:06",
+    "expressions.arithmetic_shift": "07:08:09",
+    "expressions.bitwise": "0a:0b",
+    "expressions.wide_mask": "0c",
+    "expressions.complement": "0d:0e",
+    "expressions.comparisons": "0f:10:11",
+    "expressions.logic": "12:13",
+    "expressions.wrapping": "14",
+    "expressions.literals": "15:16:17",
+    "expressions.plain": "18:19:1a:1b",
+    "expressions.tail": "28"
+  },
+  {
+    "expressions.precedence": "01",
+    "expressions.division": "02:03",
+    "expressions.remainder": "04",
+    "expressions.shifts": "05:06",
+    "expressions.arithmetic_shift": "07:08:09",
+    "expressions.bitwise": "0a:0b",
+    "expressions.wide_mask": "0c",
+    "expressions.complement": "0d:0e",
+    "_ws.expert": {
+      "expressions._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: comparisons",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

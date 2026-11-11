@@ -78,6 +78,9 @@ names! {
     OverlappingValues => "overlapping-values", Error;
     ConflictingMappings => "conflicting-mappings", Error;
     UnknownEnum => "unknown-enum", Error;
+    ExpressionSyntax => "expression-syntax", Error;
+    LeadingZeroLiteral => "leading-zero-literal", Error;
+    ChainedComparison => "chained-comparison", Error;
     NotSupportedYet => "not-supported-yet", Error;
     UnreachableValue => "unreachable-value", Warning;
     UnusedEnum => "unused-enum", Warning;

@@ -20,6 +20,13 @@ pub(crate) struct RawType {
     fields: Vec<RawField>,
 }
 
+impl RawType {
+    /// The Fields of the Type body, as written.
+    pub(crate) fn fields(&self) -> &[RawField] {
+        &self.fields
+    }
+}
+
 /// A validated Type: its Fields, read in the Type's own byte order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NamedType {

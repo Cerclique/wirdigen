@@ -57,4 +57,5 @@ cases! {
     values => "values",
     structures => "structures",
     types => "types",
+    expressions => "expressions",
 }
