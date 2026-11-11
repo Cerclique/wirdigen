@@ -62,4 +62,5 @@ cases! {
     runtime => "runtime",
     bitfields => "bitfields",
     bitfield_references => "bitfield-references",
+    arrays => "arrays",
 }

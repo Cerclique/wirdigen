@@ -284,7 +284,7 @@ A Field placed after a `size: "_remaining"` Field in the same structure is the w
 | `count: <expr>` | Fixed or computed number of elements. |
 | `repeat: to_end` | Repeat until the enclosing structure or message ends (TLV lists). |
 
-The two are mutually exclusive; `repeat:` leaves room for `repeat: { until: <expr> }` after v1. Each element is its own subtree item (`items[0]`, `items[1]`, …). Elements share filter names (§5.2). A Field after a `repeat: to_end` array in the same structure is a warning. An element that consumes zero bytes stops the array as malformed.
+The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for `repeat: { until: <expr> }` after v1, and any value but `to_end` is `invalid-repeat` in v1. The element is an inline structure or a Type: `count:` or `repeat:` on a built-in type is `invalid-array`. A constant `count:` follows the rules of a constant `size:` (§3.6) under `invalid-count`. Each element is its own subtree item, its label followed by its index (`Items [0]`, `Items [1]`, …); there is no item for the array as a whole. Elements share filter names (§5.2). A Field after a `repeat: to_end` array in the same structure is the warning `unreachable-field`. An element that consumes zero bytes stops the array as malformed. `count:` is evaluated once, before the first element; `repeat: to_end` reads elements while bytes are left in the message (§4.5's `_remaining`).
 
 ### 3.8 Bitfields
 
@@ -509,11 +509,11 @@ Errors:
 - `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - `mismatched-bit-widths`: bitfield widths not adding up to the container; `invalid-bit-width`: a width below 1;
-- `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; conditional Fields used outside their scope;
+- `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field, or that goes into an array from outside its elements; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; conditional Fields used outside their scope;
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - overlapping `switch` cases;
-- mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`);
-- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6);
+- mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
+- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - invalid ports and port ranges (§3.12);

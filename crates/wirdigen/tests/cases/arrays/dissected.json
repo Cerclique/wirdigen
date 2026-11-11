@@ -1,0 +1,142 @@
+[
+  {
+    "arrays.n": "2",
+    "arrays.items": [
+      {
+        "arrays.items.id": "1",
+        "arrays.items.len": "1",
+        "arrays.items.data": "aa"
+      },
+      {
+        "arrays.items.id": "2",
+        "arrays.items.len": "0",
+        "arrays.items.data": ""
+      }
+    ],
+    "arrays.points": [
+      {
+        "arrays.points.dim": "2",
+        "arrays.points.coords": {
+          "arrays.points.coords.c": "-1"
+        }
+      },
+      {
+        "arrays.points.dim": "1"
+      }
+    ],
+    "arrays.width": "2",
+    "arrays.chunks": [
+      {
+        "arrays.chunks.data": "bb:cc"
+      },
+      {
+        "arrays.chunks.data": "dd:ee"
+      }
+    ]
+  },
+  {
+    "arrays.n": "0",
+    "arrays.points": [
+      {
+        "arrays.points.dim": "1"
+      },
+      {
+        "arrays.points.dim": "1"
+      }
+    ],
+    "arrays.width": "1",
+    "arrays.chunks": [
+      {
+        "arrays.chunks.data": "aa"
+      },
+      {
+        "arrays.chunks.data": "bb"
+      }
+    ]
+  },
+  {
+    "arrays.n": "200",
+    "arrays.items": [
+      {
+        "arrays.items.id": "1",
+        "arrays.items.len": "0",
+        "arrays.items.data": ""
+      },
+      {
+        "arrays.items.id": "2",
+        "arrays.items.len": "0",
+        "arrays.items.data": ""
+      },
+      {
+        "_ws.expert": {
+          "arrays._malformed.truncated": "",
+          "_ws.expert.message": "Malformed: truncated: items.id",
+          "_ws.expert.severity": "8388608",
+          "_ws.expert.group": "117440512"
+        },
+        "_ws.malformed": "Malformed Packet"
+      }
+    ]
+  },
+  {
+    "arrays.n": "0",
+    "arrays.points": {
+      "arrays.points.dim": "0",
+      "_ws.expert": {
+        "arrays._malformed.expression": "",
+        "_ws.expert.message": "Malformed: count -1 is negative: points.coords",
+        "_ws.expert.severity": "8388608",
+        "_ws.expert.group": "117440512"
+      },
+      "_ws.malformed": "Malformed Packet"
+    }
+  },
+  {
+    "arrays.n": "0",
+    "arrays.points": [
+      {
+        "arrays.points.dim": "1"
+      },
+      {
+        "arrays.points.dim": "1"
+      }
+    ],
+    "arrays.width": "0",
+    "arrays.chunks": {
+      "arrays.chunks.data": "",
+      "_ws.expert": {
+        "arrays._malformed.expression": "",
+        "_ws.expert.message": "Malformed: element 0 is empty: chunks",
+        "_ws.expert.severity": "8388608",
+        "_ws.expert.group": "117440512"
+      },
+      "_ws.malformed": "Malformed Packet"
+    }
+  },
+  {
+    "arrays.n": "0",
+    "arrays.points": [
+      {
+        "arrays.points.dim": "1"
+      },
+      {
+        "arrays.points.dim": "1"
+      }
+    ],
+    "arrays.width": "2",
+    "arrays.chunks": [
+      {
+        "arrays.chunks.data": "aa:bb"
+      },
+      {
+        "_ws.expert": {
+          "arrays._malformed.truncated": "",
+          "_ws.expert.message": "Malformed: truncated: chunks.data",
+          "_ws.expert.severity": "8388608",
+          "_ws.expert.group": "117440512"
+        },
+        "_ws.malformed": "Malformed Packet"
+      }
+    ]
+  }
+]

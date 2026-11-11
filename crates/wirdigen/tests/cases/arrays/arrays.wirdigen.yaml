@@ -1,0 +1,27 @@
+# Arrays (spec §3.7): a count read from the packet, a constant count of a Type holding an array
+# of its own, and elements repeated to the end of the message. Each element is its own subtree
+# item, and every element of an array shares its filter names. A negative count and an element
+# that reads no bytes stop the dissection as malformed; a count too large is a truncation.
+name: arrays
+fields:
+  - { name: n, type: uint8 }
+  - name: items
+    count: n
+    fields:
+      - { name: id, type: uint8 }
+      - { name: len, type: uint8 }
+      - { name: data, type: bytes, size: len }
+  - name: points
+    count: 2
+    type: Point
+  - { name: width, type: uint8 }
+  - name: chunks
+    repeat: to_end
+    fields: [ {name: data, type: bytes, size: width} ]
+types:
+  Point:
+    fields:
+      - { name: dim, type: uint8 }
+      - name: coords
+        count: "dim - 1"
+        fields: [ {name: c, type: int8} ]

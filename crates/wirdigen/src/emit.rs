@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, BitItem, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Site, SiteEntry, Stmt,
-    Strings, TableRef, Value, ValueRead,
+    Args, BitItem, Computed, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Repeat, Site,
+    SiteEntry, Stmt, Strings, TableRef, Value, ValueRead,
 };
 use crate::prelude;
 
@@ -305,40 +305,58 @@ fn site_ref(model: &Dissector, r: &Ref) -> String {
     }
 }
 
-/// A call of a Type's dissect function, in the subtree of the Field using it, passing the
-/// context table and keeping the table it returns when the caller reads inside it.
-#[expect(clippy::too_many_arguments, reason = "the parts of a `Stmt::Call`, spelled out")]
-fn call(
-    w: &mut Writer,
-    model: &Dissector,
-    field: &Ref,
-    path: &str,
-    ty: &str,
-    site: &Ref,
-    context: &[(String, LuaExpr)],
-    result: Option<&str>,
-) {
-    let local = field_ref(model, field);
-    let mut args = vec![site_ref(model, site)];
-    if !context.is_empty() {
-        let entries: Vec<String> =
-            context.iter().map(|(key, value)| format!("{} = {}", table_key(key), lua_expr(value))).collect();
-        args.push(format!("{{ {} }}", entries.join(", ")));
+/// The subtree of an inline structure or a Field of a Type, as the lines of a block: the
+/// subtree item shadows `tree` and spans the rest of the packet until its Fields are read, so a
+/// truncated one covers what is left of it. An array element's item also shows the element's
+/// index, the Lua local `index` (spec §3.4.8).
+fn subtree(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope, index: Option<&str>) {
+    let (Stmt::Structure { field, .. } | Stmt::Call { field, .. }) = stmt else {
+        unreachable!("only structures and Fields of Types have a subtree")
+    };
+    w.line("local start = offset");
+    w.line(&format!("local tree = tree:add({}, tvb(offset, tvb:len() - offset))", field_ref(model, field)));
+    if let Some(index) = index {
+        w.line(&format!("tree:append_text(\" [\" .. {index} .. \"]\")"));
     }
-    let args = args.join(", ");
-    let assigned = result.as_ref().map_or_else(|| "offset".to_owned(), |r| format!("offset, {r}"));
-    w.line(&format!("-- Field: {path}"));
-    w.block(
-        "do",
-        |w| {
-            w.line("local start = offset");
-            w.line(&format!("local tree = tree:add({local}, tvb(offset, tvb:len() - offset))"));
-            w.line(&format!("{assigned} = dissect_{ty}(tvb, tree, offset, {args})"));
+    match stmt {
+        Stmt::Structure { body, .. } => {
+            for stmt in body {
+                statement(w, model, stmt, scope);
+            }
+        }
+        Stmt::Call { ty, site, context, result, .. } => {
+            // A Type's dissect function is passed the site table of this use and the context
+            // table, and returns the table the caller reads inside it, if any.
+            let mut args = vec![site_ref(model, site)];
+            if !context.is_empty() {
+                let entries: Vec<String> =
+                    context.iter().map(|(key, value)| format!("{} = {}", table_key(key), lua_expr(value))).collect();
+                args.push(format!("{{ {} }}", entries.join(", ")));
+            }
+            let assigned = result.as_ref().map_or_else(|| "offset".to_owned(), |r| format!("offset, {r}"));
+            w.line(&format!("{assigned} = dissect_{ty}(tvb, tree, offset, {})", args.join(", ")));
             w.block("if not offset then", |w| w.line("return nil"), "end");
-            w.line("tree:set_len(offset - start)");
-        },
-        "end",
-    );
+        }
+        Stmt::Read { .. } | Stmt::Array { .. } => unreachable!("matched above"),
+    }
+    w.line("tree:set_len(offset - start)");
+}
+
+/// Evaluates a `size:` or `count:` Expression into the Lua local `local`, stopping the
+/// dissection with `invalid` when it has no value or, when it is checked, is negative (spec
+/// §4.4). `noun` names the value in that report.
+fn evaluate(w: &mut Writer, local: &str, noun: &str, computed: &Computed, invalid: &dyn Fn(&mut Writer, &str)) {
+    let Computed { value, checked, faults } = computed;
+    if *faults {
+        w.line(&format!("local {local}, fault = wd_evaluate(function() return {} end)", lua_expr(value)));
+        w.block(&format!("if not {local} then"), |w| invalid(w, "fault"), "end");
+    } else {
+        w.line(&format!("local {local} = {}", lua_expr(value)));
+    }
+    if *checked {
+        let reason = format!("\"{noun} \" .. {local} .. \" is negative\"");
+        w.block(&format!("if {local} < 0 then"), |w| invalid(w, &reason), "end");
+    }
 }
 
 /// Keeps the value of a `size`-byte read at `offset` in the local an Expression reads.
@@ -351,43 +369,68 @@ fn keep_value(w: &mut Writer, value: &Value, size: usize) {
     }
 }
 
+/// The Lua expression of the path a malformed-packet report names: inside a Type, the path of
+/// the use extended by the path in the Type.
+fn reported_path(path: &str, scope: Scope) -> String {
+    match scope {
+        Scope::Top => lua_string(path),
+        Scope::Type => format!("site.path .. {}", lua_string(&format!(".{path}"))),
+    }
+}
+
+/// Writes the lines reporting a malformed packet for the Field whose path is `reported`, with
+/// the Lua expression `reason`, and stopping.
+fn malformed(w: &mut Writer, reported: &str, reason: &str) {
+    w.line(&format!("wd_invalid(tree, wd_ei_invalid, {reason}, {reported})"));
+    w.line("return nil");
+}
+
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
-        Stmt::Call { field, path, ty, site, context, result } => {
-            call(w, model, field, path, ty, site, context, result.as_deref());
-        }
-        Stmt::Structure { field, path, body } => {
-            let local = field_ref(model, field);
+        Stmt::Structure { path, .. } | Stmt::Call { path, .. } => {
             w.line(&format!("-- Field: {path}"));
-            // The subtree shadows `tree` for its Fields. It spans the rest of the packet until
-            // they are read, so a truncated structure covers what is left of it.
+            w.block("do", |w| subtree(w, model, stmt, scope, None), "end");
+        }
+        Stmt::Array { path, repeat, element } => {
+            let reported = reported_path(path, scope);
+            let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
+            // Each element is its own subtree item; one that reads no bytes would repeat forever
+            // under `repeat: to_end`, so it stops the array as malformed (spec §3.7).
+            let read_element = |w: &mut Writer| {
+                subtree(w, model, element, scope, Some("i"));
+                w.block("if offset == start then", |w| invalid(w, "\"element \" .. i .. \" is empty\""), "end");
+            };
+            w.line(&format!("-- Field: {path}"));
             w.block(
                 "do",
-                |w| {
-                    w.line("local start = offset");
-                    w.line(&format!("local tree = tree:add({local}, tvb(offset, tvb:len() - offset))"));
-                    for stmt in body {
-                        statement(w, model, stmt, scope);
+                |w| match repeat {
+                    Repeat::Count(count) => {
+                        evaluate(w, "count", "count", count, &invalid);
+                        w.block("for i = 0, count - 1 do", read_element, "end");
                     }
-                    w.line("tree:set_len(offset - start)");
+                    Repeat::ToEnd => {
+                        w.line("local i = 0");
+                        w.block(
+                            "while offset < tvb:len() do",
+                            |w| {
+                                read_element(w);
+                                w.line("i = i + 1");
+                            },
+                            "end",
+                        );
+                    }
                 },
                 "end",
             );
         }
         Stmt::Read { field, length, decode, path, value, hidden, bits } => {
             let local = field_ref(model, field);
-            let reported = match scope {
-                Scope::Top => lua_string(path),
-                Scope::Type => format!("site.path .. {}", lua_string(&format!(".{path}"))),
-            };
+            let reported = reported_path(path, scope);
             let truncated = |w: &mut Writer| {
                 w.line(&format!("wd_truncated(tree, wd_ei_truncated, {reported})"));
                 w.line("return nil");
             };
-            let invalid = |w: &mut Writer, reason: &str| {
-                w.line(&format!("wd_invalid(tree, wd_ei_invalid, {reason}, {reported})"));
-                w.line("return nil");
-            };
+            let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
             let add = |range: &str| match decode {
                 Decode::Big => format!("tree:add({local}, {range})"),
                 Decode::Little => format!("tree:add_le({local}, {range})"),
@@ -410,21 +453,10 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                     }
                     w.line(&format!("offset = offset + {size}"));
                 }
-                Length::Expression { value: expr, checked, faults } => w.block(
+                Length::Expression(size) => w.block(
                     "do",
                     |w| {
-                        if *faults {
-                            w.line(&format!(
-                                "local len, fault = wd_evaluate(function() return {} end)",
-                                lua_expr(expr)
-                            ));
-                            w.block("if not len then", |w| invalid(w, "fault"), "end");
-                        } else {
-                            w.line(&format!("local len = {}", lua_expr(expr)));
-                        }
-                        if *checked {
-                            w.block("if len < 0 then", |w| invalid(w, "\"size \" .. len .. \" is negative\""), "end");
-                        }
+                        evaluate(w, "len", "size", size, &invalid);
                         w.block("if not wd_fits(tvb, offset, len) then", truncated, "end");
                         w.line(&add("tvb(offset, len)"));
                         w.line("offset = offset + len");

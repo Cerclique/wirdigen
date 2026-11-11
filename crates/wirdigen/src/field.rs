@@ -19,12 +19,14 @@ use crate::types::Types;
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-const KEYS: [&str; 18] = [
+const KEYS: [&str; 20] = [
     "name",
     "type",
     "fields",
     "switch",
     "bits",
+    "count",
+    "repeat",
     "endian",
     "size",
     "prefix",
@@ -402,13 +404,38 @@ pub(crate) enum Length {
     Terminator(u8),
 }
 
+/// A `size:` or `count:` value as written, after stage 2.
+#[derive(Debug, Clone)]
+enum RawAmount {
+    /// A constant.
+    Constant(i64),
+    /// An Expression, parsed in stage 2; stage 3 reports its syntax error.
+    Expression(Result<Expr, Diagnostic>),
+}
+
+impl RawAmount {
+    /// The Expression, when it parsed.
+    fn expression(&self) -> Option<&Expr> {
+        match self {
+            Self::Expression(Ok(expr)) => Some(expr),
+            Self::Constant(_) | Self::Expression(Err(_)) => None,
+        }
+    }
+
+    /// The syntax error of the Expression, if any.
+    fn syntax_error(&self) -> Option<&Diagnostic> {
+        match self {
+            Self::Expression(Err(error)) => Some(error),
+            Self::Constant(_) | Self::Expression(Ok(_)) => None,
+        }
+    }
+}
+
 /// A length key's value as written, after stage 2.
 #[derive(Debug, Clone)]
 enum RawLength {
-    /// `size:` with a constant.
-    Size(i64),
-    /// `size:` with an Expression, parsed in stage 2; stage 3 reports its syntax error.
-    Expression(Result<Expr, Diagnostic>),
+    /// `size:` with a constant or an Expression.
+    Size(RawAmount),
     /// `prefix:` with a type name.
     Prefix(String),
     /// `terminator:` with a constant.
@@ -424,11 +451,63 @@ struct LengthKey {
 
 /// `size:` is an integer, or an Expression written as a string.
 fn read_size(node: &Node) -> Result<RawLength, Diagnostic> {
+    read_amount(node, "size").map(RawLength::Size)
+}
+
+/// The value of `key`, `size:` or `count:`: an integer, or an Expression written as a string.
+fn read_amount(node: &Node, key: &str) -> Result<RawAmount, Diagnostic> {
     match &node.value {
         Value::Scalar { text, plain, .. } if !*plain || resolve_plain(text) == Kind::Str => {
-            Ok(RawLength::Expression(expr::parse(node, text)))
+            Ok(RawAmount::Expression(expr::parse(node, text)))
         }
-        _ => expect_integer(node, "size").map(RawLength::Size),
+        _ => expect_integer(node, key).map(RawAmount::Constant),
+    }
+}
+
+/// How a Field repeats (spec §3.7), as written.
+#[derive(Debug, Clone)]
+enum RawArray {
+    /// `count:`, with its value.
+    Count(Spanned<RawAmount>),
+    /// `repeat: to_end`.
+    ToEnd,
+}
+
+/// Stage 2: reads `count:` and `repeat:`, which are mutually exclusive.
+fn read_array(keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<Spanned<RawArray>> {
+    let count = keys.key_of("count").zip(keys.get("count"));
+    let repeat = keys.key_of("repeat").zip(keys.get("repeat"));
+    match (count, repeat) {
+        (Some((count_key, _)), Some((repeat_key, _))) => {
+            errors.push(
+                Diagnostic::new(
+                    Name::ConflictingRepeat,
+                    repeat_key.span.clone(),
+                    "a Field cannot have both `count` and `repeat`",
+                )
+                .with_note("`count` is here", Some(count_key.span.clone())),
+            );
+            None
+        }
+        (Some((key, value)), None) => {
+            let amount = record(read_amount(value, "count"), errors)?;
+            let count = Spanned { value: amount, span: value.span.clone() };
+            Some(Spanned { value: RawArray::Count(count), span: key.span.clone() })
+        }
+        (None, Some((key, value))) => {
+            record(read_repeat(value), errors)?;
+            Some(Spanned { value: RawArray::ToEnd, span: key.span.clone() })
+        }
+        (None, None) => None,
+    }
+}
+
+/// `repeat:` is `to_end`, the only way to repeat other than `count:` in this version.
+fn read_repeat(node: &Node) -> Result<(), Diagnostic> {
+    match &node.value {
+        Value::Scalar { text, .. } if text == "to_end" => Ok(()),
+        _ => Err(Diagnostic::new(Name::InvalidRepeat, node.span.clone(), "`repeat` must be `to_end`")
+            .with_note("`repeat: to_end` repeats until the message ends; `count` gives a number of elements", None)),
     }
 }
 
@@ -464,12 +543,8 @@ impl LengthKey {
     ) -> Result<Option<Length>, Diagnostic> {
         let span = self.value.span.clone();
         match &self.value.value {
-            RawLength::Size(size) => usize::try_from(*size).map(|size| Some(Length::Constant(size))).map_err(|_| {
-                Diagnostic::new(Name::InvalidSize, span, format!("a size cannot be negative, found `{size}`"))
-            }),
-            RawLength::Expression(expression) => {
-                let expression = expression.as_ref().expect("stage 3 reported every syntax error");
-                check_size(expression, span, scope, types, diagnostics)
+            RawLength::Size(amount) => {
+                Ok(check_amount(amount, span, Amounts::SIZE, scope, types, diagnostics)?.map(Length::from))
             }
             RawLength::Prefix(name) => {
                 if let Some(bytes) = Builtin::from_name(name).and_then(Builtin::unsigned_bytes) {
@@ -495,41 +570,86 @@ impl LengthKey {
     }
 }
 
-/// Stage 4: the length a `size:` Expression at `span`, read from `scope`, gives (spec §3.6,
-/// §4.3). A constant must be a size: zero or more, reached without a fault (§4.4). `Ok(None)`
-/// when a reference was reported.
-fn check_size<'a>(
-    expression: &Expr,
+/// A validated number of bytes (`size:`) or of elements (`count:`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Amount {
+    /// A constant, written as an integer.
+    Constant(usize),
+    /// An Expression with operators or references. A constant one was checked to be zero or
+    /// more; any other is checked when the packet is read (spec §4.4).
+    Expression {
+        expr: Expr,
+        /// What each Field path of the Expression reads, by its segments.
+        references: BTreeMap<Vec<String>, Reference>,
+    },
+}
+
+impl From<Amount> for Length {
+    fn from(amount: Amount) -> Self {
+        match amount {
+            Amount::Constant(size) => Self::Constant(size),
+            Amount::Expression { expr, references } => Self::Expression { expr, references },
+        }
+    }
+}
+
+/// What an amount counts, for its Diagnostics.
+#[derive(Debug, Clone, Copy)]
+struct Amounts {
+    /// The noun in messages: `size`, `count`.
+    noun: &'static str,
+    /// The error of a constant that is negative or has no value.
+    invalid: Name,
+}
+
+impl Amounts {
+    /// A `size:`: a number of bytes (spec §3.6).
+    const SIZE: Self = Self { noun: "size", invalid: Name::InvalidSize };
+    /// A `count:`: a number of array elements (spec §3.7).
+    const COUNT: Self = Self { noun: "count", invalid: Name::InvalidCount };
+}
+
+/// Stage 4: the amount a `size:` or `count:` value at `span`, read from `scope`, gives (spec
+/// §3.6, §3.7, §4.3). A constant must be zero or more, reached without a fault (§4.4).
+/// `Ok(None)` when a reference was reported.
+fn check_amount<'a>(
+    amount: &RawAmount,
     span: Range<usize>,
+    what: Amounts,
     scope: Scope<'a, '_>,
     types: &Types<'a>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Result<Option<Length>, Diagnostic> {
+) -> Result<Option<Amount>, Diagnostic> {
+    let noun = what.noun;
+    let expression = match amount {
+        RawAmount::Constant(value) => {
+            return usize::try_from(*value).map(|value| Some(Amount::Constant(value))).map_err(|_| {
+                Diagnostic::new(what.invalid, span, format!("a {noun} cannot be negative, found `{value}`"))
+            });
+        }
+        RawAmount::Expression(expression) => expression.as_ref().expect("stage 3 reported every syntax error"),
+    };
     let Some(value) = expression.constant() else {
         let paths = paths(expression);
         let Some(references) = scope::resolve_paths(&paths, scope, types, diagnostics) else { return Ok(None) };
-        return Ok(Some(Length::Expression { expr: expression.clone(), references }));
+        return Ok(Some(Amount::Expression { expr: expression.clone(), references }));
     };
     let value = match value {
         Ok(value) => value,
         Err(fault) => {
             let message = match fault.value {
-                Fault::DivisionByZero => "this size divides by zero".to_owned(),
-                Fault::ShiftOutOfRange(count) => format!("this size shifts by {count}, outside 0 to 63"),
+                Fault::DivisionByZero => format!("this {noun} divides by zero"),
+                Fault::ShiftOutOfRange(count) => format!("this {noun} shifts by {count}, outside 0 to 63"),
             };
-            return Err(Diagnostic::new(Name::InvalidSize, fault.span, message));
+            return Err(Diagnostic::new(what.invalid, fault.span, message));
         }
     };
-    let Ok(size) = usize::try_from(value) else {
-        return Err(Diagnostic::new(
-            Name::InvalidSize,
-            span,
-            format!("a size cannot be negative, this one is `{value}`"),
-        ));
+    let Ok(value) = usize::try_from(value) else {
+        return Err(Diagnostic::new(what.invalid, span, format!("a {noun} cannot be negative, this one is `{value}`")));
     };
     Ok(Some(match expression.kind {
-        ExprKind::Int(_) => Length::Constant(size),
-        _ => Length::Expression { expr: expression.clone(), references: BTreeMap::new() },
+        ExprKind::Int(_) => Amount::Constant(value),
+        _ => Amount::Expression { expr: expression.clone(), references: BTreeMap::new() },
     }))
 }
 
@@ -549,11 +669,7 @@ fn paths(expression: &Expr) -> Vec<(&[String], Range<usize>)> {
 pub(crate) fn expression_errors(fields: &[RawField]) -> Vec<Diagnostic> {
     let mut errors = Vec::new();
     for field in fields {
-        for length in &field.lengths {
-            if let RawLength::Expression(Err(error)) = &length.value.value {
-                errors.push(error.clone());
-            }
-        }
+        errors.extend(field.amounts().filter_map(RawAmount::syntax_error).cloned());
         if let RawKind::Structure { fields, .. } = &field.kind {
             errors.extend(expression_errors(fields));
         }
@@ -623,6 +739,8 @@ pub(crate) struct RawField {
     mappings: mapping::RawMappings,
     /// The sub-Fields, when the Field is a bitfield (spec §3.8).
     bits: Option<RawBits>,
+    /// How the Field repeats, when it is an array (spec §3.7), at its key.
+    array: Option<Spanned<RawArray>>,
     /// `hidden:`, which leaves the Field out of the tree; only a bitfield takes it in this version.
     hidden: Option<Spanned<bool>>,
 }
@@ -667,17 +785,42 @@ impl RawField {
         self.expressions().flat_map(paths).collect()
     }
 
+    /// The Expressions the Field evaluates before reading itself: its `size:` and `count:`.
     fn expressions(&self) -> impl Iterator<Item = &Expr> {
-        self.lengths.iter().filter_map(|l| match &l.value.value {
-            RawLength::Expression(Ok(expr)) => Some(expr),
-            _ => None,
-        })
+        self.amounts().filter_map(RawAmount::expression)
     }
 
-    /// Whether the Field reads up to the end of its structure or the message, as
-    /// `size: "_remaining"` does (spec §3.6).
-    fn reads_to_end(&self) -> bool {
-        self.expressions().any(|e| e.kind == ExprKind::Builtin(expr::Builtin::Remaining))
+    /// The values of the Field's `size:` and `count:`.
+    fn amounts(&self) -> impl Iterator<Item = &RawAmount> {
+        let sizes = self.lengths.iter().filter_map(|l| match &l.value.value {
+            RawLength::Size(amount) => Some(amount),
+            RawLength::Prefix(_) | RawLength::Terminator(_) => None,
+        });
+        let count = match self.array.as_ref().map(|a| &a.value) {
+            Some(RawArray::Count(count)) => Some(&count.value),
+            Some(RawArray::ToEnd) | None => None,
+        };
+        sizes.chain(count)
+    }
+
+    /// Whether the Field is an array (spec §3.7), whose Fields only its elements can read.
+    pub(crate) fn is_array(&self) -> bool {
+        self.array.is_some()
+    }
+
+    /// Why the Field reads up to the end of its structure or the message, if it does:
+    /// `size: "_remaining"` (spec §3.6) or `repeat: to_end` (§3.7).
+    fn reads_to_end(&self) -> Option<&'static str> {
+        if matches!(self.array.as_ref().map(|a| &a.value), Some(RawArray::ToEnd)) {
+            return Some("`repeat: to_end` leaves no bytes for the Fields after it");
+        }
+        let remaining = self.lengths.iter().any(|l| match &l.value.value {
+            RawLength::Size(amount) => {
+                amount.expression().is_some_and(|e| e.kind == ExprKind::Builtin(expr::Builtin::Remaining))
+            }
+            RawLength::Prefix(_) | RawLength::Terminator(_) => false,
+        });
+        remaining.then_some("`size: \"_remaining\"` leaves no bytes for the Fields after it")
     }
 }
 
@@ -692,6 +835,17 @@ pub(crate) struct Field {
     /// Whether the tree leaves it out (`hidden: true`); it is still filtered (spec §3.10).
     pub(crate) hidden: bool,
     pub(crate) kind: FieldKind,
+    /// How the Field repeats, when it is an array of its kind (spec §3.7).
+    pub(crate) array: Option<Array>,
+}
+
+/// How a validated array repeats its element (spec §3.7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Array {
+    /// `count:` elements.
+    Count(Amount),
+    /// Elements until the message ends (`repeat: to_end`).
+    ToEnd,
 }
 
 /// What a validated Field is (spec §3.4.3).
@@ -764,6 +918,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
         .collect();
     let mappings = mapping::read(&keys, errors);
     let bits = keys.key_of("bits").zip(keys.get("bits")).and_then(|(key, value)| bits::read(key, value, errors));
+    let array = read_array(&keys, errors);
     let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
     if let (Some(key), None) = (keys.key_of("hidden"), keys.get("bits")) {
         errors.push(
@@ -788,6 +943,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
             lengths,
             mappings,
             bits,
+            array,
             hidden,
         }),
         _ => None,
@@ -903,14 +1059,15 @@ pub(crate) fn check<'a>(
         let levels: Vec<Level<'a>> = scope.levels.iter().copied().chain([Level { fields, at: index }]).collect();
         let scope = Scope { ty: scope.ty, levels: &levels };
         let name = &field.name;
-        if let Some(previous) = index.checked_sub(1).map(|i| &fields[i]).filter(|f| f.reads_to_end()) {
+        let previous = index.checked_sub(1).map(|i| &fields[i]);
+        if let Some((previous, why)) = previous.and_then(|f| Some((f, f.reads_to_end()?))) {
             diagnostics.push(
                 Diagnostic::new(
                     Name::UnreachableField,
                     name.span.clone(),
                     format!("`{}` comes after `{}`, which reads to the end", name.value, previous.name.value),
                 )
-                .with_note("`size: \"_remaining\"` leaves no bytes for the Fields after it", None),
+                .with_note(why, None),
             );
         }
         check_name(name, fields[..index].iter().map(|f| &f.name), diagnostics);
@@ -947,8 +1104,12 @@ pub(crate) fn check<'a>(
                 Some(FieldKind::Structure(check(fields, endian, enums, types, scope, diagnostics)))
             }
         };
+        let array = match &field.array {
+            None => Some(None),
+            Some(array) => check_array(field, array, types, scope, diagnostics).map(Some),
+        };
         check_text(field.label.as_ref(), field.description.as_ref(), diagnostics);
-        if let Some(kind) = kind {
+        if let (Some(kind), Some(array)) = (kind, array) {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
             layout.push(Field {
                 name: name.value.clone(),
@@ -956,6 +1117,7 @@ pub(crate) fn check<'a>(
                 description: text(&field.description),
                 hidden: field.hidden.as_ref().is_some_and(|h| h.value),
                 kind,
+                array,
             });
         }
     }
@@ -1006,6 +1168,37 @@ fn check_builtin<'a>(
     let (ty, endian, length, encoding, display, mapping, bits) =
         (ty?, endian?, length?, encoding?, display?, mapping?, bits?);
     Some(BuiltinField { ty, endian, length, encoding, display, mapping, bits })
+}
+
+/// Checks how an array Field repeats (spec §3.7): only an inline structure or a Field of a Type
+/// repeats, and a `count:` is resolved from `scope` like a `size:`.
+fn check_array<'a>(
+    field: &RawField,
+    array: &Spanned<RawArray>,
+    types: &Types<'a>,
+    scope: Scope<'a, '_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Array> {
+    if let RawKind::Type { name, .. } = &field.kind
+        && Builtin::from_name(&name.value).is_some()
+    {
+        diagnostics.push(
+            Diagnostic::new(
+                Name::InvalidArray,
+                array.span.clone(),
+                format!("a Field of type `{}` cannot repeat", name.value),
+            )
+            .with_note("only an inline structure or a Field of a Type repeats: put the value in its `fields`", None),
+        );
+        return None;
+    }
+    match &array.value {
+        RawArray::ToEnd => Some(Array::ToEnd),
+        RawArray::Count(count) => {
+            let amount = check_amount(&count.value, count.span.clone(), Amounts::COUNT, scope, types, diagnostics);
+            record(amount, diagnostics).flatten().map(Array::Count)
+        }
+    }
 }
 
 /// `bits:` on a Field that is not a fixed-size unsigned integer, saying why in `message`.

@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - name: records
+    repeat: to_end
+    fields: [ {name: tag, type: uint8} ]
+  - { name: crc, type: uint16 }

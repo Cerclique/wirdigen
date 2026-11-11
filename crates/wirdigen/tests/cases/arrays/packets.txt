@@ -1,0 +1,12 @@
+# n=2 items=[id=1 data=aa, id=2 data=empty] points=[dim=2 coords=[-1], dim=1 coords=[]] width=2 chunks=[bb:cc, dd:ee]
+0000  02 01 01 aa 02 00 02 ff 01 02 bb cc dd ee
+# n=0: no items. points=[dim=1, dim=1] width=1 chunks=[aa, bb]
+0000  00 01 01 01 aa bb
+# n=200, more than the packet holds: the third item is truncated.
+0000  c8 01 00 02 00
+# The first point's dim=0 makes its count -1.
+0000  00 00
+# width=0: the first chunk reads no bytes.
+0000  00 01 01 00 ff
+# width=2: the second chunk is truncated.
+0000  00 01 01 02 aa bb cc
