@@ -23,6 +23,7 @@ pub(crate) const KEYS: [&str; 8] = ["name", "label", "description", "if", "hidde
 pub(crate) struct RawSwitch {
     /// The `switch:` value: a constant or an Expression.
     pub(crate) subject: Spanned<RawAmount>,
+    /// The entries of `cases:`, in source order.
     pub(crate) cases: Vec<RawCase>,
     /// `default:`, with the span of its key.
     pub(crate) default: Option<(Range<usize>, RawBody)>,
@@ -37,6 +38,7 @@ pub(crate) struct RawCase {
     pub(crate) key: Spanned<Key>,
     /// The key as written, for messages.
     pub(crate) text: String,
+    /// What the case reads.
     pub(crate) body: RawBody,
 }
 
@@ -164,8 +166,17 @@ pub(crate) struct Switch {
 /// A validated case.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Case {
+    /// The values the case matches.
     pub(crate) key: Key,
+    /// What the case reads.
     pub(crate) body: Body,
+}
+
+impl Switch {
+    /// Every layout the Field can read: each case, then the default.
+    pub(crate) fn bodies(&self) -> impl Iterator<Item = &Body> {
+        self.cases.iter().map(|c| &c.body).chain(&self.default)
+    }
 }
 
 /// What a validated case or `default:` reads, into the `switch` Field's subtree.
@@ -226,6 +237,7 @@ pub(crate) fn check<'a>(
     ok.then_some(Switch { subject, cases, default })
 }
 
+/// Checks what a case or the default reads, from the scope of the `switch` Field.
 fn check_body<'a>(
     body: &'a RawBody,
     endian: Endian,

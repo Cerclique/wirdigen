@@ -20,16 +20,16 @@ use crate::types::NamedType;
 /// share it (spec §3.4.9).
 #[derive(Debug, PartialEq, Eq)]
 struct Declaration<'a> {
-    kind: Kind<'a>,
+    kind: ProtoKind<'a>,
     display: Option<Display>,
     mapping: Option<&'a Mapping>,
     label: String,
     description: Option<&'a str>,
 }
 
-/// The type part of a [`Declaration`].
+/// The type part of a [`Declaration`]: what the `ProtoField` holds.
 #[derive(Debug, PartialEq, Eq)]
-enum Kind<'a> {
+enum ProtoKind<'a> {
     /// A value of a built-in type; a NUL-terminated string is a `ProtoField` type of its own.
     Value {
         ty: Builtin,
@@ -46,7 +46,7 @@ enum Kind<'a> {
     Switch,
 }
 
-impl Kind<'_> {
+impl ProtoKind<'_> {
     /// How messages name it.
     fn describe(&self) -> String {
         match self {
@@ -70,6 +70,7 @@ pub(crate) fn check(layout: &[Field], types: &[NamedType], diagnostics: &mut Vec
     walk.fields(layout, "");
 }
 
+/// A walk over the filter paths of a layout, in the order lowering registers them.
 struct Walk<'a, 'd> {
     types: &'a [NamedType],
     seen: Seen<'a>,
@@ -79,6 +80,7 @@ struct Walk<'a, 'd> {
 }
 
 impl<'a> Walk<'a, '_> {
+    /// Walks `fields`, whose paths extend `parent` (empty at the top level).
     fn fields(&mut self, fields: &'a [Field], parent: &str) {
         for field in fields {
             let path = if parent.is_empty() { field.name.clone() } else { format!("{parent}.{}", field.name) };
@@ -86,15 +88,17 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
+    /// Declares the `ProtoField` of `field` at `path`, its sub-Fields', and those of the Fields
+    /// it holds: a `switch` case adds no segment to the path.
     fn field(&mut self, field: &'a Field, path: &str) {
         let (kind, display, mapping) = match &field.kind {
             FieldKind::Builtin(value) => {
                 let stringz = value.ty == Builtin::String && value.length == Length::Terminator(0);
-                (Kind::Value { ty: value.ty, stringz }, value.display, value.mapping.as_ref())
+                (ProtoKind::Value { ty: value.ty, stringz }, value.display, value.mapping.as_ref())
             }
-            FieldKind::Structure(_) => (Kind::Structure, None, None),
-            FieldKind::Type { name, .. } => (Kind::Type(name), None, None),
-            FieldKind::Switch(_) => (Kind::Switch, None, None),
+            FieldKind::Structure(_) => (ProtoKind::Structure, None, None),
+            FieldKind::Type { name, .. } => (ProtoKind::Type(name), None, None),
+            FieldKind::Switch(_) => (ProtoKind::Switch, None, None),
         };
         let label = field.label.clone().unwrap_or_else(|| field::default_label(&field.name));
         let description = field.description.as_deref();
@@ -106,12 +110,12 @@ impl<'a> Walk<'a, '_> {
                 }
             }
             FieldKind::Structure(children) => self.fields(children, path),
-            FieldKind::Type { name, .. } => self.ty(name, path),
+            FieldKind::Type { name, .. } => self.type_fields(name, path),
             FieldKind::Switch(switch) => {
-                for body in switch.cases.iter().map(|c| &c.body).chain(&switch.default) {
+                for body in switch.bodies() {
                     match body {
                         Body::Fields(children) => self.fields(children, path),
-                        Body::Type { name, .. } => self.ty(name, path),
+                        Body::Type { name, .. } => self.type_fields(name, path),
                     }
                 }
             }
@@ -119,11 +123,12 @@ impl<'a> Walk<'a, '_> {
     }
 
     /// Walks the Fields of the Type `name` used at `path`.
-    fn ty(&mut self, name: &str, path: &str) {
+    fn type_fields(&mut self, name: &str, path: &str) {
         let ty = self.types.iter().find(|t| t.name == name).expect("validation resolved every Type");
         self.fields(&ty.fields, path);
     }
 
+    /// Records the first declaration at `path`; a later one that differs is reported once.
     fn declare(&mut self, path: &str, declaration: Declaration<'a>, span: &Range<usize>) {
         let Some((first, first_span)) = self.seen.get(path) else {
             self.seen.insert(path.to_owned(), (declaration, span.clone()));
@@ -160,9 +165,10 @@ impl<'a> Walk<'a, '_> {
     }
 }
 
+/// The declaration of the sub-Field `bit` of a bitfield of type `container`.
 fn bit_declaration(container: Builtin, bit: &Bit) -> Declaration<'_> {
     Declaration {
-        kind: Kind::Bit { container, mask: bit.mask() },
+        kind: ProtoKind::Bit { container, mask: bit.mask() },
         display: bit.display,
         mapping: bit.mapping.as_ref(),
         label: bit.label.clone().unwrap_or_else(|| field::default_label(&bit.name)),

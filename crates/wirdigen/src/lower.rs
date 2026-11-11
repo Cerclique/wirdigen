@@ -296,6 +296,8 @@ pub(crate) enum Stmt {
         names: Option<usize>,
         /// Each case, by the values it matches, as signed 64-bit ranges.
         cases: Vec<(Vec<(i64, i64)>, Branch)>,
+        /// What is read when no case matches; without it, the rest of the message is shown
+        /// raw with a note.
         default: Option<Branch>,
     },
 }
@@ -623,18 +625,13 @@ fn find<'f>(fields: &'f [Field], path: &[String]) -> Option<(usize, &'f Field)> 
             FieldKind::Type { .. } => Some((depth, field)),
             FieldKind::Builtin(_) => None,
             FieldKind::Structure(children) => from(children, path, depth + 1),
-            FieldKind::Switch(switch) => bodies(switch).find_map(|body| match body {
+            FieldKind::Switch(switch) => switch.bodies().find_map(|body| match body {
                 Body::Fields(children) => from(children, path, depth + 1),
                 Body::Type { .. } => None,
             }),
         }
     }
     from(fields, path, 0)
-}
-
-/// Every layout a `switch` Field can read: its cases, then its default.
-fn bodies(switch: &Switch) -> impl Iterator<Item = &Body> {
-    switch.cases.iter().map(|c| &c.body).chain(&switch.default)
 }
 
 /// Calls `f` with every reference the Expressions of `fields` and the context tables of their
@@ -658,7 +655,7 @@ fn references(fields: &[Field], f: &mut impl FnMut(&Reference)) {
                 if let Operand::Expression { references, .. } = &switch.subject {
                     references.values().for_each(&mut *f);
                 }
-                for body in bodies(switch) {
+                for body in switch.bodies() {
                     match body {
                         Body::Fields(children) => references(children, f),
                         Body::Type { context, .. } => context.iter().for_each(|(_, r)| f(r)),
