@@ -54,7 +54,7 @@ by hand:
 - create a GitHub App with the repository permissions *Contents: Read and write* and
   *Pull requests: Read and write*, and nothing else;
 - install it on this repository only;
-- add the repository secrets `PROTOCOLS_APP_ID` (the App's ID) and
+- add the repository secrets `PROTOCOLS_CLIENT_ID` (the App's Client ID) and
   `PROTOCOLS_APP_PRIVATE_KEY` (a private key generated for the App).
 
 The minted token is limited to this repository with `contents: write` and
