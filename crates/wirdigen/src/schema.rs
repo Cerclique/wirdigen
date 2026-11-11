@@ -102,7 +102,7 @@ struct Description {
     /// How each Message is found in a TCP stream.
     framing: Option<Framing>,
     /// Default byte order of the protocol.
-    endian: Option<Endian>,
+    endian: Option<ByteOrder>,
     /// Info column template, such as `"{msg_type} id={id}"`: Field paths in braces, `{{` and `}}`
     /// for literal braces. Without it, the Info column shows the outermost `switch` Field's case.
     info: Option<String>,
@@ -140,20 +140,10 @@ struct Ports {
     tcp: Option<Vec<Port>>,
 }
 
-/// How each Message is found in a TCP stream.
-#[derive(JsonSchema)]
-#[schemars(deny_unknown_fields)]
-struct Framing {
-    /// The number of bytes needed to compute `length`.
-    header: Option<u64>,
-    /// The total length of a Message, from top-level Fields within the first `header` bytes.
-    length: Option<Expression>,
-}
-
 /// A byte order: most significant byte first (`big`) or last (`little`).
 #[derive(JsonSchema)]
 #[schemars(rename_all = "lowercase")]
-enum Endian {
+enum ByteOrder {
     Big,
     Little,
 }
@@ -166,7 +156,7 @@ struct Type {
     #[schemars(length(min = 1))]
     fields: Vec<Entry>,
     /// The byte order the Type is read in, whatever structure uses it; defaults to the top level's.
-    endian: Option<Endian>,
+    endian: Option<ByteOrder>,
 }
 
 /// One entry of a structure: a Field, or unnamed Padding.
@@ -214,7 +204,7 @@ struct Field {
     /// An Array read until its enclosing structure or the Message ends.
     repeat: Option<Repeat>,
     /// The byte order of this Field, or of the Fields of an inline structure.
-    endian: Option<Endian>,
+    endian: Option<ByteOrder>,
     /// The length in bytes of a `string` or `bytes`: a constant, an Expression, or `"_remaining"`
     /// to read to the end of the enclosing structure or Message.
     size: Option<Expression>,
@@ -326,8 +316,8 @@ enum Unit {
 #[derive(JsonSchema)]
 #[schemars(untagged)]
 enum Expect {
-    One(Key),
-    Several(#[schemars(length(min = 1))] Vec<Key>),
+    One(ValueKey),
+    Several(#[schemars(length(min = 1))] Vec<ValueKey>),
 }
 
 /// Labels for values, by integer or `"low-high"` range string.
@@ -375,13 +365,26 @@ macro_rules! inline_schema {
 }
 
 inline_schema! {
+    /// `framing:`, with the keys of spec §3.13 offered for completion. Its value is not read yet,
+    /// so any value is accepted: the schema must accept every description Wirdigen does.
+    Framing => json_schema!({
+        "properties": {
+            "header": { "description": "The number of bytes needed to compute `length`: a constant." },
+            "length": {
+                "description": "The total length of a Message: an Expression over top-level Fields within the first `header` bytes."
+            }
+        }
+    })
+}
+
+inline_schema! {
     /// A constant, or an Expression written as a string.
     Expression => json_schema!({ "type": ["integer", "string"] })
 }
 
 inline_schema! {
     /// A value: an integer, or a `"low-high"` range string.
-    Key => json_schema!({
+    ValueKey => json_schema!({
         "anyOf": [{ "type": "integer" }, { "type": "string", "pattern": range_pattern() }]
     })
 }
@@ -525,12 +528,12 @@ mod tests {
         let mut files = Vec::new();
         descriptions(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"), &mut files);
         let mut checked = 0;
+        let mut with_warnings = 0;
         let mut failures = Vec::new();
         for path in files {
             let text = fs::read_to_string(&path).expect("readable");
-            if crate::validate(&Source::new("case", text.as_str())).is_err() {
-                continue;
-            }
+            let Ok(valid) = crate::validate(&Source::new("case", text.as_str())) else { continue };
+            with_warnings += usize::from(!valid.warnings().is_empty());
             let root = yaml::parse(&text).expect("valid YAML").expect("not empty");
             let instance = to_json(&root);
             for error in validator.iter_errors(&instance) {
@@ -540,6 +543,7 @@ mod tests {
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
         assert!(checked > 50, "only {checked} valid descriptions found");
+        assert!(with_warnings > 5, "only {with_warnings} descriptions with warnings found");
     }
 
     /// The property names of `definition`, or of the root for `None`, in schema order.
@@ -569,6 +573,17 @@ mod tests {
             (Some("Ports"), &transports[..]),
         ] {
             assert_eq!(keys(&schema, definition), expected, "{definition:?}");
+        }
+    }
+
+    #[test]
+    fn any_framing_value_passes_while_framing_is_not_read() {
+        let validator = jsonschema::draft7::new(&schema()).expect("a draft-07 schema");
+        for framing in ["true", "", "{ foo: 1 }", "{ header: 4, length: \"len + 4\" }"] {
+            let text = format!("name: demo\nframing: {framing}\nfields:\n  - {{ name: len, type: uint32 }}\n");
+            assert!(crate::validate(&Source::new("case", text.as_str())).is_ok(), "{text}");
+            let root = yaml::parse(&text).expect("valid YAML").expect("not empty");
+            assert!(validator.is_valid(&to_json(&root)), "{text}");
         }
     }
 }
