@@ -138,9 +138,9 @@ local wd_proto = Proto("runtime", "RUNTIME")
 
 local f_a = ProtoField.int8("runtime.a", "A", base.DEC)
 local f_b = ProtoField.int8("runtime.b", "B", base.DEC)
+local f_s = ProtoField.int8("runtime.s", "S", base.DEC)
 local f_quotient = ProtoField.bytes("runtime.quotient", "Quotient", base.NONE)
 local f_remainder = ProtoField.bytes("runtime.remainder", "Remainder", base.NONE)
-local f_shift = ProtoField.uint8("runtime.shift", "Shift", base.DEC)
 local f_shifted = ProtoField.bytes("runtime.shifted", "Shifted", base.NONE)
 local f_big = ProtoField.uint64("runtime.big", "Big", base.DEC)
 local f_wrapped = ProtoField.bytes("runtime.wrapped", "Wrapped", base.NONE)
@@ -148,9 +148,9 @@ local f_wrapped = ProtoField.bytes("runtime.wrapped", "Wrapped", base.NONE)
 wd_proto.fields = {
     f_a,
     f_b,
+    f_s,
     f_quotient,
     f_remainder,
-    f_shift,
     f_shifted,
     f_big,
     f_wrapped,
@@ -162,7 +162,7 @@ wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Layout
 local function dissect_top(tvb, tree, offset)
-    local v_a, v_b, v_big, v_shift
+    local v_a, v_b, v_big, v_s
     -- Field: a
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "a")
@@ -178,6 +178,14 @@ local function dissect_top(tvb, tree, offset)
     end
     tree:add(f_b, tvb(offset, 1))
     v_b = string.unpack(">i1", tvb:raw(offset, 1))
+    offset = offset + 1
+    -- Field: s
+    if not wd_fits(tvb, offset, 1) then
+        wd_truncated(tree, wd_ei_truncated, "s")
+        return nil
+    end
+    tree:add(f_s, tvb(offset, 1))
+    v_s = string.unpack(">i1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: quotient
     do
@@ -199,7 +207,7 @@ local function dissect_top(tvb, tree, offset)
     end
     -- Field: remainder
     do
-        local len, fault = wd_evaluate(function() return wd_add(wd_mod(v_a, v_b), 2) end)
+        local len, fault = wd_evaluate(function() return wd_add(wd_mod(v_a, v_s), 2) end)
         if not len then
             wd_invalid(tree, wd_ei_invalid, fault, "remainder")
             return nil
@@ -215,17 +223,9 @@ local function dissect_top(tvb, tree, offset)
         tree:add(f_remainder, tvb(offset, len))
         offset = offset + len
     end
-    -- Field: shift
-    if not wd_fits(tvb, offset, 1) then
-        wd_truncated(tree, wd_ei_truncated, "shift")
-        return nil
-    end
-    tree:add(f_shift, tvb(offset, 1))
-    v_shift = string.unpack(">I1", tvb:raw(offset, 1))
-    offset = offset + 1
     -- Field: shifted
     do
-        local len, fault = wd_evaluate(function() return wd_add(wd_shr(v_a, v_shift), 5) end)
+        local len, fault = wd_evaluate(function() return wd_sub(wd_add(wd_shr(v_a, v_s), wd_shl(1, v_s)), 1) end)
         if not len then
             wd_invalid(tree, wd_ei_invalid, fault, "shifted")
             return nil

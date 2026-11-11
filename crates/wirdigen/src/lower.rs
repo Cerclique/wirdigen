@@ -364,7 +364,7 @@ struct Plan {
     /// The locals of values Expressions read, by the path of the Field from the function's root.
     values: BTreeMap<Vec<String>, String>,
     /// The locals of the tables Types return, by the path of the Field of the Type.
-    tables: BTreeMap<Vec<String>, String>,
+    results: BTreeMap<Vec<String>, String>,
     /// For a Type: the paths inside it its callers read, which it returns.
     exports: BTreeSet<Vec<String>>,
     /// For a Type: whether it reads its context table.
@@ -416,9 +416,9 @@ impl Plan {
                 FieldKind::Structure(children) => list = children,
                 FieldKind::Type { name, .. } => {
                     let prefix = path[..=depth].to_vec();
-                    if !self.tables.contains_key(&prefix) {
+                    if !self.results.contains_key(&prefix) {
                         let local = self.local(&prefix);
-                        self.tables.insert(prefix, local);
+                        self.results.insert(prefix, local);
                     }
                     demands.entry(name.clone()).or_default().insert(path[depth + 1..].to_vec());
                     return;
@@ -437,22 +437,27 @@ impl Plan {
     /// A fresh local for the value at `path`: `v_` then the segments joined by `__`.
     fn local(&self, path: &[String]) -> String {
         unique(&format!("v_{}", path.join("__")), |name| {
-            self.values.values().chain(self.tables.values()).any(|l| l == name)
+            self.values.values().chain(self.results.values()).any(|l| l == name)
         })
     }
 
     /// Every local, in path order.
     fn locals(&self) -> Vec<String> {
-        let mut all: Vec<(&Vec<String>, &String)> = self.values.iter().chain(&self.tables).collect();
+        let mut all: Vec<(&Vec<String>, &String)> = self.values.iter().chain(&self.results).collect();
         all.sort();
         all.into_iter().map(|(_, local)| local.clone()).collect()
+    }
+
+    /// The Field of a Type on `path` whose returned table holds the value, with its local.
+    fn result_for(&self, path: &[String]) -> Option<(&Vec<String>, &String)> {
+        self.results.iter().find(|(prefix, _)| path.starts_with(prefix))
     }
 
     /// How an Expression reads `reference`.
     fn read(&self, reference: &Reference) -> LuaExpr {
         match reference {
             Reference::Context(key) => LuaExpr::Context(key.clone()),
-            Reference::Field(path) => match self.tables.iter().find(|(prefix, _)| path.starts_with(prefix)) {
+            Reference::Field(path) => match self.result_for(path) {
                 Some((prefix, local)) => LuaExpr::Local { local: local.clone(), keys: path[prefix.len()..].to_vec() },
                 None => LuaExpr::Local { local: self.values[path].clone(), keys: Vec::new() },
             },
@@ -463,7 +468,7 @@ impl Plan {
     fn export_table(&self) -> BTreeMap<String, Export> {
         let mut table = BTreeMap::new();
         for path in &self.exports {
-            let (keys, local) = match self.tables.iter().find(|(prefix, _)| path.starts_with(prefix)) {
+            let (keys, local) = match self.result_for(path) {
                 Some((prefix, local)) => (prefix.as_slice(), local),
                 None => (path.as_slice(), &self.values[path]),
             };
@@ -606,7 +611,7 @@ impl<'p> Lowering<'p> {
     /// The statement calling the dissect function of the Type `ty` for the Field at `segments`.
     fn call(&mut self, field: Ref, segments: &[&str], ty: &str, site: Ref, context: &[(String, Reference)]) -> Stmt {
         let context = context.iter().map(|(key, reference)| (key.clone(), self.plan.read(reference))).collect();
-        let result = self.plan.tables.get(&owned(segments)).cloned();
+        let result = self.plan.results.get(&owned(segments)).cloned();
         Stmt::Call { field, path: segments.join("."), ty: ty.to_owned(), site, context, result }
     }
 
@@ -626,20 +631,11 @@ impl<'p> Lowering<'p> {
         if matches!(length, Length::Terminator { .. }) {
             self.use_chunk(prelude::TERMINATED);
         }
-        let value = self.plan.values.get(&owned(segments)).cloned().map(|local| {
-            let read = match field_value.ty {
-                Builtin::Int { signed, bytes } => {
-                    let order = if field_value.endian == Endian::Little { '<' } else { '>' };
-                    ValueRead::Integer(format!("{order}{}{bytes}", if signed { 'i' } else { 'I' }))
-                }
-                Builtin::Bool => {
-                    self.use_chunk(prelude::LOGIC);
-                    ValueRead::Bool
-                }
-                _ => unreachable!("validation references only integers and `bool`"),
-            };
-            Value { local, read }
-        });
+        let value =
+            self.plan.values.get(&owned(segments)).cloned().map(|local| Value { local, read: value_read(field_value) });
+        if value.as_ref().is_some_and(|v| v.read == ValueRead::Bool) {
+            self.use_chunk(prelude::LOGIC);
+        }
         Stmt::Read { field, length, decode: decode(field_value), path: segments.join("."), value }
     }
 
@@ -946,6 +942,18 @@ fn enc_endian(endian: Endian) -> &'static str {
     match endian {
         Endian::Big => "ENC_BIG_ENDIAN",
         Endian::Little => "ENC_LITTLE_ENDIAN",
+    }
+}
+
+/// How an Expression reads the value of an integer or `bool` Field.
+fn value_read(field: &BuiltinField) -> ValueRead {
+    match field.ty {
+        Builtin::Int { signed, bytes } => {
+            let order = if field.endian == Endian::Little { '<' } else { '>' };
+            ValueRead::Integer(format!("{order}{}{bytes}", if signed { 'i' } else { 'I' }))
+        }
+        Builtin::Bool => ValueRead::Bool,
+        _ => unreachable!("validation references only integers and `bool`"),
     }
 }
 

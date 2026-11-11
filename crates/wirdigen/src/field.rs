@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::ops::{Range, RangeInclusive};
 
 use crate::diagnostic::{Diagnostic, Name, record};
-use crate::expr::{self, Builtin as BuiltinValue, Expr, ExprKind, Fault};
+use crate::expr::{self, Expr, ExprKind, Fault};
 use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping};
 use crate::scalar::{Kind, resolve_plain};
@@ -663,7 +663,7 @@ impl RawField {
     /// Whether the Field reads up to the end of its structure or the message, as
     /// `size: "_remaining"` does (spec §3.6).
     fn reads_to_end(&self) -> bool {
-        self.expressions().any(|e| e.kind == ExprKind::Builtin(BuiltinValue::Remaining))
+        self.expressions().any(|e| e.kind == ExprKind::Builtin(expr::Builtin::Remaining))
     }
 }
 

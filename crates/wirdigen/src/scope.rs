@@ -46,6 +46,8 @@ pub(crate) struct Scope<'a, 'l> {
 pub(crate) struct FreeRef {
     /// The path as written, the key of the context table.
     pub(crate) key: String,
+    /// The path's names, as the key spells them separated by `.`.
+    pub(crate) segments: Vec<String>,
     /// Where the path is written, in this Type or a Type it uses.
     pub(crate) origin: Range<usize>,
     /// The Type the path is written in.
@@ -146,10 +148,10 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
     Resolution::Miss(Miss::NonNumeric { what, span: field.name().span.clone() })
 }
 
-/// The name of a miss, and the message saying why `key` resolves to nothing usable.
 /// The notes of a Diagnostic: each message, with the span it points at if any.
 type Notes = Vec<(String, Option<Range<usize>>)>;
 
+/// The name of a miss, and the message and notes saying why `key` resolves to nothing usable.
 fn explain(miss: &Miss, key: &str, segments: &[String]) -> (Name, String, Notes) {
     let first = &segments[0];
     match miss {
@@ -242,8 +244,8 @@ pub(crate) fn resolve_context<'a>(
     let mut context = Vec::new();
     let mut ok = true;
     for free in free_refs(types, ty) {
-        let segments: Vec<String> = free.key.split('.').map(str::to_owned).collect();
-        let reference = match resolve(&segments, scope, types) {
+        let segments = &free.segments;
+        let reference = match resolve(segments, scope, types) {
             Resolution::Found(path) => Reference::Field(path),
             Resolution::Free { .. } => Reference::Context(free.key.clone()),
             Resolution::Suppressed => {
@@ -256,7 +258,7 @@ pub(crate) fn resolve_context<'a>(
                     (Miss::Unknown(_), Some(later)) => Miss::Forward(later.clone()),
                     (miss, _) => miss,
                 };
-                let (name, message, notes) = explain(&miss, &free.key, &segments);
+                let (name, message, notes) = explain(&miss, &free.key, segments);
                 let at_site = format!("the Type `{ty}` reads `{}` here, but {message}", free.key);
                 let read = format!("`{}` is read here, in the Type `{}`", free.key, free.ty);
                 let diagnostic =
@@ -306,16 +308,16 @@ fn collect_free<'a>(
         let scope = Scope { ty: Some(ty), levels };
         for (segments, span) in field.paths() {
             if let Resolution::Free { later } = resolve(segments, scope, types) {
-                add(found, FreeRef { key: segments.join("."), origin: span, ty: ty.to_owned(), later });
+                let (key, segments) = (segments.join("."), segments.to_vec());
+                add(found, FreeRef { key, segments, origin: span, ty: ty.to_owned(), later });
             }
         }
         match field.shape(types) {
             Shape::Structure(children) => collect_free(children, ty, levels, types, found),
             Shape::Type { name, .. } => {
                 for free in free_refs(types, name) {
-                    let segments: Vec<String> = free.key.split('.').map(str::to_owned).collect();
                     let scope = Scope { ty: Some(ty), levels };
-                    if let Resolution::Free { .. } = resolve(&segments, scope, types) {
+                    if let Resolution::Free { .. } = resolve(&free.segments, scope, types) {
                         add(found, free);
                     }
                 }

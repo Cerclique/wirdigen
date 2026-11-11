@@ -1,14 +1,14 @@
 # Expressions over values read from the packet (spec §4.4): C's `/`, `%` and arithmetic `>>`,
 # 64-bit wrapping with a `uint64` above 2^63 reading as negative, and the values an Expression
 # cannot have, reported as malformed packets. Each size differs from what Lua's own operators
-# would give.
+# would give. The comments give each size for the first packet.
 name: runtime
 fields:
-  - { name: a, type: int8 }
-  - { name: b, type: int8 }
+  - { name: a, type: int8 }                                          # -7
+  - { name: b, type: int8 }                                          # 2
+  - { name: s, type: int8 }                                          # 2
   - { name: quotient, type: bytes, size: "a / b + 4" }               # -7 / 2 = -3, not -4: 1
-  - { name: remainder, type: bytes, size: "a % b + 2" }              # -7 % 2 = -1, not 1: 1
-  - { name: shift, type: uint8 }
-  - { name: shifted, type: bytes, size: "(a >> shift) + 5" }         # -7 >> 1 = -4: 1
-  - { name: big, type: uint64 }
-  - { name: wrapped, type: bytes, size: "big + big + (big < 0)" }    # 2 + 1, big = 2^63 + 1: 3
+  - { name: remainder, type: bytes, size: "a % s + 2" }              # -7 % 2 = -1, not 1: 1
+  - { name: shifted, type: bytes, size: "(a >> s) + (1 << s) - 1" }  # -7 >> 2 = -2: 1
+  - { name: big, type: uint64 }                                      # 2^63 + 1
+  - { name: wrapped, type: bytes, size: "big + big + (big < 0)" }    # 2 + 1: 3

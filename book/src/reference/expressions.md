@@ -193,7 +193,7 @@ expert info error on the Field, filtered as `<protocol>._malformed.expression`, 
 
 - a division or remainder by zero;
 - a shift by a count outside 0 to 63;
-- a negative size.
+- a negative size, which includes a `uint64` size above `0x7FFF_FFFF_FFFF_FFFF`.
 
 A size larger than what is left of the packet is a truncation, as for any Field that does not
 fit: "Malformed: truncated", filtered as `<protocol>._malformed.truncated`.
