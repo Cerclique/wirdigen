@@ -15,6 +15,7 @@ use crate::field::{
 };
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
+use crate::registration::Ports;
 use crate::scope::Reference;
 use crate::switch::{Body, Switch, wire_ranges};
 use crate::types::NamedType;
@@ -46,6 +47,8 @@ pub(crate) struct Dissector {
     pub(crate) locals: Vec<String>,
     /// The prelude chunks the Dissector uses, before dependencies are added.
     pub(crate) chunks: Vec<&'static str>,
+    /// The ports registered on by default, per transport, each with its range preference.
+    pub(crate) ports: Vec<Ports>,
 }
 
 /// A `ProtoField` to register.
@@ -498,7 +501,10 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     lowering.root = &protocol.fields;
     let layout = lowering.structure(&protocol.fields, &[]);
     let locals = lowering.plan.locals();
-    let Lowering { proto_fields, tables, names, sites, chunks, .. } = lowering;
+    let Lowering { proto_fields, tables, names, sites, mut chunks, .. } = lowering;
+    if !protocol.ports.is_empty() {
+        chunks.push(prelude::PORTS);
+    }
 
     let filter_name = protocol.name.clone();
     let short_name = filter_name.to_ascii_uppercase();
@@ -515,6 +521,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         layout,
         locals,
         chunks,
+        ports: protocol.ports.clone(),
     }
 }
 

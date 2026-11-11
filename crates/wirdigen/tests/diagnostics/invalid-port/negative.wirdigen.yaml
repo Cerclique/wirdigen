@@ -1,0 +1,6 @@
+name: demo
+registration:
+  ports:
+    udp: [-1]
+fields:
+  - { name: a, type: uint8 }

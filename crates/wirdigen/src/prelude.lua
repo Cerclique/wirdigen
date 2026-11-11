@@ -260,3 +260,28 @@ local function wd_handoff(name, range, pinfo, tree, expert_info, path)
         pinfo.cols.protocol = protocol
     end
 end
+
+--@chunk ports
+-- Registering on the ports of the range preferences (spec §3.12). `ports` lists a
+-- `{ preference, dissector table }` pair per transport with declared ports. The Dissector is
+-- added on the preference's ports at load, and moved when a preference changes: removed from
+-- the old ports, added on the new ones.
+local function wd_register_ports(proto, ports)
+    local registered = {}
+    local function apply()
+        for _, transport in ipairs(ports) do
+            local preference, table_name = transport[1], transport[2]
+            local wanted = proto.prefs[preference]
+            if wanted ~= registered[preference] then
+                local dissectors = DissectorTable.get(table_name)
+                if registered[preference] then
+                    dissectors:remove(registered[preference], proto)
+                end
+                dissectors:add(wanted, proto)
+                registered[preference] = wanted
+            end
+        end
+    end
+    apply()
+    proto.prefs_changed = apply
+end

@@ -34,6 +34,8 @@ pub(crate) const UNMATCHED: &str = "unmatched";
 pub(crate) const UNEXPECTED: &str = "unexpected";
 /// Handing a `bytes` Field's bytes to a Wireshark Dissector by name.
 pub(crate) const HANDOFF: &str = "handoff";
+/// Registering on the ports of the range preferences, and moving when they change.
+pub(crate) const PORTS: &str = "ports";
 
 #[derive(Debug)]
 struct Chunk {

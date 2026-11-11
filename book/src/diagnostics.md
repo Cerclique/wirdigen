@@ -616,6 +616,43 @@ fields:
 
 See [Arrays](reference/arrays.md).
 
+## `invalid-port` {#invalid-port}
+
+**Severity**: error
+
+A port of [`registration: ports:`](reference/registration.md#ports) is not a port number: port
+0, a number above 65535, or a range reaching one of them.
+
+```yaml,diagnostic=invalid-port
+name: demo
+registration:
+  ports:
+    udp: [0, "65000-70000"]
+fields:
+  - { name: id, type: uint8 }
+```
+
+**Fix**: write ports from 1 to 65535, here `udp: ["65000-65535"]`.
+
+## `overlapping-ports` {#overlapping-ports}
+
+**Severity**: error
+
+A port is declared twice on one transport of
+[`registration: ports:`](reference/registration.md#ports): listed twice, spelt twice (`5000`
+and `0x1388`), or inside a range of the same list. The same port on UDP and on TCP is fine.
+
+```yaml,diagnostic=overlapping-ports
+name: demo
+registration:
+  ports:
+    udp: ["5000-5010", 5005]
+fields:
+  - { name: id, type: uint8 }
+```
+
+**Fix**: declare each port once, here by removing `5005`.
+
 ## `incompatible-display` {#incompatible-display}
 
 **Severity**: error
@@ -1029,6 +1066,36 @@ name: demo
 fields:
   - { name: version, type: uint8, expect: 256 }
 allow: [unreachable-expect]
+```
+
+## `tcp-without-framing` {#tcp-without-framing}
+
+**Severity**: warning
+
+[`registration: ports:`](reference/registration.md#tcp) declares TCP ports, but the
+description has no `framing:`. Each TCP segment is then dissected as one message, which goes
+wrong when a message is split across segments or a segment holds several messages.
+
+```yaml,diagnostic=tcp-without-framing
+name: demo
+registration:
+  ports:
+    tcp: [5000]
+fields:
+  - { name: id, type: uint8 }
+```
+
+**Fix**: add `framing:` to say where each message ends. When every message travels in a
+segment of its own, allow the warning:
+
+```yaml
+name: demo
+registration:
+  ports:
+    tcp: [5000]
+fields:
+  - { name: id, type: uint8 }
+allow: [tcp-without-framing]
 ```
 
 ## `unused-enum` {#unused-enum}

@@ -1,0 +1,8 @@
+name: demo
+registration:
+  ports:
+    udp: [5000, "4990-5010", 6000, 0x1770]
+    tcp: [5000]
+fields:
+  - { name: a, type: uint8 }
+allow: [tcp-without-framing]

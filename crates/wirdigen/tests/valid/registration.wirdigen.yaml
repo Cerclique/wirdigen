@@ -1,0 +1,11 @@
+name: demo
+registration:
+  ports:
+    udp: [5000, "6000-6010"]
+    tcp: [5000]
+framing:
+  header: 2
+  length: "len + 2"
+fields:
+  - { name: len, type: uint16 }
+  - { name: body, type: bytes, size: len }

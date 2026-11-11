@@ -69,4 +69,5 @@ cases! {
     padding => "padding",
     expect => "expect",
     handoff => "handoff",
+    registration => "registration",
 }

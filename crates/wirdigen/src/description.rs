@@ -7,6 +7,7 @@ use crate::field::{self, Endian, Entry, RawEntry};
 use crate::filter;
 use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, RawEnum, Table};
+use crate::registration::{self, Ports, RawRegistration};
 use crate::types::{self, NamedType, RawType};
 use crate::yaml::{Node, Value};
 
@@ -19,11 +20,15 @@ const KEYS: [&str; 10] =
 
 /// The top level of a Protocol Description, as written.
 ///
-/// Keys typed by later tickets (`registration`, `framing`, ...) are recognised but not yet read.
+/// Keys typed by later tickets (`framing`, ...) are recognised but not yet read.
 #[derive(Debug, Clone)]
 pub(crate) struct Description {
     pub(crate) name: Spanned<String>,
     pub(crate) title: Option<Spanned<String>>,
+    /// The ports of `registration:`, none when it is left out.
+    pub(crate) registration: RawRegistration,
+    /// Whether `framing:` is written, which TCP ports need (spec §3.12).
+    pub(crate) framing: bool,
     pub(crate) endian: Option<Spanned<String>>,
     /// The top-level Fields, in order.
     pub(crate) fields: Vec<RawEntry>,
@@ -56,6 +61,8 @@ impl Description {
 pub(crate) struct Protocol {
     pub(crate) name: String,
     pub(crate) title: Option<String>,
+    /// The ports the Dissector registers on by default, per transport.
+    pub(crate) ports: Vec<Ports>,
     pub(crate) fields: Vec<Entry>,
     /// The Types, each after the Types it uses (spec §7.3).
     pub(crate) types: Vec<NamedType>,
@@ -96,6 +103,9 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
     let name = string_value("name", Name::InvalidProtocolName);
     let title = string_value("title", Name::InvalidProtocolTitle);
     let endian = string_value("endian", Name::InvalidEndian);
+    let registration =
+        keys.get("registration").map_or_else(RawRegistration::default, |node| registration::read(node, &mut errors));
+    let framing = keys.get("framing").is_some();
     let layout = keys.get("fields").and_then(|fields| field::read_structure(fields, &mut errors)).unwrap_or_default();
 
     let types = keys.get("types").map_or_else(Vec::new, |node| types::read(node, &mut errors));
@@ -103,7 +113,9 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
     let allow = keys.get("allow").map_or_else(Vec::new, |node| read_allow(node, &mut errors));
 
     match name {
-        Some(name) if errors.is_empty() => Ok(Description { name, title, endian, fields: layout, types, enums, allow }),
+        Some(name) if errors.is_empty() => {
+            Ok(Description { name, title, registration, framing, endian, fields: layout, types, enums, allow })
+        }
         _ => Err(errors),
     }
 }
@@ -156,6 +168,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         };
         diagnostics.push(Diagnostic::new(Name::UnknownAllow, entry.span.clone(), message));
     }
+    let ports = registration::check(&description.registration, description.framing, &mut diagnostics);
     let endian = Endian::resolve(description.endian.as_ref(), Endian::default(), &mut diagnostics);
     let mut enums = Enums::check(&description.enums, &mut diagnostics);
     let (fields, types) = types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
@@ -168,6 +181,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
     let protocol = (!has_errors).then(|| Protocol {
         name: description.name.value.clone(),
         title: description.title.as_ref().map(|t| t.value.clone()),
+        ports,
         fields,
         types,
         enums,

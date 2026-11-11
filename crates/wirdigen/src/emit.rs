@@ -13,6 +13,7 @@ use crate::lower::{
     Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
 };
 use crate::prelude;
+use crate::registration::Ports;
 
 const INDENT: &str = "    ";
 
@@ -153,10 +154,40 @@ pub(crate) fn emit(model: &Dissector) -> String {
     );
     w.line("");
 
+    if !model.ports.is_empty() {
+        registration(&mut w, &model.ports, &model.short_name);
+    }
     w.line("-- Decode As");
     w.line("DissectorTable.get(\"udp.port\"):add_for_decode_as(wd_proto)");
     w.line("DissectorTable.get(\"tcp.port\"):add_for_decode_as(wd_proto)");
     w.out
+}
+
+/// Declares a range preference per transport with declared ports, defaulting to them, and
+/// registers on the ports the preferences hold (spec §3.12, §5.5).
+fn registration(w: &mut Writer, ports: &[Ports], short_name: &str) {
+    w.line("-- Registration");
+    for Ports { transport, ranges } in ports {
+        let default = ranges
+            .iter()
+            .map(|&(low, high)| if low == high { low.to_string() } else { format!("{low}-{high}") })
+            .collect::<Vec<_>>()
+            .join(",");
+        let label = transport.label();
+        w.line(&format!(
+            "wd_proto.prefs.{} = Pref.range({}, {}, {}, 65535)",
+            transport.preference(),
+            lua_string(&format!("{label} port(s)")),
+            lua_string(&default),
+            lua_string(&format!("The {label} ports decoded as {short_name}")),
+        ));
+    }
+    let pairs: Vec<String> = ports
+        .iter()
+        .map(|p| format!("{{ {}, {} }}", lua_string(p.transport.preference()), lua_string(p.transport.table())))
+        .collect();
+    w.line(&format!("wd_register_ports(wd_proto, {{ {} }})", pairs.join(", ")));
+    w.line("");
 }
 
 /// Declares the expert infos the Dissector reports, `proto` being its filter name as a Lua

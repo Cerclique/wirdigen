@@ -89,6 +89,8 @@ names! {
     InvalidArray => "invalid-array", Error;
     InvalidPadding => "invalid-padding", Error;
     InvalidDissector => "invalid-dissector", Error;
+    InvalidPort => "invalid-port", Error;
+    OverlappingPorts => "overlapping-ports", Error;
     ExpressionSyntax => "expression-syntax", Error;
     LeadingZeroLiteral => "leading-zero-literal", Error;
     ChainedComparison => "chained-comparison", Error;
@@ -103,6 +105,7 @@ names! {
     UnusedEnum => "unused-enum", Warning;
     UnusedType => "unused-type", Warning;
     UnknownAllow => "unknown-allow", Warning;
+    TcpWithoutFraming => "tcp-without-framing", Warning;
 }
 
 impl Name {

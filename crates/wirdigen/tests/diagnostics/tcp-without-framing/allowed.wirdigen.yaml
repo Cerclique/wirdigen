@@ -1,0 +1,7 @@
+name: demo
+registration:
+  ports:
+    tcp: [5000]
+fields:
+  - { name: a, type: uint8 }
+allow: [tcp-without-framing]

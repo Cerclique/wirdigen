@@ -348,7 +348,8 @@ registration:          # optional; leaving it out means Decode As only
 ```
 
 - Ports are declared per transport, UDP, TCP or both, each as a single number or a `"low-high"` range string.
-- Port 0, ports above 65535, inverted ranges, a port repeated within one transport and an empty transport list are errors.
+- Port 0, ports above 65535, inverted ranges, a port repeated within one transport and an empty transport list are errors: a port or range outside 1–65535 is `invalid-port`, a port declared twice on one transport (listed twice, spelt twice, or inside a range of the same list) is `overlapping-ports`, and an inverted range, a quoted single port or an empty list is `wrong-value-type`, as for the keys of a values table (§3.4.7).
+- The preferences are named `<name>.udp_ports` and `<name>.tcp_ports`.
 - Each declared transport gets a Wireshark range preference ("UDP port(s)" / "TCP port(s)") defaulting to the declared ports. When it changes (`prefs_changed`), the Dissector removes the old ports and adds the new ones. A transport with no declared ports gets no preference.
 - Every Dissector is offered in Decode As on both `udp.port` and `tcp.port` (`add_for_decode_as`), whatever it declares. No key controls this.
 - TCP Registration without `framing:` is the warning `tcp-without-framing`: each segment is then dissected as one message.
@@ -517,7 +518,7 @@ Errors:
 - `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding`, `invalid-dissector` (§3.10);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
-- invalid ports and port ranges (§3.12);
+- `invalid-port`, `overlapping-ports`: invalid ports and port ranges (§3.12);
 - `invalid-protocol-name`, `invalid-protocol-title`;
 - `conflicting-filter-name`: two Fields reaching one filter path whose ProtoFields do not match (§3.4.9, §3.9);
 - unknown or duplicate keys, and the YAML subset violations of §3.1.
