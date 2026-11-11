@@ -1,0 +1,15 @@
+# `ok.lua` is a directory, so the Dissector of `ok.wirdigen.yaml` cannot be written.
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "--message-format", "json", "missing.wirdigen.yaml", "ok.wirdigen.yaml"]
+fs.sandbox = true
+status.code = 1
+stdout = """
+{"type":"file","input":"missing.wirdigen.yaml","output":"missing.lua","status":"failed"}
+{"type":"file","input":"ok.wirdigen.yaml","output":"ok.lua","status":"failed"}
+{"type":"summary","errors":0,"warnings":0,"exit_code":1}
+"""
+stderr = """
+error: cannot read `missing.wirdigen.yaml`: [..]
+error: cannot write `ok.lua`: [..]
+"""

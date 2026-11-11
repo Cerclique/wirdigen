@@ -1,0 +1,11 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["validate", "--message-format", "json", "twice.wirdigen.yaml"]
+fs.cwd = "../../../wirdigen/tests/diagnostics/duplicate-key"
+status.code = 1
+stdout = """
+{"type":"diagnostic","file":"twice.wirdigen.yaml","name":"duplicate-key","severity":"error","message":"duplicate key `name`","span":{"start":11,"end":15,"line":2,"column":1,"end_line":2,"end_column":5},"notes":[{"message":"first defined here","span":{"start":0,"end":4,"line":1,"column":1,"end_line":1,"end_column":5}}],"rendered":"error[duplicate-key]: duplicate key `name`/n --> twice.wirdigen.yaml:2:1/n  |/n1 | name: demo/n  | ---- first defined here/n2 | name: other/n  | ^^^^/n  |/n  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#duplicate-key/n"}
+{"type":"file","input":"twice.wirdigen.yaml","output":null,"status":"failed"}
+{"type":"summary","errors":1,"warnings":0,"exit_code":1}
+"""
+stderr = ""
