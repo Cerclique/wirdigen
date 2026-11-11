@@ -1,0 +1,10 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "--check", "-v", "one.wirdigen.yaml", "two.wirdigen.yaml"]
+fs.sandbox = true
+status.code = 1
+stdout = ""
+stderr = """
+unchanged `one.lua`
+error: `two.lua` is missing
+"""

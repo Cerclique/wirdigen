@@ -88,6 +88,10 @@ struct GenerateArgs {
     /// Write each Dissector into this directory instead of next to its input.
     #[arg(long, value_name = "DIR")]
     out_dir: Option<PathBuf>,
+
+    /// Write nothing; fail if a Dissector on disk differs from what would be written.
+    #[arg(long)]
+    check: bool,
 }
 
 fn main() -> ExitCode {
@@ -101,10 +105,10 @@ fn main() -> ExitCode {
     let verbosity = Verbosity::from_flags(cli.quiet, cli.verbose);
     let mut options = RenderOptions::default();
     options.color = color;
-    let (subcommand, args, placement) = match cli.command {
-        Command::Validate(Inputs { inputs }) => ("validate", inputs, None),
-        Command::Generate(GenerateArgs { inputs: Inputs { inputs }, output, out_dir }) => {
-            ("generate", inputs, Some(Placement::from_args(output, out_dir)))
+    let (subcommand, args, placement, check) = match cli.command {
+        Command::Validate(Inputs { inputs }) => ("validate", inputs, None, false),
+        Command::Generate(GenerateArgs { inputs: Inputs { inputs }, output, out_dir, check }) => {
+            ("generate", inputs, Some(Placement::from_args(output, out_dir)), check)
         }
     };
     let inputs = placement::inputs(args).unwrap_or_else(|message| usage_error(subcommand, &message));
@@ -113,6 +117,7 @@ fn main() -> ExitCode {
         Some(placement) => {
             let cwd = std::env::current_dir().unwrap_or_default();
             placement::outputs(&inputs, placement, &cwd)
+                .and_then(|outputs| if check { placement::checkable(&inputs, placement, outputs) } else { Ok(outputs) })
                 .unwrap_or_else(|message| usage_error(subcommand, &message))
                 .into_iter()
                 .map(Some)
@@ -123,6 +128,7 @@ fn main() -> ExitCode {
     let mut run = Run {
         options,
         verbosity,
+        check,
         failed: false,
         rendered_any: false,
         errors: 0,
@@ -148,6 +154,8 @@ fn usage_error(subcommand: &str, message: &str) -> ! {
 struct Run {
     options: RenderOptions,
     verbosity: Verbosity,
+    /// `generate --check`: compare each Dissector with its file instead of writing it.
+    check: bool,
     failed: bool,
     /// Whether a Diagnostic was rendered yet, so the next one is set apart by a blank line.
     rendered_any: bool,
@@ -157,7 +165,8 @@ struct Run {
 }
 
 impl Run {
-    /// Validates one input and, under `generate`, writes its Dissector to `output`.
+    /// Validates one input and, under `generate`, writes its Dissector to `output`, or compares it
+    /// with `output` under `--check`.
     fn process(&mut self, input: &Input, output: Option<&Output>) {
         let name = input.name();
         let text = match input {
@@ -179,7 +188,9 @@ impl Run {
             Err(_) => self.failed = true,
             Ok(valid) => {
                 if let Some(output) = output {
-                    match write(output, &valid.generate()) {
+                    let lua = valid.generate();
+                    let outcome = if self.check { check(output, &lua) } else { write(output, &lua) };
+                    match outcome {
                         Ok(outcome) => self.report_outcome(output, outcome),
                         Err(message) => self.fail(&message),
                     }
@@ -210,14 +221,25 @@ impl Run {
         self.files_with_diagnostics += 1;
     }
 
-    /// Under `-v`, the line saying what happened to one Dissector.
-    fn report_outcome(&self, output: &Output, outcome: WriteOutcome) {
+    /// The line saying what happened to one Dissector: always for a stale or missing one, only
+    /// under `-v` otherwise.
+    fn report_outcome(&mut self, output: &Output, outcome: WriteOutcome) {
+        let path = match output {
+            Output::Stdout => None,
+            Output::File(path) => Some(path.display()),
+        };
+        match (outcome, path) {
+            (WriteOutcome::Stale, Some(path)) => return self.fail(&format!("`{path}` is stale")),
+            (WriteOutcome::Missing, Some(path)) => return self.fail(&format!("`{path}` is missing")),
+            _ => {}
+        }
         if self.verbosity != Verbosity::Verbose {
             return;
         }
         let status = match outcome {
             WriteOutcome::Written => "written",
             WriteOutcome::Unchanged => "unchanged",
+            WriteOutcome::Stale | WriteOutcome::Missing => unreachable!("`--check` only compares files"),
         };
         match output {
             Output::Stdout => eprintln!("{status} to standard output"),
@@ -247,13 +269,39 @@ impl Run {
     }
 }
 
-/// What writing a Dissector did.
+/// What writing a Dissector did, or what `--check` found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WriteOutcome {
     /// New bytes went to the output.
     Written,
     /// The file already held these bytes and was left untouched.
     Unchanged,
+    /// `--check`: the file holds other bytes.
+    Stale,
+    /// `--check`: there is no file.
+    Missing,
+}
+
+/// Compares a Dissector with the file it would be written to, writing nothing.
+fn check(output: &Output, lua: &str) -> Result<WriteOutcome, String> {
+    let Output::File(path) = output else {
+        unreachable!("`placement::checkable` rejects standard output under `--check`")
+    };
+    match read_existing(path) {
+        Ok(Some(existing)) if existing == lua.as_bytes() => Ok(WriteOutcome::Unchanged),
+        Ok(Some(_)) => Ok(WriteOutcome::Stale),
+        Ok(None) => Ok(WriteOutcome::Missing),
+        Err(err) => Err(format!("cannot read `{}`: {err}", path.display())),
+    }
+}
+
+/// The bytes of the file at `path`, or `None` when there is none.
+fn read_existing(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(existing) => Ok(Some(existing)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
 }
 
 /// Writes a Dissector to its output, creating missing parent directories of a file.
@@ -284,11 +332,7 @@ fn write_file(path: &Path, bytes: &[u8]) -> io::Result<WriteOutcome> {
     } else {
         path
     };
-    let existing = match fs::read(path) {
-        Ok(existing) => Some(existing),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
-        Err(err) => return Err(err),
-    };
+    let existing = read_existing(path)?;
     if existing.as_deref() == Some(bytes) {
         return Ok(WriteOutcome::Unchanged);
     }

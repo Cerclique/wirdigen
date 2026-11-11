@@ -99,3 +99,19 @@ fn a_symlinked_dissector_is_replaced_through_its_link() {
     assert!(output.is_symlink(), "the link stays in place");
     assert_ne!(fs::read(&target).unwrap(), b"-- stale\n");
 }
+
+#[test]
+fn check_writes_nothing() {
+    let (work, output) = work_dir();
+    let check = || wirdigen().args(["generate", "--check", "minimal.wirdigen.yaml"]).current_dir(work.path()).assert();
+
+    check().code(1);
+    assert!(!output.exists(), "a missing Dissector is not created");
+
+    fs::write(&output, "-- stale\n").unwrap();
+    let past = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    File::options().write(true).open(&output).unwrap().set_modified(past).unwrap();
+    check().code(1);
+    assert_eq!(fs::read(&output).unwrap(), b"-- stale\n");
+    assert_eq!(mtime(&output), past, "a stale Dissector is not touched");
+}
