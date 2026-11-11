@@ -21,6 +21,8 @@ test-lua:
 
 # Needs tshark and text2pcap (Wireshark >= 4.4) on PATH, run as a non-root user since tshark
 # skips -X lua_script as root (spec §10.5); fails when one is missing.
+# The bad-input tests (spec §10.6) use a fixed seed; WIRDIGEN_BAD_SEED (a number or `random`),
+# WIRDIGEN_BAD_MUTATIONS and WIRDIGEN_BAD_RANDOM override it and their counts.
 test-tshark:
 	WIRDIGEN_TSHARK=1 cargo test -p wirdigen --locked --test tshark
 
