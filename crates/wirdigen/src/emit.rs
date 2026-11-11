@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, BitItem, Branch, Computed, Decode, Dissector, Expected, Export, Length, LuaExpr, LuaTable, ProtoField, Ref,
-    Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
+    Args, BitItem, Branch, Computed, Decode, Dissector, ExpectCheck, Export, Length, LuaExpr, LuaTable, ProtoField,
+    Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
 };
 use crate::prelude;
 
@@ -483,12 +483,12 @@ fn read_value(read: &ValueRead, size: usize) -> String {
     }
 }
 
-/// The line checking `expected` on `item`, the Lua expression of the checked item (spec §3.10).
-fn expect_line(item: &str, expected: &Expected, scope: Scope) -> String {
-    let reported = reported_path(&expected.path, scope);
-    let bounds: Vec<String> = expected.ranges.iter().flat_map(|(l, h)| [lua_integer(*l), lua_integer(*h)]).collect();
-    let (value, text) = (lua_expr(&expected.value), lua_string(&expected.text));
-    format!("wd_expect({item}, {value}, {{ {} }}, {text}, wd_ei_unexpected, {reported})", bounds.join(", "))
+/// The line running `check` on `item_expr`, the Lua expression of the checked item (spec §3.10).
+fn expect_line(item_expr: &str, check: &ExpectCheck, scope: Scope) -> String {
+    let reported = reported_path(&check.path, scope);
+    let bounds: Vec<String> = check.ranges.iter().flat_map(|(l, h)| [lua_integer(*l), lua_integer(*h)]).collect();
+    let (value, text) = (lua_expr(&check.value), lua_string(&check.text));
+    format!("wd_expect({item_expr}, {value}, {{ {} }}, {text}, wd_ei_unexpected, {reported})", bounds.join(", "))
 }
 
 /// The Lua expression of the path a malformed-packet report names: inside a Type, the path of
@@ -607,7 +607,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             w.block("do", |w| subtree(w, model, stmt, scope, None), "end");
         }
         Stmt::Array { path, repeat, element } => array(w, model, path, repeat, element, scope),
-        Stmt::Read { field, length, decode, path, value, hidden, bits, checked, expect } => {
+        Stmt::Read { field, length, decode, path, value, hidden, bits, check_read, expect } => {
             let local = field_ref(model, field);
             let reported = reported_path(path, scope);
             let truncated = |w: &mut Writer| {
@@ -633,10 +633,16 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 Length::Fixed(size) => {
                     w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
                     let range = format!("tvb(offset, {size})");
-                    let item =
-                        Item { add: &add(&range), range: &range, hidden: *hidden, bits, expect: expect.as_ref() };
-                    let checked = checked.as_ref().map(|read| read_value(read, *size));
-                    add_item(w, model, &item, checked.as_deref(), scope);
+                    let check_read = check_read.as_ref().map(|read| read_value(read, *size));
+                    let item = Item {
+                        add: &add(&range),
+                        range: &range,
+                        hidden: *hidden,
+                        bits,
+                        check_read: check_read.as_deref(),
+                        expect: expect.as_ref(),
+                    };
+                    add_item(w, model, &item, scope);
                     if let Some(value) = value {
                         w.line(&format!("{} = {}", value.local, read_value(&value.read, *size)));
                     }
@@ -688,17 +694,19 @@ struct Item<'s> {
     hidden: bool,
     /// The sub-Fields of a bitfield, added from the same range.
     bits: &'s [BitItem],
+    /// When the Field or a sub-Field has `expect:`, the Lua expression of the value they check,
+    /// kept in the local `value` (spec §3.10).
+    check_read: Option<&'s str>,
     /// The check of the Field's own `expect:`.
-    expect: Option<&'s Expected>,
+    expect: Option<&'s ExpectCheck>,
 }
 
 /// Adds `item`, the item of a Field read in `scope`. A bitfield's sub-Fields go under it, each
-/// from the same bytes, which Wireshark masks and shifts (spec §3.8). `checked`, when the Field
-/// or a sub-Field has `expect:`, reads the value they check into the local `value` (§3.10). The
-/// item and the value are then kept in locals scoped by `do`, so locals never pile up against
+/// from the same bytes, which Wireshark masks and shifts (spec §3.8), and the `expect:` checks
+/// read the value into the local `value` (§3.10). The item and the value are then kept in locals scoped by `do`, so locals never pile up against
 /// Lua's limit of 200 per function.
-fn add_item(w: &mut Writer, model: &Dissector, item: &Item<'_>, checked: Option<&str>, scope: Scope) {
-    if item.bits.is_empty() && checked.is_none() {
+fn add_item(w: &mut Writer, model: &Dissector, item: &Item<'_>, scope: Scope) {
+    if item.bits.is_empty() && item.check_read.is_none() {
         w.line(&format!("{}{}", item.add, hide(item.hidden)));
         return;
     }
@@ -709,18 +717,18 @@ fn add_item(w: &mut Writer, model: &Dissector, item: &Item<'_>, checked: Option<
             if item.hidden {
                 w.line("item:set_hidden(true)");
             }
-            if let Some(checked) = checked {
-                w.line(&format!("local value = {checked}"));
+            if let Some(read) = item.check_read {
+                w.line(&format!("local value = {read}"));
             }
-            if let Some(expected) = item.expect {
-                w.line(&expect_line("item", expected, scope));
+            if let Some(check) = item.expect {
+                w.line(&expect_line("item", check, scope));
             }
             for bit in item.bits {
                 let method = if bit.little { "add_le" } else { "add" };
                 let add =
                     format!("item:{method}({}, {}){}", field_ref(model, &bit.field), item.range, hide(bit.hidden));
                 match &bit.expect {
-                    Some(expected) => w.line(&expect_line(&add, expected, scope)),
+                    Some(check) => w.line(&expect_line(&add, check, scope)),
                     None => w.line(&add),
                 }
             }

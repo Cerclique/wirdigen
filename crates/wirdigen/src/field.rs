@@ -1065,7 +1065,7 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
         })
         .collect();
     let mappings = mapping::read(&keys, errors);
-    let expect = keys.key_of("expect").zip(keys.get("expect")).and_then(|(k, v)| record(expect::read(k, v), errors));
+    let expect = expect::read(&keys, errors);
     let bits = keys.key_of("bits").zip(keys.get("bits")).and_then(|(key, value)| bits::read(key, value, errors));
     let array = read_array(&keys, errors);
     let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
@@ -1355,15 +1355,8 @@ fn check_builtin<'a>(
         ty.and_then(|ty| mapping::check(&field.mappings, &Subject::builtin(ty_name, ty), enums, diagnostics).ok());
     let expect = match (ty, &field.expect) {
         (_, None) | (None, _) => Some(None),
-        (Some(ty), Some(raw)) => {
-            let what = format!("`{}`", ty_name.value);
-            if let Some(range) = expect_range(ty) {
-                Some(Some(expect::check(raw, &what, &ty_name.span, &range, diagnostics)))
-            } else {
-                diagnostics.push(expect::misplaced(raw, &what));
-                None
-            }
-        }
+        (Some(ty), Some(raw)) => record(expect::Subject::builtin(raw, ty_name, ty), diagnostics)
+            .map(|subject| Some(expect::check(raw, &subject, diagnostics))),
     };
     let bits = match (&field.bits, ty) {
         (None, _) => Some(Vec::new()),
@@ -1379,15 +1372,6 @@ fn check_builtin<'a>(
     let (ty, endian, length, encoding, display, mapping, expect, bits) =
         (ty?, endian?, length?, encoding?, display?, mapping?, expect?, bits?);
     Some(BuiltinField { ty, endian, length, encoding, display, mapping, expect, bits })
-}
-
-/// The values an `expect:` can match on a Field of type `ty`, as Expressions read them (spec
-/// §4.4): an integer's, 0 or 1 for a `bool`. `None` for a type that takes no `expect:`.
-fn expect_range(ty: Builtin) -> Option<RangeInclusive<i128>> {
-    match ty {
-        Builtin::Bool => Some(0..=1),
-        _ => ty.int_range(),
-    }
 }
 
 /// Checks how an array Field repeats (spec §3.7): only an inline structure or a Field of a Type

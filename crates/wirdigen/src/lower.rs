@@ -253,9 +253,9 @@ pub(crate) enum Stmt {
         bits: Vec<BitItem>,
         /// How the value is read into the local `value` for the `expect:` checks of the Field
         /// and its sub-Fields, when any has one.
-        checked: Option<ValueRead>,
+        check_read: Option<ValueRead>,
         /// The check of the Field's own `expect:`.
-        expect: Option<Expected>,
+        expect: Option<ExpectCheck>,
     },
     /// An inline structure: a subtree item holding the statements of its Fields, as long as
     /// the bytes they read.
@@ -378,13 +378,13 @@ pub(crate) struct BitItem {
     /// Whether the container is read little-endian (`add_le`).
     pub(crate) little: bool,
     /// The check of the sub-Field's `expect:`.
-    pub(crate) expect: Option<Expected>,
+    pub(crate) expect: Option<ExpectCheck>,
 }
 
 /// An `expect:` check (spec §3.10): a value matching none of the ranges adds an expert info
 /// warning on the item, and the dissection goes on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Expected {
+pub(crate) struct ExpectCheck {
     /// The path of the Field or sub-Field checked, for the expert info.
     pub(crate) path: String,
     /// The value checked, read from the local `value` the container's bytes are read into.
@@ -1069,26 +1069,30 @@ impl<'p> Lowering<'p> {
         let little = field_value.endian == Endian::Little && field_value.ty.has_byte_order();
         let whole = LuaExpr::Local { local: "value".to_owned(), keys: Vec::new() };
         let path = segments.join(".");
-        let expect = field_value.expect.as_ref().map(|e| expected(e, &path, whole.clone()));
+        let expect = field_value.expect.as_ref().map(|e| expect_check(e, &path, whole.clone()));
         let bits: Vec<BitItem> = bits
             .into_iter()
             .map(|(field, bit)| {
                 let expect = bit.expect.as_ref().map(|e| {
                     self.use_chunk(prelude::BITWISE);
-                    expected(e, &format!("{path}.{}", bit.name), sub_field_value(whole.clone(), bit.shift, bit.width))
+                    expect_check(
+                        e,
+                        &format!("{path}.{}", bit.name),
+                        sub_field_value(whole.clone(), bit.shift, bit.width),
+                    )
                 });
                 BitItem { field, hidden: hidden || bit.hidden, little, expect }
             })
             .collect();
-        let checked = (expect.is_some() || bits.iter().any(|b| b.expect.is_some())).then(|| value_read(field_value));
-        if checked.is_some() {
+        let check_read = (expect.is_some() || bits.iter().any(|b| b.expect.is_some())).then(|| value_read(field_value));
+        if check_read.is_some() {
             self.use_chunk(prelude::UNEXPECTED);
         }
-        if checked == Some(ValueRead::Bool) {
+        if check_read == Some(ValueRead::Bool) {
             self.use_chunk(prelude::LOGIC);
         }
         let decode = decode(field_value);
-        Stmt::Read { field, length, decode, path, value, hidden, bits, checked, expect }
+        Stmt::Read { field, length, decode, path, value, hidden, bits, check_read, expect }
     }
 
     /// Compiles a `size:` or `count:` Expression whose paths read `references`, with the
@@ -1518,9 +1522,9 @@ fn sub_field_value(container: LuaExpr, shift: u32, width: u32) -> LuaExpr {
 }
 
 /// The check of `expect` on `value`, the value of the Field or sub-Field at `path`.
-fn expected(expect: &Expect, path: &str, value: LuaExpr) -> Expected {
+fn expect_check(expect: &Expect, path: &str, value: LuaExpr) -> ExpectCheck {
     let ranges = expect.keys.iter().flat_map(|k| wire_ranges(k.low, k.high)).collect();
-    Expected { path: path.to_owned(), value, ranges, text: expect.text.clone() }
+    ExpectCheck { path: path.to_owned(), value, ranges, text: expect.text.clone() }
 }
 
 fn decode(field: &BuiltinField) -> Decode {

@@ -913,6 +913,17 @@ fields:
       - { name: data, type: bytes, size: len }
 ```
 
+## `not-supported-yet` {#not-supported-yet}
+
+**Severity**: error
+
+The description uses part of the format that this version of Wirdigen does not read yet. A
+newer Wirdigen will accept it. Every part of the format is read in this version, so nothing
+triggers this error: the name is kept for the parts a later version adds to the format before
+it reads them.
+
+**Fix**: upgrade Wirdigen, or describe the layout with what this version supports.
+
 ## `unreachable-value` {#unreachable-value}
 
 **Severity**: warning

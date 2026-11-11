@@ -201,7 +201,7 @@ fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawBit> {
         Some(Spanned { value: width, span: value.span.clone() })
     });
     let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
-    let expect = keys.key_of("expect").zip(keys.get("expect")).and_then(|(k, v)| record(expect::read(k, v), errors));
+    let expect = expect::read(&keys, errors);
     let mappings = mapping::read(&keys, errors);
     let mut string_value =
         |key: &str, invalid: Name| keys.get(key).and_then(|value| record(expect_string(value, key, invalid), errors));
@@ -275,10 +275,8 @@ pub(crate) fn check(
             mapping::check(&sub.mappings, &subject, enums, diagnostics).ok()
         });
         let expect = width.map(|width| {
-            sub.expect.as_ref().map(|raw| {
-                let what = format!("a {width}-bit sub-Field");
-                expect::check(raw, &what, &sub.name.span, &(0..=(1_i128 << width) - 1), diagnostics)
-            })
+            let subject = expect::Subject::sub_field(&sub.name.span, width);
+            sub.expect.as_ref().map(|raw| expect::check(raw, &subject, diagnostics))
         });
         field::check_text(sub.label.as_ref(), sub.description.as_ref(), diagnostics);
         checked.push((display, mapping, expect));
