@@ -211,7 +211,7 @@ fn dissector(w: &mut Writer, model: &Dissector) {
         |w| {
             w.line(&format!("pinfo.cols.protocol = {}", lua_string(&model.short_name)));
             w.block(
-                "if pinfo.port_type == WD_PORT_TYPE_TCP then",
+                "if pinfo.port_type == wd_port_type_tcp then",
                 |w| {
                     let header = framing.header;
                     w.line(&format!(

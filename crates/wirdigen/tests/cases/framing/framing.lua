@@ -117,7 +117,7 @@ end
 -- the segment is dissected as one Message, which then reports itself truncated. A length with
 -- no value, negative or below the header shows the rest of the segment as one malformed
 -- Message.
-local WD_PORT_TYPE_TCP = 2
+local wd_port_type_tcp = 2
 
 local function wd_framed(tvb, pinfo, tree, header, message_length, dissect_message)
     local offset, total = 0, tvb:len()
@@ -266,7 +266,7 @@ end
 
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "FRAMING"
-    if pinfo.port_type == WD_PORT_TYPE_TCP then
+    if pinfo.port_type == wd_port_type_tcp then
         return wd_framed(tvb, pinfo, tree, 3, wd_message_length, wd_dissect_message)
     end
     wd_dissect_message(tvb, pinfo, tree)

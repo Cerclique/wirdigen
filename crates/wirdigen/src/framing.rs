@@ -189,18 +189,23 @@ fn resolve<'e>(
             None => unknown.with_note("a framing `length` reads the top-level Fields of the header", None),
         });
     };
+    let nested = || {
+        Diagnostic::new(
+            Name::InvalidFraming,
+            span.clone(),
+            format!("a framing `length` reads only top-level Fields and their sub-Fields, not `{key}`"),
+        )
+    };
     let FieldKind::Builtin(builtin) = &field.kind else {
-        let message = if segments.len() == 1 {
-            return Err(Diagnostic::new(
-                Name::NonNumericReference,
-                span,
-                format!("`{key}` is a structure, not an integer, a bitfield sub-Field or a `bool`"),
-            )
-            .with_note(format!("`{}` is declared here", field.name), Some(field.span.clone())));
-        } else {
-            format!("a framing `length` reads only top-level Fields and their sub-Fields, not `{key}`")
-        };
-        return Err(Diagnostic::new(Name::InvalidFraming, span, message));
+        if segments.len() > 1 {
+            return Err(nested());
+        }
+        return Err(Diagnostic::new(
+            Name::NonNumericReference,
+            span,
+            format!("`{key}` is a structure, not an integer, a bitfield sub-Field or a `bool`"),
+        )
+        .with_note(format!("`{}` is declared here", field.name), Some(field.span.clone())));
     };
     let resolved = match &segments[1..] {
         [] if matches!(builtin.ty, Builtin::Int { .. } | Builtin::Bool) => Reference::Field(segments.clone()),
@@ -222,13 +227,7 @@ fn resolve<'e>(
                 ));
             }
         },
-        _ => {
-            return Err(Diagnostic::new(
-                Name::InvalidFraming,
-                span,
-                format!("a framing `length` reads only top-level Fields and their sub-Fields, not `{key}`"),
-            ));
-        }
+        _ => return Err(nested()),
     };
     let outside = |why: String| {
         Diagnostic::new(
@@ -264,18 +263,18 @@ enum Place {
 /// The place of each top-level Field, by name.
 fn places<'t>(top: &'t [Entry], types: &[NamedType]) -> BTreeMap<&'t str, Place> {
     let mut places = BTreeMap::new();
-    let mut offset = Some(0);
+    let mut offset = Some(0_usize);
     for entry in top {
         let size = entry_size(entry, types);
         if let Entry::Field(field) = entry {
             let place = match (field.condition.is_some(), offset, size) {
                 (true, ..) => Place::Conditional,
-                (false, Some(offset), Some(size)) => Place::At { offset, size },
+                (false, Some(offset), Some(size)) if offset.checked_add(size).is_some() => Place::At { offset, size },
                 _ => Place::Unknown,
             };
             places.insert(field.name.as_str(), place);
         }
-        offset = offset.zip(size).map(|(offset, size)| offset + size);
+        offset = offset.zip(size).and_then(|(offset, size)| offset.checked_add(size));
     }
     places
 }
@@ -310,6 +309,8 @@ fn field_size(field: &Field, types: &[NamedType]) -> Option<usize> {
     }
 }
 
+/// The bytes the entries of a structure read in every Message, when they are known before it is
+/// read.
 fn structure_size(entries: &[Entry], types: &[NamedType]) -> Option<usize> {
     entries.iter().try_fold(0usize, |total, entry| total.checked_add(entry_size(entry, types)?))
 }
@@ -322,6 +323,15 @@ mod tests {
     fn a_header_after_fixed_structures_and_padding_is_placed() {
         let text = "name: demo\nframing: { header: 8, length: \"len + 8\" }\nfields:\n  - { name: hdr, fields: [ { name: a, type: uint16 } ] }\n  - { padding: 2 }\n  - { name: len, type: uint32 }\n";
         assert!(crate::validate(&Source::new("case", text)).is_ok());
+    }
+
+    #[test]
+    fn huge_constant_sizes_before_the_header_do_not_overflow() {
+        let huge = "{ name: x, type: bytes, size: 0x7FFF_FFFF_FFFF_FFFF }";
+        let text = format!(
+            "name: demo\nframing: {{ header: 1, length: \"c + 1\" }}\nfields:\n  - {huge}\n  - {huge}\n  - {huge}\n  - {{ name: c, type: uint8 }}\n"
+        );
+        assert!(crate::validate(&Source::new("case", text.as_str())).is_err());
     }
 
     #[test]

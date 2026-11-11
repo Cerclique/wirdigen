@@ -73,10 +73,13 @@ pub(crate) struct Framing {
 /// A top-level Field of the header, read for the Message's length.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct HeaderRead {
+    /// The local of the length function its value is kept in.
     pub(crate) local: String,
     /// Its offset from the start of the Message.
     pub(crate) offset: usize,
+    /// The bytes it reads.
     pub(crate) size: usize,
+    /// How its value is read.
     pub(crate) read: ValueRead,
 }
 
@@ -1262,7 +1265,9 @@ impl<'p> Lowering<'p> {
         }
         let layout = std::mem::replace(&mut self.plan, plan);
         let length = match &framing.length {
-            Amount::Constant(length) => Computed::checked_already(LuaExpr::Int(*length as u64)),
+            Amount::Constant(length) => {
+                Computed::checked_already(LuaExpr::Int(u64::try_from(*length).expect("a length fits 64 bits")))
+            }
             Amount::Expression { expr, references } => self.computed(expr, references),
         };
         self.plan = layout;

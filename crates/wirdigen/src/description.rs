@@ -22,7 +22,6 @@ pub(crate) const KEYS: [&str; 10] =
     ["name", "title", "registration", "framing", "endian", "info", "fields", "types", "enums", "allow"];
 
 /// The top level of a Protocol Description, as written.
-///
 #[derive(Debug, Clone)]
 pub(crate) struct Description {
     pub(crate) name: Spanned<String>,

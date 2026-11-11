@@ -1,0 +1,4 @@
+name: demo
+framing: 4
+fields:
+  - { name: len, type: uint16 }
