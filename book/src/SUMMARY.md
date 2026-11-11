@@ -14,7 +14,7 @@
 - [Fields and Types](reference/fields.md)
 - [Sizes]()
 - [Arrays]()
-- [Bitfields]()
+- [Bitfields](reference/bitfields.md)
 - [`if` and `switch`]()
 - [Registration]()
 - [Framing]()

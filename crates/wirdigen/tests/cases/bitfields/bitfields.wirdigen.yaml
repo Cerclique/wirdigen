@@ -1,0 +1,43 @@
+# Bitfields (spec §3.8): sub-Fields declared by width, most significant bit first, with masks
+# Wirdigen computes, in containers of every kind of width and in both byte orders.
+name: bitfields
+enums:
+  Kind: { 0: Data, 1: Control, "2-7": Reserved }
+fields:
+  - name: flags                                   # the spec's example
+    type: uint8
+    display: hex                                  # the container keeps its own display
+    bits:
+      - { name: version, width: 3 }
+      - { padding: 1 }                            # no item, no filter name
+      - { name: ext, width: 1, true: Extended, false: Basic }
+      - { name: kind, width: 3, values: Kind }
+  - name: word                                    # little-endian: masks apply to the value
+    type: uint16
+    endian: little
+    bits:
+      - { name: high, width: 4, display: hex }
+      - { name: mid, width: 8, unit: [step, steps] }
+      - { name: flag, width: 1, display: dec }    # 1 bit with `display:`: an integer
+      - { name: low, width: 3, label: Low bits, description: The three lowest bits }
+  - name: triple
+    type: uint24
+    values: { 0: Empty }
+    bits:
+      - { padding: 4 }
+      - { name: middle, width: 16, display: hex_dec }
+      - { name: tail, width: 4, values: { 15: All } }
+  - name: wide                                    # 40 bits, a 64-bit ProtoField in Lua
+    type: uint40
+    bits:
+      - { name: top, width: 1 }
+      - { name: rest, width: 39 }
+  - name: huge                                    # the top bit of 64
+    type: uint64
+    bits:
+      - { name: sign, width: 1 }
+      - { name: value, width: 63, display: hex }
+  - name: whole                                   # one sub-Field covering the container
+    type: uint32
+    bits:
+      - { name: all, width: 32 }

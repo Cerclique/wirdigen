@@ -1,0 +1,6 @@
+# flags=a1: has_extra=1 count=2 shift=1 | extra=ee:ee | items=dd:dd
+# options=50 03: secret=5 len=3 | opt=11:22:33 | rec: head=20 (size=2) body=44:55:66 (2 + 1)
+# tail=77:88
+0000  a1 ee ee dd dd 50 03 11 22 33 20 44 55 66 77 88
+# flags=40: has_extra=0 count=4 shift=0 | items=dd:dd:dd:dd | options=00 05, cut inside opt.
+0000  40 dd dd dd dd 00 05 11 22

@@ -60,4 +60,6 @@ cases! {
     expressions => "expressions",
     references => "references",
     runtime => "runtime",
+    bitfields => "bitfields",
+    bitfield_references => "bitfield-references",
 }

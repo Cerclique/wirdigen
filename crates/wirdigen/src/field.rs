@@ -6,21 +6,25 @@
 use std::collections::BTreeMap;
 use std::ops::{Range, RangeInclusive};
 
+use crate::bits::{self, Bit, RawBits};
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expr::{self, Expr, ExprKind, Fault};
-use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
-use crate::mapping::{self, Enums, Mapping};
+use crate::keys::{
+    Keys, Spanned, closest, expect_bool, expect_integer, expect_string, is_single_line, read_keys, wrong_type,
+};
+use crate::mapping::{self, Enums, Mapping, Subject};
 use crate::scalar::{Kind, resolve_plain};
 use crate::scope::{self, Level, Reference, Scope};
 use crate::types::Types;
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
-const KEYS: [&str; 16] = [
+const KEYS: [&str; 18] = [
     "name",
     "type",
     "fields",
     "switch",
+    "bits",
     "endian",
     "size",
     "prefix",
@@ -33,6 +37,7 @@ const KEYS: [&str; 16] = [
     "unit",
     "label",
     "description",
+    "hidden",
 ];
 
 /// The keys that say what a Field is; exactly one is required (spec §3.4.3).
@@ -260,7 +265,7 @@ impl Display {
 
     /// Reads the `display:` value of a Field of type `builtin`, written `ty`, reporting anything
     /// outside the matrix as `incompatible-display`.
-    fn check(value: &Spanned<String>, ty: &Spanned<String>, builtin: Builtin) -> Result<Self, Diagnostic> {
+    pub(crate) fn check(value: &Spanned<String>, ty: &Spanned<String>, builtin: Builtin) -> Result<Self, Diagnostic> {
         let allowed = builtin.displays();
         if let Some(display) = allowed.iter().copied().find(|d| d.as_str() == value.value) {
             return Ok(display);
@@ -616,6 +621,9 @@ pub(crate) struct RawField {
     /// The length keys present, in documentation order.
     lengths: Vec<LengthKey>,
     mappings: mapping::RawMappings,
+    /// The sub-Fields, when the Field is a bitfield (spec §3.8).
+    bits: Option<RawBits>,
+    hidden: Option<Spanned<bool>>,
 }
 
 /// What a Field written in a description is, as references see it (spec §4.3).
@@ -634,6 +642,11 @@ pub(crate) enum Shape<'a> {
 impl RawField {
     pub(crate) fn name(&self) -> &Spanned<String> {
         &self.name
+    }
+
+    /// The sub-Fields, when the Field is a bitfield.
+    pub(crate) fn bits(&self) -> Option<&RawBits> {
+        self.bits.as_ref()
     }
 
     /// What the Field is, its Type looked up in `types`.
@@ -675,6 +688,8 @@ pub(crate) struct Field {
     pub(crate) label: Option<String>,
     /// The `ProtoField` blurb, when `description:` gives one.
     pub(crate) description: Option<String>,
+    /// Whether the tree leaves it out (`hidden: true`); it is still filtered (spec §3.10).
+    pub(crate) hidden: bool,
     pub(crate) kind: FieldKind,
 }
 
@@ -708,6 +723,8 @@ pub(crate) struct BuiltinField {
     pub(crate) display: Option<Display>,
     /// The labels of values, states or the unit, when the Field has any (spec §3.4.7).
     pub(crate) mapping: Option<Mapping>,
+    /// The sub-Fields of a bitfield, most significant first; empty for any other Field.
+    pub(crate) bits: Vec<Bit>,
 }
 
 /// Stage 2: reads one entry of a structure, pushing its errors.
@@ -745,11 +762,33 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
         })
         .collect();
     let mappings = mapping::read(&keys, errors);
+    let bits = keys.key_of("bits").zip(keys.get("bits")).and_then(|(key, value)| bits::read(key, value, errors));
+    let hidden = keys.get("hidden").and_then(|value| record(expect_bool(value, "hidden"), errors));
+    if let (Some(key), None) = (keys.key_of("hidden"), keys.get("bits")) {
+        errors.push(
+            Diagnostic::new(
+                Name::NotSupportedYet,
+                key.span.clone(),
+                "`hidden` is supported only on bitfields by this version of Wirdigen",
+            )
+            .with_note("`hidden` works on a Field with `bits`, and on its sub-Fields", None),
+        );
+    }
 
     match (name, kind) {
-        (Some(name), Some(kind)) if errors.len() == before => {
-            Some(RawField { name, kind, endian, encoding, display, label, description, lengths, mappings })
-        }
+        (Some(name), Some(kind)) if errors.len() == before => Some(RawField {
+            name,
+            kind,
+            endian,
+            encoding,
+            display,
+            label,
+            description,
+            lengths,
+            mappings,
+            bits,
+            hidden,
+        }),
         _ => None,
     }
 }
@@ -873,32 +912,16 @@ pub(crate) fn check<'a>(
                 .with_note("`size: \"_remaining\"` leaves no bytes for the Fields after it", None),
             );
         }
-        if !is_field_name(&name.value) {
-            diagnostics.push(
-                Diagnostic::new(
-                    Name::InvalidFieldName,
-                    name.span.clone(),
-                    format!("`{}` is not a valid Field name", name.value),
-                )
-                .with_note("a Field name is a lowercase letter then lowercase letters, digits or `_`", None),
-            );
-        }
-        if let Some(first) = fields[..index].iter().find(|f| f.name.value == name.value) {
-            diagnostics.push(
-                Diagnostic::new(
-                    Name::DuplicateFieldName,
-                    name.span.clone(),
-                    format!("there is already a Field named `{}` here", name.value),
-                )
-                .with_note("first defined here", Some(first.name.span.clone())),
-            );
-        }
+        check_name(name, fields[..index].iter().map(|f| &f.name), diagnostics);
         // A Field naming an Enum uses it, whatever else is wrong with the Field (spec §3.4.7).
         enums.mark_used(&field.mappings);
         let kind = match &field.kind {
             RawKind::Type { name, type_use_keys } if names_type(&name.value, types) => {
                 for key in type_use_keys {
                     diagnostics.push(misplaced_key(key, "a Field whose type is a Type", "the Type"));
+                }
+                if let Some(bits) = &field.bits {
+                    diagnostics.push(invalid_bits(bits, "a Field whose type is a Type has no bits"));
                 }
                 types.resolve(name).and_then(|ty| {
                     let context = scope::resolve_context(&ty, &name.span, scope, types, diagnostics)?;
@@ -917,16 +940,20 @@ pub(crate) fn check<'a>(
                 for key in value_keys {
                     diagnostics.push(misplaced_key(key, "an inline structure", "the structure"));
                 }
+                if let Some(bits) = &field.bits {
+                    diagnostics.push(invalid_bits(bits, "an inline structure has no bits"));
+                }
                 Some(FieldKind::Structure(check(fields, endian, enums, types, scope, diagnostics)))
             }
         };
-        check_tree_text(field, diagnostics);
+        check_text(field.label.as_ref(), field.description.as_ref(), diagnostics);
         if let Some(kind) = kind {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
             layout.push(Field {
                 name: name.value.clone(),
                 label: text(&field.label),
                 description: text(&field.description),
+                hidden: field.hidden.as_ref().is_some_and(|h| h.value),
                 kind,
             });
         }
@@ -962,9 +989,57 @@ fn check_builtin<'a>(
         (Some(ty), None) => Some(ty.displays().first().copied()),
         (None, _) => None,
     };
-    let mapping = ty.and_then(|ty| mapping::check(&field.mappings, ty_name, ty, enums, diagnostics).ok());
-    let (ty, endian, length, encoding, display, mapping) = (ty?, endian?, length?, encoding?, display?, mapping?);
-    Some(BuiltinField { ty, endian, length, encoding, display, mapping })
+    let mapping =
+        ty.and_then(|ty| mapping::check(&field.mappings, &Subject::builtin(ty_name, ty), enums, diagnostics).ok());
+    let bits = match (&field.bits, ty) {
+        (None, _) => Some(Vec::new()),
+        (Some(raw), Some(Builtin::Int { signed: false, bytes })) => {
+            bits::check(raw, ty_name, bytes, enums, diagnostics)
+        }
+        (Some(raw), Some(_)) => {
+            diagnostics.push(invalid_bits(raw, &format!("`{}` is not an unsigned integer", ty_name.value)));
+            None
+        }
+        (Some(_), None) => None,
+    };
+    let (ty, endian, length, encoding, display, mapping, bits) =
+        (ty?, endian?, length?, encoding?, display?, mapping?, bits?);
+    Some(BuiltinField { ty, endian, length, encoding, display, mapping, bits })
+}
+
+/// `bits:` on a Field that is not a fixed-size unsigned integer, saying why in `message`.
+fn invalid_bits(bits: &RawBits, message: &str) -> Diagnostic {
+    Diagnostic::new(Name::InvalidBits, bits.key().clone(), message)
+        .with_note("only a `uint8` to `uint64` Field takes `bits`", None)
+}
+
+/// Checks the name of a Field or a sub-Field, given the names of its earlier siblings: it follows
+/// the naming rule (spec §3.4.2) and no sibling has it already.
+pub(crate) fn check_name<'n>(
+    name: &Spanned<String>,
+    mut earlier: impl Iterator<Item = &'n Spanned<String>>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !is_field_name(&name.value) {
+        diagnostics.push(
+            Diagnostic::new(
+                Name::InvalidFieldName,
+                name.span.clone(),
+                format!("`{}` is not a valid Field name", name.value),
+            )
+            .with_note("a Field name is a lowercase letter then lowercase letters, digits or `_`", None),
+        );
+    }
+    if let Some(first) = earlier.find(|f| f.value == name.value) {
+        diagnostics.push(
+            Diagnostic::new(
+                Name::DuplicateFieldName,
+                name.span.clone(),
+                format!("there is already a Field named `{}` here", name.value),
+            )
+            .with_note("first defined here", Some(first.span.clone())),
+        );
+    }
 }
 
 /// A key that `what` (an inline structure, a Field whose type is a Type) does not take, though
@@ -1033,15 +1108,19 @@ fn check_length<'a>(
 }
 
 /// `label:` is non-empty and single line, `description:` single line (spec §3.4.8).
-fn check_tree_text(field: &RawField, diagnostics: &mut Vec<Diagnostic>) {
-    if let Some(label) = field.label.as_ref().filter(|l| l.value.trim().is_empty() || !is_single_line(&l.value)) {
+pub(crate) fn check_text(
+    label: Option<&Spanned<String>>,
+    description: Option<&Spanned<String>>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if let Some(label) = label.filter(|l| l.value.trim().is_empty() || !is_single_line(&l.value)) {
         diagnostics.push(Diagnostic::new(
             Name::InvalidLabel,
             label.span.clone(),
             "a label must be a non-empty single line",
         ));
     }
-    if let Some(description) = field.description.as_ref().filter(|d| !is_single_line(&d.value)) {
+    if let Some(description) = description.filter(|d| !is_single_line(&d.value)) {
         diagnostics.push(Diagnostic::new(
             Name::InvalidDescription,
             description.span.clone(),

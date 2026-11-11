@@ -30,6 +30,7 @@
 
 #![deny(missing_docs)]
 
+mod bits;
 #[cfg(test)]
 mod book;
 mod description;

@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits: [ { name: a, width: 8 } ]
+  - { name: x, type: bytes, size: flags.b }
+  - { name: y, type: bytes, size: flags.a.c }

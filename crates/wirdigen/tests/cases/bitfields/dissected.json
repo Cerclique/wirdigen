@@ -1,0 +1,68 @@
+[
+  {
+    "bitfields.flags": "0xab",
+    "bitfields.flags_tree": {
+      "bitfields.flags.version": "5",
+      "bitfields.flags.ext": "1",
+      "bitfields.flags.kind": "3"
+    },
+    "bitfields.word": "4660",
+    "bitfields.word_tree": {
+      "bitfields.word.high": "0x0001",
+      "bitfields.word.mid": "35",
+      "bitfields.word.flag": "0",
+      "bitfields.word.low": "4"
+    },
+    "bitfields.triple": "1193046",
+    "bitfields.triple_tree": {
+      "bitfields.triple.middle": "0x002345",
+      "bitfields.triple.tail": "6"
+    },
+    "bitfields.wide": "549755813893",
+    "bitfields.wide_tree": {
+      "bitfields.wide.top": "1",
+      "bitfields.wide.rest": "5"
+    },
+    "bitfields.huge": "9223372036854775809",
+    "bitfields.huge_tree": {
+      "bitfields.huge.sign": "1",
+      "bitfields.huge.value": "0x0000000000000001"
+    },
+    "bitfields.whole": "42",
+    "bitfields.whole_tree": {
+      "bitfields.whole.all": "42"
+    }
+  },
+  {
+    "bitfields.flags": "0x00",
+    "bitfields.flags_tree": {
+      "bitfields.flags.version": "0",
+      "bitfields.flags.ext": "0",
+      "bitfields.flags.kind": "0"
+    },
+    "bitfields.word": "0",
+    "bitfields.word_tree": {
+      "bitfields.word.high": "0x0000",
+      "bitfields.word.mid": "0",
+      "bitfields.word.flag": "0",
+      "bitfields.word.low": "0"
+    },
+    "bitfields.triple": "0",
+    "bitfields.triple_tree": {
+      "bitfields.triple.middle": "0x000000",
+      "bitfields.triple.tail": "0"
+    },
+    "bitfields.wide": "0",
+    "bitfields.wide_tree": {
+      "bitfields.wide.top": "0",
+      "bitfields.wide.rest": "0"
+    },
+    "_ws.expert": {
+      "bitfields._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: huge",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

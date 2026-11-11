@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: a, width: 1, values: { 1: On }, true: Yes }
+      - { name: b, width: 2, false: Off }
+      - { name: c, width: 5, display: utc }

@@ -1,0 +1,6 @@
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    hidden: yes
+    bits: [ { name: a, width: "8" } ]

@@ -448,7 +448,8 @@ through inline structures and Fields of a [Type](#types), never through Type nam
 example above they are `demo.msg_type`, `demo.header`, `demo.header.length`,
 `demo.header.flags`, `demo.header.flags.urgent`, `demo.header.flags.priority` and
 `demo.payload`. A filter on a structure, such as `demo.header.flags`, matches every packet
-that has it.
+that has it. The sub-Fields of a [bitfield](bitfields.md) extend their container's name:
+`demo.flags.ext`.
 
 Filter names are part of a Dissector's behaviour: users save filters and colouring rules
 against them. Renaming a Field, or moving it into or out of a structure, changes its filter

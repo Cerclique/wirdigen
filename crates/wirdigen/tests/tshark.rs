@@ -240,6 +240,8 @@ cases! {
     expressions => "expressions",
     references => "references",
     runtime => "runtime",
+    bitfields => "bitfields",
+    bitfield_references => "bitfield-references",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.
