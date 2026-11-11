@@ -1,0 +1,12 @@
+# Registration (spec §3.12): the ports of each transport are claimed by default, each transport
+# with a range preference defaulting to them, and Decode As is offered on both transports. The
+# tshark corpus decodes these packets by the declared UDP port 9999, without Decode As.
+name: registration
+registration:
+  ports:
+    udp: [9999, "6000-6010"]
+    tcp: [9998]
+fields:
+  - { name: id, type: uint8 }
+  - { name: rest, type: bytes, size: "_remaining" }
+allow: [tcp-without-framing]

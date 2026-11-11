@@ -1,0 +1,7 @@
+name: demo
+registration:
+  heuristic: true
+  ports:
+    sctp: [1]
+fields:
+  - { name: a, type: uint8 }

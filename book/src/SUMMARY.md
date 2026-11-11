@@ -16,7 +16,7 @@
 - [Arrays](reference/arrays.md)
 - [Bitfields](reference/bitfields.md)
 - [`if` and `switch`](reference/conditionals.md)
-- [Registration]()
+- [Registration](reference/registration.md)
 - [Framing]()
 - [Expressions](reference/expressions.md)
 - [Info column]()

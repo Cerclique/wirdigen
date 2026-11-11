@@ -15,6 +15,7 @@ use crate::field::{
 };
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
+use crate::registration::Ports;
 use crate::scope::Reference;
 use crate::switch::{Body, Switch, wire_ranges};
 use crate::types::NamedType;
@@ -46,6 +47,42 @@ pub(crate) struct Dissector {
     pub(crate) locals: Vec<String>,
     /// The prelude chunks the Dissector uses, before dependencies are added.
     pub(crate) chunks: Vec<&'static str>,
+    /// The range preference of each transport with declared ports (spec §3.12, §5.5).
+    pub(crate) port_preferences: Vec<PortPreference>,
+}
+
+/// A range preference holding the ports a Dissector is registered on in one dissector table.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct PortPreference {
+    /// The preference's name under the protocol's (`udp_ports`).
+    pub(crate) name: &'static str,
+    /// The dissector table of the ports (`udp.port`).
+    pub(crate) table: &'static str,
+    /// The text Wireshark's preferences show (`UDP port(s)`).
+    pub(crate) label: String,
+    /// The longer text of the preference.
+    pub(crate) description: String,
+    /// The declared ports, as a Wireshark range string (`5000,6000-6010`).
+    pub(crate) default: String,
+}
+
+impl PortPreference {
+    fn new(ports: &Ports, short_name: &str) -> Self {
+        let Ports { transport, ranges } = ports;
+        let label = transport.label();
+        let default = ranges
+            .iter()
+            .map(|r| if r.start() == r.end() { r.start().to_string() } else { format!("{}-{}", r.start(), r.end()) })
+            .collect::<Vec<_>>()
+            .join(",");
+        Self {
+            name: transport.preference(),
+            table: transport.table(),
+            label: format!("{label} port(s)"),
+            description: format!("The {label} ports decoded as {short_name}"),
+            default,
+        }
+    }
 }
 
 /// A `ProtoField` to register.
@@ -498,10 +535,14 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     lowering.root = &protocol.fields;
     let layout = lowering.structure(&protocol.fields, &[]);
     let locals = lowering.plan.locals();
+    if !protocol.ports.is_empty() {
+        lowering.use_chunk(prelude::PORTS);
+    }
     let Lowering { proto_fields, tables, names, sites, chunks, .. } = lowering;
 
     let filter_name = protocol.name.clone();
     let short_name = filter_name.to_ascii_uppercase();
+    let port_preferences = protocol.ports.iter().map(|p| PortPreference::new(p, &short_name)).collect();
     Dissector {
         source_name: source_name.rsplit(['/', '\\']).next().unwrap_or(source_name).to_owned(),
         full_name: protocol.title.clone().unwrap_or_else(|| short_name.clone()),
@@ -515,6 +556,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         layout,
         locals,
         chunks,
+        port_preferences,
     }
 }
 

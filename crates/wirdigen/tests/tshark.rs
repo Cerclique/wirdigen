@@ -4,7 +4,8 @@
 //! A corpus case may carry `packets.txt`: text2pcap hex, one commented packet per offset-0 line
 //! run. The harness wraps each packet in UDP to [`PORT`], loads the golden `<case>.lua` with
 //! `-X lua_script`, decodes [`PORT`] as the protocol (Decode As) and cuts tshark's `-T json`
-//! output down to the protocol's own layer, which must match `dissected.json`.
+//! output down to the protocol's own layer, which must match `dissected.json`. A case of
+//! [`BY_DECLARED_PORT`] declares [`PORT`] itself and is decoded without Decode As.
 //!
 //! tshark exits 0 when a Lua script fails to load, and as root it skips the script with only a
 //! warning, so success is never judged from the exit status. It is judged from stderr, which
@@ -26,6 +27,25 @@ use serde_json::Value;
 const PORT: u16 = 9999;
 /// The UDP source port; above [`PORT`] so UDP tries [`PORT`] first.
 const SOURCE_PORT: u16 = 40000;
+
+/// The cases that declare [`PORT`] under `registration:`, decoded by it without Decode As.
+const BY_DECLARED_PORT: [&str; 1] = ["registration"];
+
+/// How the harness wraps each packet: text2pcap's flag for it.
+#[derive(Debug, Clone, Copy)]
+enum Transport {
+    Udp,
+    Tcp,
+}
+
+impl Transport {
+    fn text2pcap_flag(self) -> &'static str {
+        match self {
+            Transport::Udp => "-u",
+            Transport::Tcp => "-T",
+        }
+    }
+}
 
 fn enabled() -> bool {
     std::env::var_os("WIRDIGEN_TSHARK").is_some_and(|v| v == "1")
@@ -63,22 +83,34 @@ impl Scratch {
 
     /// Turns text2pcap hex into a capture of UDP packets to [`PORT`].
     fn capture(&self, packets: &Path) -> PathBuf {
+        self.capture_over(Transport::Udp, PORT, packets)
+    }
+
+    /// Turns text2pcap hex into a capture of `transport` packets to `port`.
+    fn capture_over(&self, transport: Transport, port: u16, packets: &Path) -> PathBuf {
         let pcap = self.path("packets.pcapng");
-        let ports = format!("{SOURCE_PORT},{PORT}");
-        let output = self.run("text2pcap", &["-q", "-u", &ports, path_str(packets), path_str(&pcap)]);
+        let ports = format!("{SOURCE_PORT},{port}");
+        let flag = transport.text2pcap_flag();
+        let output = self.run("text2pcap", &["-q", flag, &ports, path_str(packets), path_str(&pcap)]);
         assert!(output.status.success(), "text2pcap failed: {}", String::from_utf8_lossy(&output.stderr));
         pcap
     }
 
-    /// Dissects `pcap` with the Dissector in `lua` and returns each packet's `proto` layer, or
-    /// why the run is unusable.
+    /// Dissects `pcap` with the Dissector in `lua`, decoding UDP [`PORT`] as `proto`, and returns
+    /// each packet's `proto` layer, or why the run is unusable.
     fn dissect(&self, lua: &Path, proto: &str, pcap: &Path) -> Result<Vec<Value>, String> {
-        let script = format!("lua_script:{}", path_str(lua));
         let decode_as = format!("udp.port=={PORT},{proto}");
-        let output = self.run(
-            "tshark",
-            &["-r", path_str(pcap), "-X", &script, "-d", &decode_as, "-T", "json", "--no-duplicate-keys"],
-        );
+        self.dissect_with(lua, proto, pcap, &["-d", &decode_as])
+    }
+
+    /// Dissects `pcap` with the Dissector in `lua` and tshark's extra `options`, and returns
+    /// each packet's `proto` layer, or why the run is unusable.
+    fn dissect_with(&self, lua: &Path, proto: &str, pcap: &Path, options: &[&str]) -> Result<Vec<Value>, String> {
+        let script = format!("lua_script:{}", path_str(lua));
+        let mut args = vec!["-r", path_str(pcap), "-X", &script];
+        args.extend(options);
+        args.extend(["-T", "json", "--no-duplicate-keys"]);
+        let output = self.run("tshark", &args);
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.trim().is_empty() {
             return Err(format!("tshark wrote to stderr ({}):\n{stderr}", output.status));
@@ -190,7 +222,12 @@ fn check(case: &str) {
 
     let scratch = Scratch::new(case);
     let pcap = scratch.capture(&packets);
-    let layers = scratch.dissect(&lua, proto, &pcap).unwrap_or_else(|e| panic!("{case}: {e}"));
+    let layers = if BY_DECLARED_PORT.contains(&case) {
+        scratch.dissect_with(&lua, proto, &pcap, &[])
+    } else {
+        scratch.dissect(&lua, proto, &pcap)
+    };
+    let layers = layers.unwrap_or_else(|e| panic!("{case}: {e}"));
     assert_eq!(layers.len(), expected_count, "{case}: tshark dissected a different number of packets");
 
     let actual = serde_json::to_string_pretty(&layers).unwrap() + "\n";
@@ -249,6 +286,62 @@ cases! {
     padding => "padding",
     expect => "expect",
     handoff => "handoff",
+    registration => "registration",
+}
+
+/// Registration (spec §3.12): the declared ports follow their range preferences, and TCP ports
+/// are claimed like UDP ones. The `registration` case declares UDP [`PORT`] and TCP
+/// [`TCP_PORT`].
+mod registration {
+    use super::*;
+
+    /// The TCP port the `registration` case declares.
+    const TCP_PORT: u16 = 9998;
+
+    /// Dissects the `registration` corpus packets, sent over `transport` to `port`, with
+    /// tshark's extra `options` and no Decode As.
+    fn dissect(name: &str, transport: Transport, port: u16, options: &[&str]) -> Result<Vec<Value>, String> {
+        let dir = case_dir("registration");
+        let scratch = Scratch::new(name);
+        let pcap = scratch.capture_over(transport, port, &dir.join("packets.txt"));
+        scratch.dissect_with(&dir.join("registration.lua"), "registration", &pcap, options)
+    }
+
+    #[test]
+    fn a_declared_tcp_port_is_claimed() {
+        if !enabled() {
+            return;
+        }
+        dissect("tcp", Transport::Tcp, TCP_PORT, &[]).unwrap();
+    }
+
+    #[test]
+    fn a_port_inside_a_declared_range_is_claimed() {
+        if !enabled() {
+            return;
+        }
+        dissect("range", Transport::Udp, 6005, &[]).unwrap();
+    }
+
+    #[test]
+    fn a_changed_preference_releases_the_old_ports() {
+        if !enabled() {
+            return;
+        }
+        let error = dissect("moved-away", Transport::Udp, PORT, &["-o", "registration.udp_ports:1234"]).unwrap_err();
+        assert!(error.contains("packet 1 has no `registration` layer"), "{error}");
+    }
+
+    #[test]
+    fn a_changed_preference_claims_the_new_ports() {
+        if !enabled() {
+            return;
+        }
+        let undeclared = dissect("undeclared", Transport::Tcp, PORT, &[]).unwrap_err();
+        assert!(undeclared.contains("packet 1 has no `registration` layer"), "{undeclared}");
+        let ports = format!("registration.tcp_ports:{PORT}");
+        dissect("moved-to", Transport::Tcp, PORT, &["-o", &ports]).unwrap();
+    }
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.

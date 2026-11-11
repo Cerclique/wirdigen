@@ -1,0 +1,4 @@
+name: demo
+registration: 5000
+fields:
+  - { name: a, type: uint8 }

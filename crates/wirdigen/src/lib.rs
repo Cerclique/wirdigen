@@ -46,6 +46,7 @@ mod lower;
 mod lua_check;
 mod mapping;
 mod prelude;
+mod registration;
 mod render;
 mod scalar;
 mod scope;

@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, BitItem, Branch, Computed, Decode, Dissector, ExpectCheck, Export, Length, LuaExpr, LuaTable, ProtoField,
-    Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
+    Args, BitItem, Branch, Computed, Decode, Dissector, ExpectCheck, Export, Length, LuaExpr, LuaTable, PortPreference,
+    ProtoField, Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
 };
 use crate::prelude;
 
@@ -153,10 +153,32 @@ pub(crate) fn emit(model: &Dissector) -> String {
     );
     w.line("");
 
+    if !model.port_preferences.is_empty() {
+        port_preferences(&mut w, &model.port_preferences);
+    }
     w.line("-- Decode As");
     w.line("DissectorTable.get(\"udp.port\"):add_for_decode_as(wd_proto)");
     w.line("DissectorTable.get(\"tcp.port\"):add_for_decode_as(wd_proto)");
     w.out
+}
+
+/// Declares the range preferences and registers on the ports they hold (spec §3.12, §5.5).
+fn port_preferences(w: &mut Writer, preferences: &[PortPreference]) {
+    w.line("-- Registration");
+    for p in preferences {
+        w.line(&format!(
+            "wd_proto.prefs.{} = Pref.range({}, {}, {}, {})",
+            p.name,
+            lua_string(&p.label),
+            lua_string(&p.default),
+            lua_string(&p.description),
+            u16::MAX,
+        ));
+    }
+    let pairs: Vec<String> =
+        preferences.iter().map(|p| format!("{{ {}, {} }}", lua_string(p.name), lua_string(p.table))).collect();
+    w.line(&format!("wd_register_ports(wd_proto, {{ {} }})", pairs.join(", ")));
+    w.line("");
 }
 
 /// Declares the expert infos the Dissector reports, `proto` being its filter name as a Lua

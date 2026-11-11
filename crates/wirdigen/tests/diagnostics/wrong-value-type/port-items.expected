@@ -1,0 +1,4 @@
+error wrong-value-type 4:11-4:17
+error wrong-value-type 4:19-4:22
+error wrong-value-type 4:24-4:29
+error wrong-value-type 4:31-4:34
