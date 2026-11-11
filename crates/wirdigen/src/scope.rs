@@ -14,6 +14,7 @@ use crate::bits::Lookup;
 use crate::diagnostic::{Diagnostic, Name};
 use crate::field::{Builtin, RawField, Shape};
 use crate::keys::closest;
+use crate::switch::{RawBody, RawSwitch};
 use crate::types::Types;
 
 /// What a resolved path reads, from the dissect function the Expression is in (spec §7.3).
@@ -79,6 +80,9 @@ enum Miss {
     /// A Field on the path is read under an `if:`, at this span, that does not enclose the
     /// reference (spec §3.9, §4.3).
     Conditional { field: String, condition: Range<usize> },
+    /// A Field on the path is read only in a case, at this span, of the `switch` Field `switch`
+    /// (spec §3.9, §4.3).
+    InCase { switch: String, member: String, case: Range<usize> },
     /// The path ends on a Field that is not an integer or a `bool`.
     NonNumeric { what: String, span: Range<usize> },
 }
@@ -144,6 +148,7 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
         }
         let children = match field.shape(types) {
             Shape::Structure(children) | Shape::Type { fields: children, .. } => children,
+            Shape::Switch(switch) => return into_case(field, switch, segment, types),
             Shape::Unknown => return Resolution::Suppressed,
             Shape::Value(builtin, _) => {
                 let Some(bits) = field.bits() else {
@@ -183,8 +188,31 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
         Shape::Value(_, written) => format!("a `{written}`"),
         Shape::Structure(_) => "a structure".to_owned(),
         Shape::Type { name, .. } => format!("a Field of the Type `{name}`"),
+        Shape::Switch(_) => "a `switch` Field".to_owned(),
     };
     Resolution::Miss(Miss::NonNumeric { what, span: field.name().span.clone() })
+}
+
+/// Why a path cannot go on from the `switch` Field `field` to its Field `segment`: every Field
+/// of a case is read only when the case matches (spec §3.9, §4.3).
+fn into_case(field: &RawField, switch: &RawSwitch, segment: &str, types: &Types<'_>) -> Resolution {
+    let mut candidates = Vec::new();
+    for (case, body) in switch.bodies() {
+        let fields = match body {
+            RawBody::Fields(fields) => fields.as_slice(),
+            RawBody::Type(name) => match types.body(&name.value) {
+                Some(fields) => fields,
+                None => continue,
+            },
+        };
+        if fields.iter().any(|f| f.name().value == segment) {
+            let (switch, member) = (field.name().value.clone(), segment.to_owned());
+            return Resolution::Miss(Miss::InCase { switch, member, case: case.clone() });
+        }
+        candidates.extend(fields.iter().map(|f| f.name().value.clone()));
+    }
+    let (parent, member) = (field.name().value.clone(), segment.to_owned());
+    Resolution::Miss(Miss::NoMember { parent, member, candidates })
 }
 
 /// Why a path cannot go through `field`, when it is read under an `if:`.
@@ -248,6 +276,14 @@ fn explain(miss: &Miss, key: &str, segments: &[String]) -> (Name, String, Notes)
                     ),
                     None,
                 ),
+            ],
+        ),
+        Miss::InCase { switch, member, case } => (
+            Name::ConditionalReference,
+            format!("`{member}` is read only in a case of `{switch}`, which does not enclose this"),
+            vec![
+                (format!("`{member}` is read only when this case matches"), Some(case.clone())),
+                (format!("only Fields inside that case can read `{key}`"), None),
             ],
         ),
         Miss::NonNumeric { what, span } => {
@@ -355,6 +391,24 @@ pub(crate) fn free_refs(types: &mut Types<'_>, ty: &str) -> Vec<FreeRef> {
     found
 }
 
+/// Adds to `found` the names the Type `name`, used at `levels` in the Type `ty`, reads that `ty`
+/// does not declare either.
+fn collect_type<'a>(name: &str, ty: &str, levels: &[Level<'a>], types: &mut Types<'a>, found: &mut Vec<FreeRef>) {
+    for free in free_refs(types, name) {
+        let scope = Scope { ty: Some(ty), levels };
+        if let Resolution::Free { .. } = resolve(&free.segments, scope, types) {
+            add_free(found, free);
+        }
+    }
+}
+
+/// Adds `free` to `found`, unless a name with the same key is there already.
+fn add_free(found: &mut Vec<FreeRef>, free: FreeRef) {
+    if !found.iter().any(|f| f.key == free.key) {
+        found.push(free);
+    }
+}
+
 fn collect_free<'a>(
     fields: &'a [RawField],
     ty: &str,
@@ -362,27 +416,23 @@ fn collect_free<'a>(
     types: &mut Types<'a>,
     found: &mut Vec<FreeRef>,
 ) {
-    fn add(found: &mut Vec<FreeRef>, free: FreeRef) {
-        if !found.iter().any(|f| f.key == free.key) {
-            found.push(free);
-        }
-    }
     for (at, field) in fields.iter().enumerate() {
         levels.push(Level { fields, at });
         let scope = Scope { ty: Some(ty), levels };
         for (segments, span) in field.paths() {
             if let Resolution::Free { later } = resolve(segments, scope, types) {
                 let (key, segments) = (segments.join("."), segments.to_vec());
-                add(found, FreeRef { key, segments, origin: span, ty: ty.to_owned(), later });
+                add_free(found, FreeRef { key, segments, origin: span, ty: ty.to_owned(), later });
             }
         }
         match field.shape(types) {
             Shape::Structure(children) => collect_free(children, ty, levels, types, found),
-            Shape::Type { name, .. } => {
-                for free in free_refs(types, name) {
-                    let scope = Scope { ty: Some(ty), levels };
-                    if let Resolution::Free { .. } = resolve(&free.segments, scope, types) {
-                        add(found, free);
+            Shape::Type { name, .. } => collect_type(name, ty, levels, types, found),
+            Shape::Switch(switch) => {
+                for (_, body) in switch.bodies() {
+                    match body {
+                        RawBody::Fields(children) => collect_free(children, ty, levels, types, found),
+                        RawBody::Type(name) => collect_type(&name.value, ty, levels, types, found),
                     }
                 }
             }

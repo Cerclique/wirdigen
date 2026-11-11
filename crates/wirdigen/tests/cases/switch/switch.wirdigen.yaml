@@ -1,0 +1,48 @@
+# `switch` Fields (spec §3.9): a Type case, an inline case, a range case and a default; cases
+# add no segment to filter names, and `user_id`, in a Type case and an inline case, is one
+# ProtoField. The subtree item is named after the subject's `values:` label (bare path), or its
+# number. No matching case and no default shows the rest of the message raw, with a note, and
+# stops. A switch inside a Type, with a Type as its default. A subject with no value is
+# malformed (§4.4).
+name: switch
+fields:
+  - { name: kind, type: uint8, values: Kind }
+  - name: body
+    switch: kind
+    cases:
+      1: Login
+      2:
+        - { name: user_id, type: uint32 }
+        - { name: size, type: uint8 }
+        - { name: note, type: bytes, size: size }
+      "16-31": Vendor
+    default:
+      - { name: raw, type: bytes, size: 1 }
+  - { name: mode, type: uint8 }
+  - name: trailer
+    switch: "8 / mode"
+    cases:
+      4: [ { name: short, type: uint16 } ]
+      1: Pair
+types:
+  Login:
+    fields:
+      - { name: user_id, type: uint32 }
+      - { name: flags, type: uint8 }
+  Vendor:
+    fields:
+      - { name: code, type: uint8, values: { 16: Sixteen } }
+      - name: detail
+        switch: code
+        cases:
+          16: [ { name: v16, type: uint8 } ]
+        default: Login
+  Pair:
+    fields:
+      - { name: a, type: uint8 }
+      - { name: b, type: uint8 }
+enums:
+  Kind:
+    1: Login
+    2: Logout
+    "16-31": Vendor

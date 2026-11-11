@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, BitItem, Computed, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Repeat, Site,
-    SiteEntry, Stmt, Strings, TableRef, Value, ValueRead,
+    Args, BitItem, Branch, Computed, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Repeat,
+    Site, SiteEntry, Stmt, Strings, TableRef, Value, ValueRead,
 };
 use crate::prelude;
 
@@ -67,13 +67,32 @@ pub(crate) fn emit(model: &Dissector) -> String {
         w.block(&format!("local {} = {{", shared.local), |w| table_entries(w, &shared.table), "}");
         w.line("");
     }
+    if !model.names.is_empty() {
+        w.line("-- The names of switch subjects' values");
+        for names in &model.names {
+            let entries = LuaTable::Ranges(names.entries.clone());
+            w.block(&format!("local {} = {{", names.local), |w| table_entries(w, &entries), "}");
+        }
+        w.line("");
+    }
     for field in &model.proto_fields {
         proto_field(&mut w, model, field);
     }
-    if !model.proto_fields.is_empty() {
-        w.line("");
+    let unmatched = model.chunks.contains(&prelude::UNMATCHED);
+    if unmatched {
+        w.line(&format!("local wd_f_unmatched = wd_field_unmatched({proto})"));
     }
-    w.block("wd_proto.fields = {", |w| model.proto_fields.iter().for_each(|f| w.line(&format!("{},", f.local))), "}");
+    w.line("");
+    w.block(
+        "wd_proto.fields = {",
+        |w| {
+            model.proto_fields.iter().for_each(|f| w.line(&format!("{},", f.local)));
+            if unmatched {
+                w.line("wd_f_unmatched,");
+            }
+        },
+        "}",
+    );
     w.line("");
     if !model.sites.is_empty() {
         w.line("-- The ProtoFields of each use of a Type, passed to the Type's dissect function");
@@ -82,14 +101,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
         }
         w.line("");
     }
-    w.line(&format!("local wd_ei_truncated = wd_expert_truncated({proto})"));
-    if model.chunks.contains(&prelude::INVALID) {
-        w.line(&format!("local wd_ei_invalid = wd_expert_invalid({proto})"));
-        w.line("wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }");
-    } else {
-        w.line("wd_proto.experts = { wd_ei_truncated }");
-    }
-    w.line("");
+    experts(&mut w, model, &proto);
 
     // Every dissect function returns the offset after what it read, or `nil` once it stopped
     // on a truncated or malformed packet, so that its callers stop too. A Type whose caller
@@ -145,6 +157,23 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.line("DissectorTable.get(\"udp.port\"):add_for_decode_as(wd_proto)");
     w.line("DissectorTable.get(\"tcp.port\"):add_for_decode_as(wd_proto)");
     w.out
+}
+
+/// Declares the expert infos the Dissector reports, `proto` being its filter name as a Lua
+/// string.
+fn experts(w: &mut Writer, model: &Dissector, proto: &str) {
+    w.line(&format!("local wd_ei_truncated = wd_expert_truncated({proto})"));
+    let mut experts = vec!["wd_ei_truncated"];
+    if model.chunks.contains(&prelude::INVALID) {
+        w.line(&format!("local wd_ei_invalid = wd_expert_invalid({proto})"));
+        experts.push("wd_ei_invalid");
+    }
+    if model.chunks.contains(&prelude::UNMATCHED) {
+        w.line(&format!("local wd_ei_unmatched = wd_expert_unmatched({proto})"));
+        experts.push("wd_ei_unmatched");
+    }
+    w.line(&format!("wd_proto.experts = {{ {} }}", experts.join(", ")));
+    w.line("");
 }
 
 /// Writes the declaration of a `ProtoField`. An inline value table spans several lines.
@@ -324,22 +353,98 @@ fn subtree(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope, index: 
                 statement(w, model, stmt, scope);
             }
         }
-        Stmt::Call { ty, site, context, result, .. } => {
-            // A Type's dissect function is passed the site table of this use and the context
-            // table, and returns the table the caller reads inside it, if any.
-            let mut args = vec![site_ref(model, site)];
-            if !context.is_empty() {
-                let entries: Vec<String> =
-                    context.iter().map(|(key, value)| format!("{} = {}", table_key(key), lua_expr(value))).collect();
-                args.push(format!("{{ {} }}", entries.join(", ")));
-            }
-            let assigned = result.as_ref().map_or_else(|| "offset".to_owned(), |r| format!("offset, {r}"));
-            w.line(&format!("{assigned} = dissect_{ty}(tvb, tree, offset, {})", args.join(", ")));
-            w.block("if not offset then", |w| w.line("return nil"), "end");
+        Stmt::Call { ty, site, context, result, .. } => call(w, model, ty, site, context, result.as_deref()),
+        Stmt::Read { .. } | Stmt::Array { .. } | Stmt::If { .. } | Stmt::Switch { .. } => {
+            unreachable!("matched above")
         }
-        Stmt::Read { .. } | Stmt::Array { .. } | Stmt::If { .. } => unreachable!("matched above"),
     }
     w.line("tree:set_len(offset - start)");
+}
+
+/// Calls the dissect function of the Type `ty` into `tree`, passing the site table of this use
+/// and the context table, and keeping the table it returns in `result` when the caller reads
+/// inside it.
+fn call(w: &mut Writer, model: &Dissector, ty: &str, site: &Ref, context: &[(String, LuaExpr)], result: Option<&str>) {
+    let mut args = vec![site_ref(model, site)];
+    if !context.is_empty() {
+        let entries: Vec<String> =
+            context.iter().map(|(key, value)| format!("{} = {}", table_key(key), lua_expr(value))).collect();
+        args.push(format!("{{ {} }}", entries.join(", ")));
+    }
+    let assigned = result.map_or_else(|| "offset".to_owned(), |r| format!("offset, {r}"));
+    w.line(&format!("{assigned} = dissect_{ty}(tvb, tree, offset, {})", args.join(", ")));
+    w.block("if not offset then", |w| w.line("return nil"), "end");
+}
+
+/// The fields of [`Stmt::Switch`] other than its path.
+struct SwitchStmt<'s> {
+    field: &'s Ref,
+    subject: &'s Computed,
+    names: Option<usize>,
+    cases: &'s [(Vec<(i64, i64)>, Branch)],
+    default: Option<&'s Branch>,
+}
+
+/// Writes a `switch` Field at `path` (spec §3.9): the subject is computed, then a subtree item
+/// named after its value holds what the matching case reads. Without a match or a `default`, the
+/// rest of the message is shown raw with a note, and the dissection stops: nothing says where
+/// the unread layout ends.
+fn switch(w: &mut Writer, model: &Dissector, path: &str, stmt: &SwitchStmt<'_>, scope: Scope) {
+    let reported = reported_path(path, scope);
+    let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
+    let branch = |w: &mut Writer, branch: &Branch| match branch {
+        Branch::Fields(body) => body.iter().for_each(|stmt| statement(w, model, stmt, scope)),
+        Branch::Call { ty, site, context } => call(w, model, ty, site, context, None),
+    };
+    w.line(&format!("-- Switch: {path}"));
+    w.block(
+        "do",
+        |w| {
+            evaluate(w, "subject", "subject", stmt.subject, &invalid);
+            w.line("local start = offset");
+            w.line(&format!(
+                "local tree = tree:add({}, tvb(offset, tvb:len() - offset))",
+                field_ref(model, stmt.field)
+            ));
+            let name = stmt.names.map_or_else(
+                || "subject".to_owned(),
+                |index| format!("wd_case_name({}, subject)", model.names[index].local),
+            );
+            w.line(&format!("tree:append_text(\": \" .. {name})"));
+            for (index, (ranges, body)) in stmt.cases.iter().enumerate() {
+                let test: Vec<String> = ranges
+                    .iter()
+                    .map(|(low, high)| {
+                        if low == high {
+                            format!("subject == {}", lua_integer(*low))
+                        } else {
+                            format!("(subject >= {} and subject <= {})", lua_integer(*low), lua_integer(*high))
+                        }
+                    })
+                    .collect();
+                let keyword = if index == 0 { "if" } else { "elseif" };
+                w.line(&format!("{keyword} {} then", test.join(" or ")));
+                w.depth += 1;
+                branch(w, body);
+                w.depth -= 1;
+            }
+            w.block(
+                "else",
+                |w| {
+                    if let Some(body) = stmt.default {
+                        branch(w, body);
+                    } else {
+                        let args = format!("tree, wd_f_unmatched, wd_ei_unmatched, tvb, offset, subject, {reported}");
+                        w.line(&format!("wd_unmatched({args})"));
+                        w.line("return nil");
+                    }
+                },
+                "end",
+            );
+            w.line("tree:set_len(offset - start)");
+        },
+        "end",
+    );
 }
 
 /// Evaluates a `size:` or `count:` Expression into the Lua local `local`, stopping the
@@ -402,45 +507,52 @@ fn conditional(w: &mut Writer, model: &Dissector, path: &str, condition: &Comput
     );
 }
 
+/// Writes the array at `path`, repeating `element` (spec §3.7). Each element is its own subtree
+/// item; one that reads no bytes would repeat forever under `repeat: to_end`, so it stops the
+/// array as malformed.
+fn array(w: &mut Writer, model: &Dissector, path: &str, repeat: &Repeat, element: &Stmt, scope: Scope) {
+    let reported = reported_path(path, scope);
+    let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
+    let read_element = |w: &mut Writer| {
+        subtree(w, model, element, scope, Some("i"));
+        w.block("if offset == start then", |w| invalid(w, "\"element \" .. i .. \" is empty\""), "end");
+    };
+    w.line(&format!("-- Field: {path}"));
+    w.block(
+        "do",
+        |w| match repeat {
+            Repeat::Count(count) => {
+                evaluate(w, "count", "count", count, &invalid);
+                w.block("for i = 0, count - 1 do", read_element, "end");
+            }
+            Repeat::ToEnd => {
+                w.line("local i = 0");
+                w.block(
+                    "while offset < tvb:len() do",
+                    |w| {
+                        read_element(w);
+                        w.line("i = i + 1");
+                    },
+                    "end",
+                );
+            }
+        },
+        "end",
+    );
+}
+
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
         Stmt::If { path, condition, body } => conditional(w, model, path, condition, body, scope),
+        Stmt::Switch { field, path, subject, names, cases, default } => {
+            let stmt = SwitchStmt { field, subject, names: *names, cases, default: default.as_ref() };
+            switch(w, model, path, &stmt, scope);
+        }
         Stmt::Structure { path, .. } | Stmt::Call { path, .. } => {
             w.line(&format!("-- Field: {path}"));
             w.block("do", |w| subtree(w, model, stmt, scope, None), "end");
         }
-        Stmt::Array { path, repeat, element } => {
-            let reported = reported_path(path, scope);
-            let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
-            // Each element is its own subtree item; one that reads no bytes would repeat forever
-            // under `repeat: to_end`, so it stops the array as malformed (spec §3.7).
-            let read_element = |w: &mut Writer| {
-                subtree(w, model, element, scope, Some("i"));
-                w.block("if offset == start then", |w| invalid(w, "\"element \" .. i .. \" is empty\""), "end");
-            };
-            w.line(&format!("-- Field: {path}"));
-            w.block(
-                "do",
-                |w| match repeat {
-                    Repeat::Count(count) => {
-                        evaluate(w, "count", "count", count, &invalid);
-                        w.block("for i = 0, count - 1 do", read_element, "end");
-                    }
-                    Repeat::ToEnd => {
-                        w.line("local i = 0");
-                        w.block(
-                            "while offset < tvb:len() do",
-                            |w| {
-                                read_element(w);
-                                w.line("i = i + 1");
-                            },
-                            "end",
-                        );
-                    }
-                },
-                "end",
-            );
-        }
+        Stmt::Array { path, repeat, element } => array(w, model, path, repeat, element, scope),
         Stmt::Read { field, length, decode, path, value, hidden, bits } => {
             let local = field_ref(model, field);
             let reported = reported_path(path, scope);

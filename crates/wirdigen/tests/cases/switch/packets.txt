@@ -1,0 +1,14 @@
+# kind=1 (Login): user_id=42 flags=1; mode=2, so the trailer's subject is 4: short=0x0102.
+0000  01 00 00 00 2a 01 02 01 02
+# kind=2 (inline): user_id=7 size=2 note=aa:bb; mode=8, so the subject is 1: Pair a=5 b=6.
+0000  02 00 00 00 07 02 aa bb 08 05 06
+# kind=17 (Vendor): code=16, so detail reads v16=9; mode=4, so the subject is 2: no case, so
+# ff:ee are shown raw with a note.
+0000  11 10 09 04 ff ee
+# kind=17 (Vendor): code=5, so detail's default reads a Login: user_id=1 flags=0; mode=0, so
+# the trailer's subject divides by zero.
+0000  11 05 00 00 00 01 00 00
+# kind=9: the default reads raw=cc; mode=4: no case, and no bytes left to show.
+0000  09 cc 04
+# kind=1 (Login): user_id is truncated.
+0000  01 00 00

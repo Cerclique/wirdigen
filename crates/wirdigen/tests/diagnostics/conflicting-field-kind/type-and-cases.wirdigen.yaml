@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - name: body
+    type: uint8
+    default: [ { name: a, type: uint8 } ]

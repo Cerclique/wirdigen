@@ -1,0 +1,11 @@
+name: demo
+fields:
+  - { name: node, type: Node }
+types:
+  Node:
+    fields:
+      - { name: kind, type: uint8 }
+      - name: next
+        switch: kind
+        cases:
+          1: Node

@@ -673,6 +673,52 @@ fields:
 
 **Fix**: give each value one label, here by splitting the range into `"0-4"` and `"6-9"`.
 
+## `overlapping-cases` {#overlapping-cases}
+
+**Severity**: error
+
+Two cases of a [`switch`](reference/conditionals.md#switch) match a same value: a value inside
+a range, two ranges that share values, or one value spelt twice. A value picks one layout, so
+the description has no single meaning. The subject is a signed 64-bit value, so `-1` and
+`18446744073709551615` are the same case.
+
+```yaml,diagnostic=overlapping-cases
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      "1-5": [ { name: small, type: uint8 } ]
+      3: [ { name: three, type: uint16 } ]
+```
+
+**Fix**: give each value to a single case, here by splitting the range into `"1-2"` and
+`"4-5"`.
+
+## `conflicting-filter-name` {#conflicting-filter-name}
+
+**Severity**: error
+
+Two Fields reach one filter name with ProtoFields that differ in type, `display:`, value
+labels, `label:` or `description:`. The cases of a [`switch`](reference/conditionals.md#switch-tree)
+add no segment to filter names, so a Field of one case and a Field of the same name in another
+reach the same name, and Wireshark can register only one ProtoField under it. Wirdigen never
+renames a Field on its own: filter names are what the description spells.
+
+```yaml,diagnostic=conflicting-filter-name
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: [ { name: id, type: uint32 } ]
+      2: [ { name: id, type: uint16, label: Short id } ]
+```
+
+**Fix**: rename one of the Fields, or make them match so they share the ProtoField.
+
 ## `conflicting-mappings` {#conflicting-mappings}
 
 **Severity**: error
@@ -823,9 +869,11 @@ fields:
 
 **Severity**: error
 
-An Expression reads a Field that is read only under an [`if:`](reference/conditionals.md), or a
-Field inside one, from outside that `if:`. When the condition is false the Field has no value.
-Two `if:` with the same condition still count as different: conditions are never compared.
+An Expression reads a Field that is read only under an [`if:`](reference/conditionals.md) or
+in a [`switch` case](reference/conditionals.md#switch-scope), or a Field inside one, from
+outside that `if:` or case. When the condition is false, or another case matched, the Field has
+no value. Two `if:` with the same condition still count as different: conditions are never
+compared.
 
 ```yaml,diagnostic=conditional-reference
 name: demo
@@ -852,14 +900,14 @@ fields:
 
 **Severity**: error
 
-The description uses part of the format that this version of Wirdigen does not read yet: a
-`switch:` Field, `hidden:` on a Field that is not a [bitfield](reference/bitfields.md), or
-`expect:` on a bitfield sub-Field. A newer Wirdigen will accept it.
+The description uses part of the format that this version of Wirdigen does not read yet:
+`hidden:` on a Field that is not a [bitfield](reference/bitfields.md), or `expect:` on a
+bitfield sub-Field. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo
 fields:
-  - { name: body, switch: kind }
+  - { name: id, type: uint8, hidden: true }
 ```
 
 **Fix**: upgrade Wirdigen, or describe the layout with what this version supports.

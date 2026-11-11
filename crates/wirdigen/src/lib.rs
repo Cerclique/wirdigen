@@ -38,6 +38,7 @@ mod diagnostic;
 mod emit;
 mod expr;
 mod field;
+mod filter;
 mod keys;
 mod lower;
 #[cfg(test)]
@@ -48,6 +49,7 @@ mod render;
 mod scalar;
 mod scope;
 mod source;
+mod switch;
 mod types;
 mod yaml;
 

@@ -311,14 +311,16 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 
 - `if: <expr>` on a Field reads it only when the Expression is non-zero. It goes on any Field kind (a built-in, an inline structure, a Field of a Type, an array, where it is evaluated before `count:`) and also takes an integer constant. A condition that faults is malformed at runtime (§4.4), even a constant one; a negative one is true. A Field after a conditional `size: "_remaining"` Field or `repeat: to_end` array is not `unreachable-field`.
 - `switch: <expr>` with `cases:` and an optional `default:` picks a layout from a value:
-  - case keys are integers or `"low-high"` range strings;
-  - each case is a Type name or inline Fields;
-  - overlapping cases (values or ranges) are an error;
-  - with no matching case and no `default:`, the bytes are shown raw with an expert info note.
-- A message type is a `switch` case using a Type. When the `switch:` subject is a bare Field path, the message type's name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number.
-- A `switch` Field accepts only `name`, `label`, `description`, `if`, `hidden`, `switch`, `cases` and `default`, never `values:`.
+  - the subject is an Expression or an integer constant, computed once; one that faults is malformed at runtime (§4.4);
+  - case keys are integers or `"low-high"` range strings, read like `values:` keys (§3.4.7); `cases:` is required and non-empty (`missing-key`, `wrong-value-type`);
+  - each case is a Type name or inline Fields; a built-in type name is `wrong-value-type`. Inline Fields are read in the byte order of the structure holding the `switch`, a Type in its own (§3.5);
+  - overlapping cases (values or ranges) are the error `overlapping-cases`, comparing values as the subject has them (§4.4), so `-1` and `18446744073709551615` overlap;
+  - with no matching case and no `default:`, the rest of the message is shown raw as a bytes item filtered `<protocol>._unmatched`, with an expert info note (group Undecoded) filtered `<protocol>._undecoded.unmatched`, and the dissection stops: nothing says where the unknown layout ends.
+- A case adds no tree level either: its Fields go straight into the `switch` Field's subtree item.
+- A message type is a `switch` case using a Type. The `switch` Field's item shows the message type's name after its label ("Body: Login"). When the `switch:` subject is a bare Field path to a Field read by the same dissect function (§7.3), the name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number, and so does a path a Type resolves at its use site (§4.3), which can name a different Field at each use.
+- A `switch` Field accepts only `name`, `label`, `description`, `if`, `hidden`, `switch`, `cases` and `default`, never `values:`. Another key is reported under the name it has elsewhere: a length key `unexpected-length`, `endian` `invalid-endian`, `bits` `invalid-bits`, `count`/`repeat` `invalid-array`, a value key `incompatible-display`. `cases` or `default` without `switch` is `missing-field-kind`, or `conflicting-field-kind` beside `type` or `fields`.
 - Fields under `if:` or inside a case can be referenced only from inside the same conditional scope (§4.3). The way out is an inline structure carrying the `if:`.
-- `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField under the rule of §3.4.9; otherwise it is the error `conflicting-filter-name`.
+- `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField under the rule of §3.4.9; otherwise it is the error `conflicting-filter-name`. For a Field of a Type, its "type" is the Type: two Fields of different Types at one path conflict.
 
 ### 3.10 Padding, hidden Fields, constraints and handoff
 
@@ -443,7 +445,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 ### 5.1 Tree
 
 - The tree root shows the full name (§3.3). Each structure Field is a subtree, and each array element is its own subtree item (`items[0]`).
-- Padding is one "Padding" item. Hidden Fields are not shown. Unmatched `switch` bytes are shown raw with an expert info note.
+- Padding is one "Padding" item. Hidden Fields are not shown. Unmatched `switch` bytes are shown raw with an expert info note (§3.9).
 
 ### 5.2 Filter names
 
@@ -455,7 +457,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`.
+- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
@@ -511,14 +513,14 @@ Errors:
 - `mismatched-bit-widths`: bitfield widths not adding up to the container; `invalid-bit-width`: a width below 1;
 - `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field, or that goes into an array from outside its elements; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; `conditional-reference`: a Field under `if:` or inside a case, or a Field inside one, used outside its conditional scope (§4.3);
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
-- overlapping `switch` cases;
+- `overlapping-cases`: overlapping `switch` cases (§3.9);
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
 - `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - invalid ports and port ranges (§3.12);
 - `invalid-protocol-name`, `invalid-protocol-title`;
-- `conflicting-filter-name`;
+- `conflicting-filter-name`: two Fields reaching one filter path whose ProtoFields do not match (§3.4.9, §3.9);
 - unknown or duplicate keys, and the YAML subset violations of §3.1.
 
 Warnings:

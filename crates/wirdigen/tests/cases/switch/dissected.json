@@ -1,0 +1,95 @@
+[
+  {
+    "switch.kind": "1",
+    "switch.body": {
+      "switch.body.user_id": "42",
+      "switch.body.flags": "1"
+    },
+    "switch.mode": "2",
+    "switch.trailer": {
+      "switch.trailer.short": "258"
+    }
+  },
+  {
+    "switch.kind": "2",
+    "switch.body": {
+      "switch.body.user_id": "7",
+      "switch.body.size": "2",
+      "switch.body.note": "aa:bb"
+    },
+    "switch.mode": "8",
+    "switch.trailer": {
+      "switch.trailer.a": "5",
+      "switch.trailer.b": "6"
+    }
+  },
+  {
+    "switch.kind": "17",
+    "switch.body": {
+      "switch.body.code": "16",
+      "switch.body.detail": {
+        "switch.body.detail.v16": "9"
+      }
+    },
+    "switch.mode": "4",
+    "switch.trailer": {
+      "switch._unmatched": "ff:ee",
+      "switch._unmatched_tree": {
+        "_ws.expert": {
+          "switch._undecoded.unmatched": "",
+          "_ws.expert.message": "No case for 2: trailer",
+          "_ws.expert.severity": "4194304",
+          "_ws.expert.group": "83886080"
+        }
+      }
+    }
+  },
+  {
+    "switch.kind": "17",
+    "switch.body": {
+      "switch.body.code": "5",
+      "switch.body.detail": {
+        "switch.body.detail.user_id": "1",
+        "switch.body.detail.flags": "0"
+      }
+    },
+    "switch.mode": "0",
+    "_ws.expert": {
+      "switch._malformed.expression": "",
+      "_ws.expert.message": "Malformed: division by zero: trailer",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "switch.kind": "9",
+    "switch.body": {
+      "switch.body.raw": "cc"
+    },
+    "switch.mode": "4",
+    "switch.trailer": {
+      "switch._unmatched": "",
+      "switch._unmatched_tree": {
+        "_ws.expert": {
+          "switch._undecoded.unmatched": "",
+          "_ws.expert.message": "No case for 2: trailer",
+          "_ws.expert.severity": "4194304",
+          "_ws.expert.group": "83886080"
+        }
+      }
+    }
+  },
+  {
+    "switch.kind": "1",
+    "switch.body": {
+      "_ws.expert": {
+        "switch._malformed.truncated": "",
+        "_ws.expert.message": "Malformed: truncated: body.user_id",
+        "_ws.expert.severity": "8388608",
+        "_ws.expert.group": "117440512"
+      },
+      "_ws.malformed": "Malformed Packet"
+    }
+  }
+]

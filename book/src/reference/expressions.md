@@ -1,7 +1,7 @@
 # Expressions
 
 An Expression is a small formula that computes a number from constants and Fields read
-earlier: a size, a count, a condition, and later a `switch` subject. It is written as a YAML
+earlier: a size, a count, a condition or a `switch` subject. It is written as a YAML
 string.
 
 ```yaml

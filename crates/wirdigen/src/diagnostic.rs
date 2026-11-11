@@ -76,6 +76,8 @@ names! {
     InvalidDescription => "invalid-description", Error;
     InvalidUnit => "invalid-unit", Error;
     OverlappingValues => "overlapping-values", Error;
+    OverlappingCases => "overlapping-cases", Error;
+    ConflictingFilterName => "conflicting-filter-name", Error;
     ConflictingMappings => "conflicting-mappings", Error;
     UnknownEnum => "unknown-enum", Error;
     InvalidBits => "invalid-bits", Error;

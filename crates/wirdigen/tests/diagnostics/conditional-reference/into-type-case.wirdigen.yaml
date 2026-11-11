@@ -1,0 +1,12 @@
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: Header
+  - { name: data, type: bytes, size: body.len }
+types:
+  Header:
+    fields:
+      - { name: len, type: uint8 }
