@@ -5,5 +5,11 @@
 
 #[test]
 fn cli() {
-    trycmd::TestCases::new().case("tests/cli/*.toml");
+    let cases = trycmd::TestCases::new();
+    cases.case("tests/cli/*.toml");
+    // annotate-snippets uses another palette on Windows, so coloured goldens only hold elsewhere.
+    // Which inputs turn colour on is the same on every OS and unit-tested in `src/color.rs`.
+    if cfg!(windows) {
+        cases.skip("tests/cli/color-always.toml").skip("tests/cli/clicolor-force.toml");
+    }
 }
