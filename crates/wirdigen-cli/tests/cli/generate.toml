@@ -1,0 +1,7 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "minimal.wirdigen.yaml"]
+fs.base = "../../../wirdigen/tests/valid"
+fs.sandbox = true
+stdout = ""
+stderr = ""

@@ -1,0 +1,12 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["validate"]
+status.code = 2
+stderr = """
+error: the following required arguments were not provided:
+  <INPUTS>...
+
+Usage: wirdigen[EXE] validate <INPUTS>...
+
+For more information, try '--help'.
+"""

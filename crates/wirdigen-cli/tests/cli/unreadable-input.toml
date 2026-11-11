@@ -1,0 +1,8 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["validate", "missing.wirdigen.yaml"]
+status.code = 1
+stdout = ""
+stderr = """
+error: cannot read `missing.wirdigen.yaml`: [..]
+"""
