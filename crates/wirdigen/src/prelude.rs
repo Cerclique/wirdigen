@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn always_included_chunks_exist() {
-        assert!(!select(&[VERSION, MALFORMED, BOUNDS]).is_empty());
+        assert_ne!(select(&[VERSION, MALFORMED, BOUNDS]), Vec::<&str>::new());
     }
 
     #[test]

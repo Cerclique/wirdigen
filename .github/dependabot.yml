@@ -22,3 +22,11 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build(deps)
