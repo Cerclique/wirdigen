@@ -124,8 +124,8 @@ enums:
   where the unknown layout ends. It is a note, not "Malformed": the packet may be fine, only
   this description does not know it.
 
-A `switch` Field takes `name:`, `label:`, `description:`, `if:`, `switch:`, `cases:` and
-`default:` only (and `hidden:` later). Any other key is an error under the name the key has
+A `switch` Field takes `name:`, `label:`, `description:`, `if:`, [`hidden:`](fields.md#hidden),
+`switch:`, `cases:` and `default:` only. Any other key is an error under the name the key has
 elsewhere: `values:` or `display:` is
 [`incompatible-display`](../diagnostics.md#incompatible-display), `size:`
 [`unexpected-length`](../diagnostics.md#unexpected-length), `count:` or `repeat:`

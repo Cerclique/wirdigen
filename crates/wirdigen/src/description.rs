@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
-use crate::field::{self, Endian, Field, RawField};
+use crate::field::{self, Endian, Entry, RawEntry};
 use crate::filter;
 use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, RawEnum, Table};
@@ -26,7 +26,7 @@ pub(crate) struct Description {
     pub(crate) title: Option<Spanned<String>>,
     pub(crate) endian: Option<Spanned<String>>,
     /// The top-level Fields, in order.
-    pub(crate) fields: Vec<RawField>,
+    pub(crate) fields: Vec<RawEntry>,
     /// The Types of `types:`, in order.
     pub(crate) types: Vec<RawType>,
     /// The Enums of `enums:`, in order.
@@ -56,7 +56,7 @@ impl Description {
 pub(crate) struct Protocol {
     pub(crate) name: String,
     pub(crate) title: Option<String>,
-    pub(crate) fields: Vec<Field>,
+    pub(crate) fields: Vec<Entry>,
     /// The Types, each after the Types it uses (spec §7.3).
     pub(crate) types: Vec<NamedType>,
     /// The tables of the Enums, by name.

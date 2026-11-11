@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, Name, record};
-use crate::field::{self, Endian, Field, RawField};
+use crate::field::{self, Endian, Entry, RawEntry};
 use crate::keys::{Spanned, closest, duplicate_key, expect_string, is_type_name, read_keys, wrong_type};
 use crate::mapping::Enums;
 use crate::scope::{FreeRef, Scope};
@@ -18,12 +18,12 @@ const KEYS: [&str; 2] = ["fields", "endian"];
 pub(crate) struct RawType {
     name: Spanned<String>,
     endian: Option<Spanned<String>>,
-    fields: Vec<RawField>,
+    fields: Vec<RawEntry>,
 }
 
 impl RawType {
     /// The Fields of the Type body, as written.
-    pub(crate) fn fields(&self) -> &[RawField] {
+    pub(crate) fn fields(&self) -> &[RawEntry] {
         &self.fields
     }
 }
@@ -32,7 +32,7 @@ impl RawType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NamedType {
     pub(crate) name: String,
-    pub(crate) fields: Vec<Field>,
+    pub(crate) fields: Vec<Entry>,
 }
 
 /// Stage 2: reads the top-level `types:`, a mapping from Type names to Type bodies.
@@ -101,7 +101,7 @@ impl<'a> Types<'a> {
     }
 
     /// The Fields of the Type named `name`, as written.
-    pub(crate) fn body(&self, name: &str) -> Option<&'a [RawField]> {
+    pub(crate) fn body(&self, name: &str) -> Option<&'a [RawEntry]> {
         self.position(name).map(|i| self.raw[i].fields.as_slice())
     }
 
@@ -151,11 +151,11 @@ impl<'a> Types<'a> {
 /// so lowering can define each one before its callers.
 pub(crate) fn check<'a>(
     raw: &'a [RawType],
-    top: &'a [RawField],
+    top: &'a [RawEntry],
     endian: Endian,
     enums: &mut Enums<'_>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> (Vec<Field>, Vec<NamedType>) {
+) -> (Vec<Entry>, Vec<NamedType>) {
     let mut types = Types::new(raw);
     let mut bodies = Vec::new();
     for t in raw {

@@ -7,7 +7,7 @@
 use std::ops::Range;
 
 use crate::diagnostic::{Diagnostic, Name, record};
-use crate::field::{self, Builtin, Endian, Field, Operand, RawAmount, RawField};
+use crate::field::{self, Builtin, Endian, Entry, Operand, RawAmount, RawEntry};
 use crate::keys::{Keys, Spanned, duplicate_key, wrong_type};
 use crate::mapping::{self, Enums, Key};
 use crate::scalar::{Kind, resolve_plain};
@@ -48,7 +48,7 @@ pub(crate) enum RawBody {
     /// A Type, by name.
     Type(Spanned<String>),
     /// Inline Fields, spelled like an inline structure.
-    Fields(Vec<RawField>),
+    Fields(Vec<RawEntry>),
 }
 
 impl RawSwitch {
@@ -183,7 +183,7 @@ impl Switch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Body {
     /// Inline Fields.
-    Fields(Vec<Field>),
+    Fields(Vec<Entry>),
     /// The Fields of a Type, read by its dissect function.
     Type {
         name: String,

@@ -1,0 +1,4 @@
+name: demo
+fields:
+  - { name: rest, type: bytes, size: "_remaining" }
+  - { padding: 2 }

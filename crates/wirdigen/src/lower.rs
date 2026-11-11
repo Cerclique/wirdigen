@@ -228,6 +228,15 @@ pub(crate) enum Ref {
 /// One step of a dissect function.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Stmt {
+    /// `{ padding: n }` (spec §3.10): bytes skipped, bounds-checked and shown as one "Padding"
+    /// item with no `ProtoField`.
+    Padding {
+        /// The path of the structure the padding is in, empty at the top level, for the
+        /// malformed-packet reports.
+        parent: String,
+        /// How many bytes are skipped: [`Length::Fixed`] or [`Length::Expression`].
+        length: Length,
+    },
     /// A bounds-checked read added to the tree.
     Read {
         field: Ref,
@@ -248,6 +257,9 @@ pub(crate) enum Stmt {
         field: Ref,
         /// The Field's path, for the comment.
         path: String,
+        /// Whether the subtree item is hidden: left out of the tree with what it holds, still
+        /// filtered (spec §3.10).
+        hidden: bool,
         /// The statements of its Fields, inside the subtree.
         body: Vec<Stmt>,
     },
@@ -257,6 +269,8 @@ pub(crate) enum Stmt {
         field: Ref,
         /// The Field's path, for the comment.
         path: String,
+        /// Whether the subtree item is hidden, as for [`Stmt::Structure`].
+        hidden: bool,
         /// The Type's name.
         ty: String,
         /// The site table of this use.
@@ -290,6 +304,8 @@ pub(crate) enum Stmt {
         field: Ref,
         /// The Field's path, for the comment and the reports.
         path: String,
+        /// Whether the subtree item is hidden, as for [`Stmt::Structure`].
+        hidden: bool,
         subject: Computed,
         /// The table the subtree item names the subject's value from, an index into
         /// [`Dissector::names`]; without one it shows the number.
@@ -509,7 +525,7 @@ impl Plan {
     /// The plan of a function reading `fields` that returns `exports`, adding to `demands` the
     /// paths it reads inside each Type.
     fn new(
-        fields: &[Field],
+        fields: &[field::Entry],
         exports: BTreeSet<Vec<String>>,
         demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>,
     ) -> Self {
@@ -528,7 +544,12 @@ impl Plan {
     }
 
     /// Gives the value at `path` a local: the Field's own, or the table of the Type it is in.
-    fn keep(&mut self, fields: &[Field], path: &[String], demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>) {
+    fn keep(
+        &mut self,
+        fields: &[field::Entry],
+        path: &[String],
+        demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>,
+    ) {
         let (depth, field) = find(fields, path).expect("validation resolved the path");
         match &field.kind {
             FieldKind::Type { name, .. } => {
@@ -615,9 +636,9 @@ impl Plan {
 /// of the path, or the Field of a Type the path goes into. Inside a `switch` Field the path goes
 /// on in the case that has the rest of it: cases reaching one path share its `ProtoField`, so
 /// they have the same kind of Field there (spec §3.9).
-fn find<'f>(fields: &'f [Field], path: &[String]) -> Option<(usize, &'f Field)> {
-    fn from<'f>(fields: &'f [Field], path: &[String], depth: usize) -> Option<(usize, &'f Field)> {
-        let field = fields.iter().find(|f| f.name == path[depth])?;
+fn find<'f>(fields: &'f [field::Entry], path: &[String]) -> Option<(usize, &'f Field)> {
+    fn from<'f>(fields: &'f [field::Entry], path: &[String], depth: usize) -> Option<(usize, &'f Field)> {
+        let field = fields.iter().filter_map(field::Entry::field).find(|f| f.name == path[depth])?;
         if depth + 1 == path.len() {
             return Some((depth, field));
         }
@@ -634,10 +655,19 @@ fn find<'f>(fields: &'f [Field], path: &[String]) -> Option<(usize, &'f Field)> 
     from(fields, path, 0)
 }
 
-/// Calls `f` with every reference the Expressions of `fields` and the context tables of their
+/// Calls `f` with every reference the Expressions of `entries` and the context tables of their
 /// uses of Types make, inline structures and `switch` cases included.
-fn references(fields: &[Field], f: &mut impl FnMut(&Reference)) {
-    for field in fields {
+fn references(entries: &[field::Entry], f: &mut impl FnMut(&Reference)) {
+    for entry in entries {
+        let field = match entry {
+            field::Entry::Field(field) => field,
+            field::Entry::Padding(amount) => {
+                if let Amount::Expression { references, .. } = amount {
+                    references.values().for_each(&mut *f);
+                }
+                continue;
+            }
+        };
         if let Some(Operand::Expression { references, .. }) = &field.condition {
             references.values().for_each(&mut *f);
         }
@@ -691,7 +721,7 @@ struct Lowering<'p> {
     /// The plan of the dissect function being lowered.
     plan: Plan,
     /// The Fields of the dissect function being lowered: the top-level layout or a Type body.
-    root: &'p [Field],
+    root: &'p [field::Entry],
     types: &'p [NamedType],
     /// The protocol's filter name, the first segment of every `ProtoField`'s.
     filter_name: &'p str,
@@ -707,8 +737,23 @@ struct Lowering<'p> {
 
 impl<'p> Lowering<'p> {
     /// The statements of a structure outside any Type whose Fields' paths start with `parent`.
-    fn structure(&mut self, fields: &'p [Field], parent: &[&'p str]) -> Vec<Stmt> {
-        fields.iter().map(|field| self.field(field, parent)).collect()
+    fn structure(&mut self, entries: &'p [field::Entry], parent: &[&'p str]) -> Vec<Stmt> {
+        entries
+            .iter()
+            .map(|entry| match entry {
+                field::Entry::Field(field) => self.field(field, parent),
+                field::Entry::Padding(amount) => self.padding(amount, parent),
+            })
+            .collect()
+    }
+
+    /// The statement skipping the bytes of a padding in the structure at `parent`.
+    fn padding(&mut self, amount: &Amount, parent: &[&str]) -> Stmt {
+        let length = match amount {
+            Amount::Constant(size) => Length::Fixed(*size),
+            Amount::Expression { expr, references } => Length::Expression(self.computed(expr, references)),
+        };
+        Stmt::Padding { parent: parent.join("."), length }
     }
 
     /// Registers the `ProtoField`s of a Field outside any Type whose path starts with `parent`,
@@ -730,27 +775,29 @@ impl<'p> Lowering<'p> {
                 self.read(value, Ref::Local(index), &segments, field.hidden, bits)
             }
             FieldKind::Structure(fields) => {
-                Stmt::Structure { field: Ref::Local(index), body: self.structure(fields, &segments), path }
+                let body = self.structure(fields, &segments);
+                Stmt::Structure { field: Ref::Local(index), body, path, hidden: field.hidden }
             }
-            FieldKind::Type { name, context } => {
+            FieldKind::Type { name, .. } => {
                 let site = self.site(name, &segments);
                 let local =
                     unique(&format!("site_{}", segments.join("__")), |n| self.sites.iter().any(|s| s.local == n));
                 self.sites.push(SharedSite { local, site });
                 let site = Ref::Local(self.sites.len() - 1);
-                self.call(Ref::Local(index), &segments, name, site, context)
+                self.call(Ref::Local(index), field, &segments, site)
             }
-            FieldKind::Switch(switch) => self.switch(Ref::Local(index), switch, &segments, None),
+            FieldKind::Switch(switch) => self.switch(Ref::Local(index), field, switch, &segments, None),
         };
         let stmt = self.array(field, &segments, stmt);
         self.condition(field, &segments, stmt)
     }
 
-    /// The statement of the `switch` Field at `segments`, whose `ProtoField` is `field`. Inside a
-    /// Type, its cases add their slots to `slots`.
+    /// The statement of the `switch` Field `field` at `segments`, whose `ProtoField` is
+    /// `proto_field`. Inside a Type, its cases add their slots to `slots`.
     fn switch(
         &mut self,
-        field: Ref,
+        proto_field: Ref,
+        field: &Field,
         switch: &'p Switch,
         segments: &[&'p str],
         mut slots: Option<&mut Vec<Slot<'p>>>,
@@ -766,7 +813,8 @@ impl<'p> Lowering<'p> {
         if default.is_none() {
             self.use_chunk(prelude::UNMATCHED);
         }
-        Stmt::Switch { field, path: segments.join("."), subject, names, cases, default }
+        let path = segments.join(".");
+        Stmt::Switch { field: proto_field, path, hidden: field.hidden, subject, names, cases, default }
     }
 
     /// What a case of the `switch` Field at `segments` reads. A case adds no segment to paths, so
@@ -838,7 +886,7 @@ impl<'p> Lowering<'p> {
     }
 
     /// The Field of a built-in type at `path` from `fields`, going into the Types on the way.
-    fn builtin_at(&self, fields: &'p [Field], path: &[String]) -> Option<&'p BuiltinField> {
+    fn builtin_at(&self, fields: &'p [field::Entry], path: &[String]) -> Option<&'p BuiltinField> {
         let (depth, field) = find(fields, path)?;
         match &field.kind {
             FieldKind::Builtin(value) if depth + 1 == path.len() => Some(value),
@@ -895,10 +943,19 @@ impl<'p> Lowering<'p> {
 
     /// The statements of a structure inside a Type whose Fields' paths, relative to the Type,
     /// start with `parent`, adding the slots they read to `slots`.
-    fn type_structure(&mut self, fields: &'p [Field], parent: &[&'p str], slots: &mut Vec<Slot<'p>>) -> Vec<Stmt> {
-        fields
+    fn type_structure(
+        &mut self,
+        entries: &'p [field::Entry],
+        parent: &[&'p str],
+        slots: &mut Vec<Slot<'p>>,
+    ) -> Vec<Stmt> {
+        entries
             .iter()
-            .map(|field| {
+            .map(|entry| {
+                let field = match entry {
+                    field::Entry::Field(field) => field,
+                    field::Entry::Padding(amount) => return self.padding(amount, parent),
+                };
                 let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
                 let path = segments.join(".");
                 let slot = |slots: &mut Vec<Slot<'p>>, prefix: &str, segments: Vec<&'p str>, kind: SlotKind<'p>| {
@@ -921,13 +978,13 @@ impl<'p> Lowering<'p> {
                     }
                     FieldKind::Structure(fields) => {
                         let body = self.type_structure(fields, &segments, slots);
-                        Stmt::Structure { field: field_ref, path, body }
+                        Stmt::Structure { field: field_ref, path, body, hidden: field.hidden }
                     }
-                    FieldKind::Type { name, context } => {
+                    FieldKind::Type { name, .. } => {
                         let site = slot(slots, "t_", segments.clone(), SlotKind::Site(name));
-                        self.call(field_ref, &segments, name, site, context)
+                        self.call(field_ref, field, &segments, site)
                     }
-                    FieldKind::Switch(switch) => self.switch(field_ref, switch, &segments, Some(slots)),
+                    FieldKind::Switch(switch) => self.switch(field_ref, field, switch, &segments, Some(slots)),
                 };
                 let stmt = self.array(field, &segments, stmt);
                 self.condition(field, &segments, stmt)
@@ -954,11 +1011,14 @@ impl<'p> Lowering<'p> {
         Site { path: segments.join("."), entries }
     }
 
-    /// The statement calling the dissect function of the Type `ty` for the Field at `segments`.
-    fn call(&mut self, field: Ref, segments: &[&str], ty: &str, site: Ref, context: &[(String, Reference)]) -> Stmt {
+    /// The statement calling the dissect function of the Type of `field`, a Field of a Type at
+    /// `segments` whose `ProtoField` is `proto_field`, with the site table `site`.
+    fn call(&mut self, proto_field: Ref, field: &Field, segments: &[&str], site: Ref) -> Stmt {
+        let FieldKind::Type { name, context } = &field.kind else { unreachable!("only a Field of a Type is called") };
         let context = context.iter().map(|(key, reference)| (key.clone(), self.reference(reference))).collect();
         let result = self.plan.results.get(&owned(segments)).cloned();
-        Stmt::Call { field, path: segments.join("."), ty: ty.to_owned(), site, context, result }
+        let (path, ty, hidden) = (segments.join("."), name.clone(), field.hidden);
+        Stmt::Call { field: proto_field, path, hidden, ty, site, context, result }
     }
 
     /// How an Expression reads `reference`, using the prelude chunk a sub-Field needs.
@@ -1465,6 +1525,7 @@ mod tests {
                 | Stmt::Switch { path, .. } => {
                     panic!("{path} is not a read")
                 }
+                Stmt::Padding { .. } => panic!("padding is not a read"),
             })
             .collect()
     }
@@ -1555,7 +1616,8 @@ mod tests {
             FieldKind::Builtin(value) => value.mapping.clone(),
             FieldKind::Structure(_) | FieldKind::Type { .. } | FieldKind::Switch(_) => None,
         };
-        assert_eq!(mapping(&protocol.fields[0]), mapping(&protocol.fields[1]));
+        let fields: Vec<&Field> = protocol.fields.iter().filter_map(field::Entry::field).collect();
+        assert_eq!(mapping(fields[0]), mapping(fields[1]));
         let d = lower(&protocol, "x");
         let locals: Vec<&str> = d.tables.iter().map(|t| t.local.as_str()).collect();
         assert_eq!(locals, ["enum_Kind", "enum_Kind_2"]);
@@ -1628,7 +1690,7 @@ mod tests {
                 Stmt::Array { element: inner, .. } | Stmt::If { body: inner, .. } => {
                     all_decodes(std::slice::from_ref(inner))
                 }
-                Stmt::Call { .. } | Stmt::Switch { .. } => Vec::new(),
+                Stmt::Call { .. } | Stmt::Switch { .. } | Stmt::Padding { .. } => Vec::new(),
             })
             .collect()
     }
@@ -1678,10 +1740,10 @@ mod tests {
                 .iter()
                 .flat_map(|stmt| match stmt {
                     Stmt::Read { field, path, .. } | Stmt::Call { field, path, .. } => vec![slot(field, path)],
-                    Stmt::Structure { field, path, body } => {
+                    Stmt::Structure { field, path, body, .. } => {
                         [slot(field, path)].into_iter().chain(slots(body)).collect()
                     }
-                    Stmt::Switch { .. } => Vec::new(),
+                    Stmt::Switch { .. } | Stmt::Padding { .. } => Vec::new(),
                     Stmt::Array { element: inner, .. } | Stmt::If { body: inner, .. } => {
                         slots(std::slice::from_ref(inner))
                     }
@@ -1805,7 +1867,7 @@ mod tests {
                 Stmt::Array { element: inner, .. } | Stmt::If { body: inner, .. } => {
                     find(std::slice::from_ref(inner), path)
                 }
-                Stmt::Read { .. } | Stmt::Call { .. } | Stmt::Switch { .. } => None,
+                Stmt::Read { .. } | Stmt::Call { .. } | Stmt::Switch { .. } | Stmt::Padding { .. } => None,
             })
         }
         find(stmts, path).unwrap_or_else(|| panic!("no statement reads `{path}`"))

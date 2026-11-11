@@ -245,6 +245,8 @@ cases! {
     arrays => "arrays",
     conditionals => "conditionals",
     switch => "switch",
+    hidden => "hidden",
+    padding => "padding",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.

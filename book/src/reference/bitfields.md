@@ -86,9 +86,8 @@ is not read by this version yet
 
 `hidden: true` on the container leaves it and all its sub-Fields out of the tree. On a
 sub-Field it leaves out that sub-Field only. Hidden items are still read: Expressions can use
-them and display filters still match them. In this version, `hidden:` works only on a bitfield
-and its sub-Fields; on any other Field it is
-[`not-supported-yet`](../diagnostics.md#not-supported-yet).
+them and display filters still match them. Any other Field can be
+[hidden](fields.md#hidden) the same way.
 
 ```yaml
 name: demo

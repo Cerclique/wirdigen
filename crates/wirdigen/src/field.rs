@@ -617,6 +617,8 @@ impl Amounts {
     const SIZE: Self = Self { noun: "size", invalid: Name::InvalidSize };
     /// A `count:`: a number of array elements (spec §3.7).
     const COUNT: Self = Self { noun: "count", invalid: Name::InvalidCount };
+    /// A `padding:`: a number of bytes skipped (spec §3.10).
+    const PADDING: Self = Self { noun: "padding", invalid: Name::InvalidPadding };
 }
 
 /// Stage 4: the amount a `size:` or `count:` value at `span`, read from `scope`, gives (spec
@@ -675,10 +677,17 @@ fn paths(expression: &Expr) -> Vec<(&[String], Range<usize>)> {
         .collect()
 }
 
-/// Stage 3: the syntax errors of the Expressions of `fields` and of their inline structures.
-pub(crate) fn expression_errors(fields: &[RawField]) -> Vec<Diagnostic> {
+/// Stage 3: the syntax errors of the Expressions of `entries` and of their inline structures.
+pub(crate) fn expression_errors(entries: &[RawEntry]) -> Vec<Diagnostic> {
     let mut errors = Vec::new();
-    for field in fields {
+    for entry in entries {
+        let field = match entry {
+            RawEntry::Field(field) => field,
+            RawEntry::Padding(padding) => {
+                errors.extend(padding.amount.value.syntax_error().cloned());
+                continue;
+            }
+        };
         errors.extend(field.amounts().filter_map(RawAmount::syntax_error).cloned());
         match &field.kind {
             RawKind::Structure { fields, .. } => errors.extend(expression_errors(fields)),
@@ -739,9 +748,50 @@ enum RawKind {
     /// `type:` with a type name, and the keys present that a Field of a Type does not take.
     Type { name: Spanned<String>, type_use_keys: Vec<Spanned<&'static str>> },
     /// `fields:` with an inline structure, and the keys present that only a value takes.
-    Structure { fields: Vec<RawField>, value_keys: Vec<Spanned<&'static str>> },
+    Structure { fields: Vec<RawEntry>, value_keys: Vec<Spanned<&'static str>> },
     /// `switch:`, with its cases (spec §3.9).
     Switch(RawSwitch),
+}
+
+/// An entry of a structure as written, after stage 2 (spec §3.4.1): a Field, or bytes to skip.
+#[derive(Debug, Clone)]
+pub(crate) enum RawEntry {
+    /// A Field, boxed: it is many times the size of a padding.
+    Field(Box<RawField>),
+    /// `{ padding: n }`.
+    Padding(RawPadding),
+}
+
+/// `{ padding: n }` as written (spec §3.10): bytes skipped, shown as one "Padding" item.
+#[derive(Debug, Clone)]
+pub(crate) struct RawPadding {
+    /// Where the `padding` key is written.
+    key: Range<usize>,
+    /// The number of bytes: a constant or an Expression.
+    amount: Spanned<RawAmount>,
+}
+
+impl RawEntry {
+    /// The Field, when the entry is one.
+    pub(crate) fn field(&self) -> Option<&RawField> {
+        match self {
+            Self::Field(field) => Some(field.as_ref()),
+            Self::Padding(_) => None,
+        }
+    }
+
+    /// The Field paths the entry's own Expressions read, by their segments, with their spans.
+    pub(crate) fn paths(&self) -> Vec<(&[String], Range<usize>)> {
+        match self {
+            Self::Field(field) => field.paths(),
+            Self::Padding(padding) => padding.amount.value.expression().map(paths).unwrap_or_default(),
+        }
+    }
+}
+
+/// The Fields among `entries`, in order.
+pub(crate) fn fields(entries: &[RawEntry]) -> impl Iterator<Item = &RawField> {
+    entries.iter().filter_map(RawEntry::field)
 }
 
 /// A Field as written, after stage 2: its keys are known and of the right kinds.
@@ -761,7 +811,7 @@ pub(crate) struct RawField {
     bits: Option<RawBits>,
     /// How the Field repeats, when it is an array (spec §3.7), at its key.
     array: Option<Spanned<RawArray>>,
-    /// `hidden:`, which leaves the Field out of the tree; only a bitfield takes it in this version.
+    /// `hidden:`, which leaves the Field out of the tree (spec §3.10).
     hidden: Option<Spanned<bool>>,
     /// `if:`, the condition the Field is read under (spec §3.9): a constant or an Expression.
     condition: Option<Spanned<RawAmount>>,
@@ -772,10 +822,10 @@ pub(crate) struct RawField {
 pub(crate) enum Shape<'a> {
     /// A value of a built-in type, with the type's name as written.
     Value(Builtin, &'a str),
-    /// An inline structure, with its Fields.
-    Structure(&'a [RawField]),
-    /// A Field of a Type, with the Type's Fields.
-    Type { name: &'a str, fields: &'a [RawField] },
+    /// An inline structure, with its entries.
+    Structure(&'a [RawEntry]),
+    /// A Field of a Type, with the entries of the Type's body.
+    Type { name: &'a str, fields: &'a [RawEntry] },
     /// A `switch` Field, with its cases.
     Switch(&'a RawSwitch),
     /// A `type:` naming nothing known, which is an error of its own.
@@ -863,6 +913,26 @@ impl RawField {
     }
 }
 
+/// A validated entry of a structure: a Field, or bytes to skip (spec §3.10).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Entry {
+    /// A Field, boxed: it is many times the size of a padding.
+    Field(Box<Field>),
+    /// `{ padding: n }`: as many bytes as the amount gives, shown as one "Padding" item with no
+    /// filter name.
+    Padding(Amount),
+}
+
+impl Entry {
+    /// The Field, when the entry is one.
+    pub(crate) fn field(&self) -> Option<&Field> {
+        match self {
+            Self::Field(field) => Some(field.as_ref()),
+            Self::Padding(_) => None,
+        }
+    }
+}
+
 /// A validated Field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Field {
@@ -911,8 +981,8 @@ pub(crate) enum Array {
 pub(crate) enum FieldKind {
     /// A value of a built-in type.
     Builtin(BuiltinField),
-    /// An inline structure: its Fields, in order, shown as a subtree.
-    Structure(Vec<Field>),
+    /// An inline structure: its entries, in order, shown as a subtree.
+    Structure(Vec<Entry>),
     /// A Field of the named Type, shown as a subtree.
     Type {
         name: String,
@@ -942,12 +1012,24 @@ pub(crate) struct BuiltinField {
     pub(crate) bits: Vec<Bit>,
 }
 
-/// Stage 2: reads one entry of a structure, pushing its errors.
-pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField> {
+/// Stage 2: reads one entry of a structure, a Field or `{ padding: n }`, pushing its errors.
+fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawEntry> {
     let Value::Mapping(entries) = &node.value else {
         errors.push(wrong_type(node.span.clone(), "a Field is a mapping with a `name` and a `type`"));
         return None;
     };
+    let padding = entries.iter().find(|(k, _)| matches!(&k.value, Value::Scalar { text, .. } if text == "padding"));
+    let Some((key, _)) = padding else { return read(entries, node, errors).map(|f| RawEntry::Field(Box::new(f))) };
+    // `{ padding: n }` takes no other key (spec §3.10).
+    let keys = read_keys(entries, &["padding"], errors);
+    let value = keys.get("padding")?;
+    let amount = record(read_amount(value, "padding"), errors)?;
+    let amount = Spanned { value: amount, span: value.span.clone() };
+    Some(RawEntry::Padding(RawPadding { key: key.span.clone(), amount }))
+}
+
+/// Stage 2: reads a Field, the mapping `entries` at `node`, pushing its errors.
+fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField> {
     let before = errors.len();
     let keys = read_keys(entries, &KEYS, errors);
 
@@ -984,16 +1066,6 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
         let amount = record(read_amount(value, "if"), errors)?;
         Some(Spanned { value: amount, span: value.span.clone() })
     });
-    if let (Some(key), None) = (keys.key_of("hidden"), keys.get("bits")) {
-        errors.push(
-            Diagnostic::new(
-                Name::NotSupportedYet,
-                key.span.clone(),
-                "`hidden` is supported only on bitfields by this version of Wirdigen",
-            )
-            .with_note("`hidden` works on a Field with `bits`, and on its sub-Fields", None),
-        );
-    }
 
     match (name, kind) {
         (Some(name), Some(kind)) if errors.len() == before => Some(RawField {
@@ -1017,7 +1089,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField
 
 /// Stage 2: reads a structure, the value of a `fields:` key, pushing its errors (spec §3.4.1).
 /// `None` when it is not a non-empty list.
-pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawField>> {
+pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawEntry>> {
     match &node.value {
         Value::Sequence(items) if items.is_empty() => {
             errors.push(Diagnostic::new(
@@ -1027,7 +1099,7 @@ pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Optio
             ));
             None
         }
-        Value::Sequence(items) => Some(items.iter().filter_map(|item| read(item, errors)).collect()),
+        Value::Sequence(items) => Some(items.iter().filter_map(|item| read_entry(item, errors)).collect()),
         _ => {
             errors.push(wrong_type(node.span.clone(), "`fields` must be a list of Fields"));
             None
@@ -1115,9 +1187,8 @@ fn present(keys: &Keys<'_>, names: &[&'static str]) -> Vec<Spanned<&'static str>
 
 /// The `type:` names of `fields` that are not built-ins and the Types of `switch` cases, inline
 /// structures and cases included, in source order: the Types they use, and names [`check`] reports as unknown.
-pub(crate) fn type_uses(fields: &[RawField]) -> Vec<&Spanned<String>> {
-    fields
-        .iter()
+pub(crate) fn type_uses(entries: &[RawEntry]) -> Vec<&Spanned<String>> {
+    fields(entries)
         .flat_map(|field| match &field.kind {
             RawKind::Type { name, .. } if Builtin::from_name(&name.value).is_none() => vec![name],
             RawKind::Type { .. } => Vec::new(),
@@ -1140,35 +1211,50 @@ fn names_type(name: &str, types: &Types<'_>) -> bool {
     Builtin::from_name(name).is_none() && (name.starts_with(|c: char| c.is_ascii_uppercase()) || types.declares(name))
 }
 
-/// Stage 4: checks the Fields of one structure, pushing every Diagnostic.
+/// Stage 4: checks the entries of one structure, pushing every Diagnostic.
 ///
-/// Returns the Fields that passed. A wrong Field is left out, so the layout is complete only
+/// Returns the entries that passed. A wrong one is left out, so the layout is complete only
 /// when no error was pushed: the caller decides on the run as a whole.
 pub(crate) fn check<'a>(
-    fields: &'a [RawField],
+    entries: &'a [RawEntry],
     endian: Endian,
     enums: &mut Enums<'_>,
     types: &mut Types<'a>,
     scope: Scope<'a, '_>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Vec<Field> {
+) -> Vec<Entry> {
     let mut layout = Vec::new();
-    for (index, field) in fields.iter().enumerate() {
-        let levels: Vec<Level<'a>> = scope.levels.iter().copied().chain([Level { fields, at: index }]).collect();
+    for (index, entry) in entries.iter().enumerate() {
+        let levels: Vec<Level<'a>> =
+            scope.levels.iter().copied().chain([Level { fields: entries, at: index }]).collect();
         let scope = Scope { ty: scope.ty, levels: &levels };
-        let name = &field.name;
-        let previous = index.checked_sub(1).map(|i| &fields[i]);
+        let previous = index.checked_sub(1).and_then(|i| entries[i].field());
         if let Some((previous, why)) = previous.and_then(|f| Some((f, f.reads_to_end()?))) {
+            let (span, what) = match entry {
+                RawEntry::Field(field) => (field.name.span.clone(), format!("`{}`", field.name.value)),
+                RawEntry::Padding(padding) => (padding.key.clone(), "this padding".to_owned()),
+            };
             diagnostics.push(
                 Diagnostic::new(
                     Name::UnreachableField,
-                    name.span.clone(),
-                    format!("`{}` comes after `{}`, which reads to the end", name.value, previous.name.value),
+                    span,
+                    format!("{what} comes after `{}`, which reads to the end", previous.name.value),
                 )
                 .with_note(why, None),
             );
         }
-        check_name(name, fields[..index].iter().map(|f| &f.name), diagnostics);
+        let field = match entry {
+            RawEntry::Field(field) => field,
+            RawEntry::Padding(padding) => {
+                let RawPadding { amount, .. } = padding;
+                let checked =
+                    check_amount(&amount.value, amount.span.clone(), Amounts::PADDING, scope, types, diagnostics);
+                layout.extend(record(checked, diagnostics).flatten().map(Entry::Padding));
+                continue;
+            }
+        };
+        let name = &field.name;
+        check_name(name, fields(&entries[..index]).map(|f| &f.name), diagnostics);
         // A Field naming an Enum uses it, whatever else is wrong with the Field (spec §3.4.7).
         enums.mark_used(&field.mappings);
         let kind = match &field.kind {
@@ -1214,7 +1300,7 @@ pub(crate) fn check<'a>(
         check_text(field.label.as_ref(), field.description.as_ref(), diagnostics);
         if let (Some(kind), Some(array), Some(condition)) = (kind, array, condition) {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
-            layout.push(Field {
+            layout.push(Entry::Field(Box::new(Field {
                 name: name.value.clone(),
                 label: text(&field.label),
                 description: text(&field.description),
@@ -1223,7 +1309,7 @@ pub(crate) fn check<'a>(
                 array,
                 condition,
                 span: name.span.clone(),
-            });
+            })));
         }
     }
     layout
