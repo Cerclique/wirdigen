@@ -27,6 +27,9 @@ use std::process::{Command, Output};
 
 use serde_json::Value;
 
+#[path = "tshark/bad_input.rs"]
+mod bad_input;
+
 /// The UDP destination port decoded as the protocol under test.
 const PORT: u16 = 9999;
 /// The UDP source port; above [`PORT`] so UDP tries [`PORT`] first.
@@ -115,6 +118,14 @@ impl Scratch {
     /// Dissects `pcap` with the Dissector in `lua` and tshark's extra `options`, and returns
     /// each packet's `proto` layer, or why the run is unusable.
     fn dissect_with(&self, lua: &Path, proto: &str, pcap: &Path, options: &[&str]) -> Result<Vec<Value>, String> {
+        let packets = self.tshark_json(lua, pcap, options)?;
+        packets.iter().enumerate().map(|(index, packet)| own_layer(packet, index + 1, proto)).collect()
+    }
+
+    /// Dissects `pcap` with the Dissector in `lua` and tshark's extra `options`, and returns
+    /// tshark's `-T json` packets, or why the run is unusable: anything on stderr, or unreadable
+    /// JSON.
+    fn tshark_json(&self, lua: &Path, pcap: &Path, options: &[&str]) -> Result<Vec<Value>, String> {
         let script = format!("lua_script:{}", path_str(lua));
         let mut args = vec!["-r", path_str(pcap), "-X", &script];
         args.extend(options);
@@ -124,22 +135,8 @@ impl Scratch {
         if !stderr.trim().is_empty() {
             return Err(format!("tshark wrote to stderr ({}):\n{stderr}", output.status));
         }
-        let packets: Vec<Value> = serde_json::from_slice(&output.stdout)
-            .map_err(|e| format!("tshark's JSON is unreadable ({e}, {})", output.status))?;
-        packets
-            .iter()
-            .enumerate()
-            .map(|(index, packet)| {
-                let number = index + 1;
-                if let Some(error) = first_error_key(packet) {
-                    return Err(format!("packet {number} has `{error}`:\n{packet:#}"));
-                }
-                packet
-                    .pointer(&format!("/_source/layers/{proto}"))
-                    .cloned()
-                    .ok_or_else(|| format!("packet {number} has no `{proto}` layer:\n{packet:#}"))
-            })
-            .collect()
+        serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("tshark's JSON is unreadable ({e}, {})", output.status))
     }
 
     /// Dissects `pcap` with the Dissector in `lua` and tshark's extra `options`, and returns the
@@ -183,6 +180,18 @@ impl Drop for Scratch {
 
 fn path_str(path: &Path) -> &str {
     path.to_str().expect("test paths are UTF-8")
+}
+
+/// The `proto` layer of `packet`, packet `number` of its capture, or why the packet is
+/// unusable: a Lua error or an escaped exception anywhere in it, or no `proto` layer.
+fn own_layer(packet: &Value, number: usize, proto: &str) -> Result<Value, String> {
+    if let Some(error) = first_error_key(packet) {
+        return Err(format!("packet {number} has `{error}`:\n{packet:#}"));
+    }
+    packet
+        .pointer(&format!("/_source/layers/{proto}"))
+        .cloned()
+        .ok_or_else(|| format!("packet {number} has no `{proto}` layer:\n{packet:#}"))
 }
 
 /// The first key naming a Lua error or a malformed-packet exception, anywhere in `value`.
@@ -237,6 +246,16 @@ fn expectation(dir: &Path, scratch: &Scratch) -> PathBuf {
     dir.join("dissected.json")
 }
 
+/// tshark's options decoding the case's packets as `proto`: Decode As, unless the case is one of
+/// [`BY_DECLARED_PORT`].
+fn case_options(case: &str, proto: &str) -> Vec<String> {
+    if BY_DECLARED_PORT.contains(&case) {
+        Vec::new()
+    } else {
+        vec!["-d".to_owned(), format!("udp.port=={PORT},{proto}")]
+    }
+}
+
 fn check(case: &str) {
     if !enabled() {
         return;
@@ -251,8 +270,9 @@ fn check(case: &str) {
 
     let scratch = Scratch::new(case);
     let pcap = scratch.capture(&packets);
-    let decode_as = format!("udp.port=={PORT},{proto}");
-    let options: &[&str] = if BY_DECLARED_PORT.contains(&case) { &[] } else { &["-d", &decode_as] };
+    let options = case_options(case, proto);
+    let options: Vec<&str> = options.iter().map(String::as_str).collect();
+    let options = options.as_slice();
     let layers = scratch.dissect_with(&lua, proto, &pcap, options);
     let layers = layers.unwrap_or_else(|e| panic!("{case}: {e}"));
     assert_eq!(layers.len(), expected_count, "{case}: tshark dissected a different number of packets");
@@ -280,6 +300,11 @@ fn check(case: &str) {
 macro_rules! cases {
     ($($test:ident => $case:literal),* $(,)?) => {
         $(#[test] fn $test() { check($case); })*
+
+        /// The case's Dissector never raises a Lua error on bad input (spec §5.3, §10.6).
+        mod bad_packets {
+            $(#[test] fn $test() { super::bad_input::check($case); })*
+        }
 
         #[test]
         fn every_case_with_packets_has_a_test() {
@@ -526,6 +551,66 @@ mod harness {
         "#;
         let error = dissect_uints_with("rejecting-dissector", lua).unwrap_err();
         assert!(error.contains("packet 1 has no `uints` layer"), "{error}");
+    }
+
+    /// Runs the bad-input harness over the `uints` corpus packets with `lua` in place of the
+    /// golden Dissector.
+    fn bad_uints_with(name: &str, lua: &str) -> Result<(), String> {
+        let scratch = Scratch::new(name);
+        let script = scratch.path("dissector.lua");
+        fs::write(&script, lua).unwrap();
+        let valid = bad_input::parse_packets(&fs::read_to_string(case_dir("uints").join("packets.txt")).unwrap());
+        let config = bad_input::Config { seed: 42, mutations: 4, random: 2 };
+        let decode_as = format!("udp.port=={PORT},uints");
+        let target =
+            bad_input::Target { scratch: &scratch, lua: &script, proto: "uints", options: &["-d", &decode_as] };
+        target.run(&valid, &config)
+    }
+
+    /// A Dissector that misbehaves, through `misbehave()`, on packets longer than 3 bytes.
+    fn misbehaving_on_long_packets(misbehave: &str) -> String {
+        format!(
+            r#"
+            local proto = Proto("uints", "UINTS")
+            function proto.dissector(tvb, pinfo, tree)
+                tree:add(proto, tvb())
+                if tvb:len() > 3 then {misbehave} end
+            end
+            DissectorTable.get("udp.port"):add_for_decode_as(proto)
+            "#
+        )
+    }
+
+    #[test]
+    fn a_bad_packet_raising_a_lua_error_is_reported_smallest_first_with_the_seed() {
+        if !enabled() {
+            return;
+        }
+        let error = bad_uints_with("bad-error", &misbehaving_on_long_packets(r#"error("wirdigen harness probe")"#))
+            .unwrap_err();
+        assert!(error.contains("WIRDIGEN_BAD_SEED=42"), "{error}");
+        assert!(error.contains("smallest, 4 bytes"), "{error}");
+        assert!(error.contains("`_ws.lua.error`"), "{error}");
+    }
+
+    #[test]
+    fn a_bad_packet_writing_to_stderr_is_reported_smallest_first_with_the_seed() {
+        if !enabled() {
+            return;
+        }
+        let error =
+            bad_uints_with("bad-stderr", &misbehaving_on_long_packets(r#"io.stderr:write("probe\n")"#)).unwrap_err();
+        assert!(error.contains("WIRDIGEN_BAD_SEED=42"), "{error}");
+        assert!(error.contains("smallest, 4 bytes"), "{error}");
+        assert!(error.contains("probe"), "{error}");
+    }
+
+    #[test]
+    fn well_behaved_bad_packets_pass() {
+        if !enabled() {
+            return;
+        }
+        bad_uints_with("bad-fine", &misbehaving_on_long_packets("")).unwrap();
     }
 
     #[test]
