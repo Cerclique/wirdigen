@@ -1,0 +1,11 @@
+# `info:` references (spec §3.14): an unknown Field, a missing member, a member of a value, and
+# a Field inside an array.
+name: demo
+info: "{idd} {hdr.len} {id.x} {items.v}"
+fields:
+  - { name: id, type: uint8 }
+  - name: hdr
+    fields: [ { name: size, type: uint8 } ]
+  - name: items
+    count: 2
+    fields: [ { name: v, type: uint8 } ]

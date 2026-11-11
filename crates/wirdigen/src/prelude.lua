@@ -285,3 +285,43 @@ local function wd_register_ports(proto, ports)
     apply()
     proto.prefs_changed = apply
 end
+
+--@chunk info
+-- The Info column (spec §3.14). The last value the field extractor `field` found in the packet,
+-- or nil when its Field was not read.
+local function wd_info_found(field)
+    local found = { field() }
+    return found[#found]
+end
+
+-- What Wireshark displays for the value `field` extracts, or "" when its Field was not read.
+local function wd_info_display(field)
+    local info = wd_info_found(field)
+    return info and info.display or ""
+end
+
+--@chunk info_label
+--@requires info
+-- The label in `names`, a list of `{ low, high, label }`, of the value `field` extracts, or else
+-- the number; "" when its Field was not read. A 64-bit value comes as a UInt64 or an Int64,
+-- looked up as an Expression reads it, its 64 bits as a signed integer, and shown as Wireshark
+-- shows it.
+local function wd_info_label(field, names)
+    local info = wd_info_found(field)
+    if not info then return "" end
+    local key = info.value
+    if type(key) == "userdata" then
+        key = tonumber(key:tohex(), 16)
+    end
+    for _, entry in ipairs(names) do
+        if key >= entry[1] and key <= entry[2] then
+            return entry[3]
+        end
+    end
+    return tostring(info.value)
+end
+
+--@chunk info_cases
+-- The case names of the `switch` Fields the Info column shows, by path, read in the packet
+-- being dissected (spec §3.14). The Dissector empties it before each packet.
+local wd_info_cases = {}

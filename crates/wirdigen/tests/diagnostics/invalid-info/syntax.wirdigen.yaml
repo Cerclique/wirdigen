@@ -1,0 +1,5 @@
+# A format specifier, at its token.
+name: demo
+info: "id={id:04x}"
+fields:
+  - { name: id, type: uint8 }

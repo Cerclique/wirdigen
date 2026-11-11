@@ -77,7 +77,7 @@ pub(crate) struct FreeRef {
 
 /// Why a path resolves to nothing usable.
 #[derive(Debug, Clone)]
-enum Miss {
+pub(crate) enum Miss {
     /// No earlier Field has the first name, but a later one does, at this span.
     Forward(Range<usize>),
     /// No Field has the first name; the earlier ones are the candidates.
@@ -384,6 +384,12 @@ pub(crate) fn resolve_context<'a>(
         context.push((free.key, reference));
     }
     ok.then_some(context)
+}
+
+/// The Diagnostic, at `span`, saying why the path `segments` resolves to nothing usable.
+pub(crate) fn miss_diagnostic(miss: &Miss, segments: &[String], span: Range<usize>) -> Diagnostic {
+    let (name, message, notes) = explain(miss, &segments.join("."), segments);
+    with_notes(Diagnostic::new(name, span, message), notes)
 }
 
 fn with_notes(diagnostic: Diagnostic, notes: Notes) -> Diagnostic {

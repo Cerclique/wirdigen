@@ -1,0 +1,39 @@
+# `info:` (spec §3.14): references show a `values:` label, or the number when no label matches,
+# or else the Field's display form, whatever its type: hex, a unit, a string, an address, a
+# `true:`/`false:` label, a bitfield sub-Field, a hidden Field, a uint64 above 2^63, a Field of
+# a Type. A `switch` Field shows its case name, and a Field in a case or under `if:` shows
+# nothing when it was not read. `{{` and `}}` are braces. A truncated Message shows what was
+# read.
+name: info
+info: "{kind} #{seq} [{flags.urgent} {flags.prio}] {{{body}}} user={body.user} note={note} {hdr.len} from {addr} {big} ok={ok} {secret}"
+fields:
+  - { name: kind, type: uint8, values: Kind }
+  - { name: seq, type: uint16, display: hex }
+  - name: flags
+    type: uint8
+    bits:
+      - { name: urgent, width: 1 }
+      - { name: prio, width: 3, values: { 0: low, 7: high } }
+      - { padding: 4 }
+  - name: body
+    switch: kind
+    cases:
+      1: Login
+      2: [ { name: code, type: uint8 } ]
+  - { name: note, type: string, prefix: uint8, if: "kind == 2" }
+  - { name: hdr, type: Header }
+  - { name: addr, type: ipv4 }
+  - { name: big, type: uint64, values: { 18446744073709551615: max } }
+  - { name: ok, type: bool, true: "yes", false: "no" }
+  - { name: secret, type: uint8, hidden: true }
+types:
+  Login:
+    fields:
+      - { name: user, type: string, size: 3 }
+  Header:
+    fields:
+      - { name: len, type: uint16, unit: [byte, bytes] }
+enums:
+  Kind:
+    1: Login
+    2: Code

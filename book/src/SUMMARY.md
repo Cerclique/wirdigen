@@ -19,7 +19,7 @@
 - [Registration](reference/registration.md)
 - [Framing]()
 - [Expressions](reference/expressions.md)
-- [Info column]()
+- [Info column](reference/info.md)
 - [Diagnostics](reference/diagnostics.md)
 
 ---

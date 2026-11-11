@@ -123,6 +123,10 @@ local function wd_unmatched(tree, field, expert_info, tvb, offset, value, path)
     item:add_proto_expert_info(expert_info, "No case for " .. value .. ": " .. path)
 end
 
+-- The case names of the `switch` Fields the Info column shows, by path, read in the packet
+-- being dissected (spec §3.14). The Dissector empties it before each packet.
+local wd_info_cases = {}
+
 local wd_proto = Proto("switch", "SWITCH")
 
 local enum_Kind = {
@@ -131,7 +135,7 @@ local enum_Kind = {
     { 16, 31, "Vendor" },
 }
 
--- The names of switch subjects' values
+-- The names of values, for switch Fields and the Info column
 local names_detail = {
     { 16, 16, "Sixteen" },
 }
@@ -301,7 +305,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
         local subject = v_kind
         local start = offset
         local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
-        tree:append_text(": " .. wd_case_name(names_body, subject))
+        local name = wd_case_name(names_body, subject)
+        tree:append_text(": " .. name)
+        wd_info_cases["body"] = name
         if subject == 1 then
             offset = dissect_Login(tvb, pinfo, tree, offset, site_body__Login)
             if not offset then
@@ -395,8 +401,12 @@ end
 
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "SWITCH"
+    wd_info_cases = {}
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "SWITCH")
     dissect_top(tvb, pinfo, root, 0)
+    if wd_info_cases["body"] then
+        pinfo.cols.info = wd_info_cases["body"]
+    end
     return tvb:len()
 end
 

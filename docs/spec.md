@@ -375,8 +375,10 @@ framing:
 - `info:` is a template with `{path}` references, for example `"{msg_type} id={id}"`.
 - References only: no Expressions or format specifiers. `{{` and `}}` escape braces.
 - A reference renders the Field's `values:` (or `true:`/`false:`) label if it has one (the number if unmatched), otherwise the Field's display form. Any Field type is allowed.
-- Conditional Fields may be referenced; an absent one renders as an empty string. Unresolvable paths, array internals and forward references are errors.
-- Without `info:`, the Info column shows the label of the outermost `switch` Field, as in §3.9.
+- Conditional Fields may be referenced; an absent one renders as an empty string. Unresolvable paths, array internals and forward references are errors. Paths resolve from the top-level layout once the Message is read, so no reference is forward; one that resolves to no Field or goes into an array is `unknown-field`.
+- A reference names a Field of a built-in type, a bitfield sub-Field, or a `switch` Field, which renders its case name as in §3.9. A template that does not parse (a lone brace, an Expression, a format specifier, more than one line) or a reference to an inline structure, a Field of a Type or an array is `invalid-info`.
+- The Dissector sets the column once the Message is read, however far it got. Built-in Fields and sub-Fields are rendered from Wireshark's field extractors (`Field.new`), so their display form is Wireshark's own.
+- Without `info:`, the Info column shows the label of the outermost `switch` Field, as in §3.9: the one fewest structures and Fields of Types from the top level, first in layout order among them, never inside an array. When it is not read, the column keeps the transport's text.
 - The Protocol column always shows the short name (§3.3).
 
 ## 4. Expressions
@@ -515,7 +517,7 @@ Errors:
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - `overlapping-cases`: overlapping `switch` cases (§3.9);
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
-- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding`, `invalid-dissector` (§3.10);
+- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding`, `invalid-dissector` (§3.10); `invalid-info` (§3.14);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - `invalid-port`, `overlapping-ports`: invalid ports and port ranges (§3.12);
@@ -586,7 +588,7 @@ Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─�
 
 ### 7.3 Generated code
 
-- **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Locals exist only for Fields some Expression or `info:` template references. Outer scopes are reached through a context table.
+- **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Locals exist only for Fields some Expression references; the `info:` template reads its Fields through field extractors once the Message is read (§3.14). Outer scopes are reached through a context table.
 - **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, 64-bit bitwise operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
 - **Names**: user names are always mangled (`f_<name>`, `dissect_<Type>`), and prelude names start with `wd_`, so a Field called `end` or `type` is safe.
 - **Format**: 4-space indent, fixed by the emitter (no external formatter). Comments name each Type (`-- Type: X`) and each Field's path, with no source line numbers.
@@ -725,7 +727,8 @@ A panic (`101`) is a bug, not part of the contract. A finer split can only come 
 - `<case>.wirdigen.yaml`;
 - a golden `<case>.lua`, compared byte for byte;
 - `packets.txt`: text2pcap hex, each packet commented;
-- a golden `dissected.json`: tshark's `-T json --no-duplicate-keys` output cut down to the Dissector's own layer, the same layer `-J <proto>` keeps. The harness cuts it itself rather than passing `-J`, which could hide a top-level `_ws.lua.error`.
+- a golden `dissected.json`: tshark's `-T json --no-duplicate-keys` output cut down to the Dissector's own layer, the same layer `-J <proto>` keeps. The harness cuts it itself rather than passing `-J`, which could hide a top-level `_ws.lua.error`;
+- optionally a golden `info.txt`: the Info column of each packet (§3.14), from tshark's `_ws.col.info` field, which is not in the Dissector's layer.
 
 Both Wireshark versions must produce the same `dissected.json`; a per-version file is a documented exception. Goldens are plain files (no `insta`), rewritten with `WIRDIGEN_BLESS=1`, never in CI. The corpus is `eol=lf` via `.gitattributes`. Each case is its own test. The three book examples (§11) are corpus cases.
 

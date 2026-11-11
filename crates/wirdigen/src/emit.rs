@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, BitItem, Branch, Computed, Decode, Dissector, ExpectCheck, Export, Length, LuaExpr, LuaTable, PortPreference,
-    ProtoField, Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
+    Args, BitItem, Branch, Computed, Decode, Dissector, ExpectCheck, Export, Info, InfoPart, Length, LuaExpr, LuaTable,
+    PortPreference, ProtoField, Ref, Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
 };
 use crate::prelude;
 
@@ -68,7 +68,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
         w.line("");
     }
     if !model.names.is_empty() {
-        w.line("-- The names of switch subjects' values");
+        w.line("-- The names of values, for switch Fields and the Info column");
         for names in &model.names {
             let entries = LuaTable::Ranges(names.entries.clone());
             w.block(&format!("local {} = {{", names.local), |w| table_entries(w, &entries), "}");
@@ -94,6 +94,13 @@ pub(crate) fn emit(model: &Dissector) -> String {
         "}",
     );
     w.line("");
+    if !model.extractors.is_empty() {
+        w.line("-- The Fields the Info column shows, extracted from each packet once it is read");
+        for extractor in &model.extractors {
+            w.line(&format!("local {} = Field.new({})", extractor.local, lua_string(&extractor.abbrev)));
+        }
+        w.line("");
+    }
     if !model.sites.is_empty() {
         w.line("-- The ProtoFields of each use of a Type, passed to the Type's dissect function");
         for shared in &model.sites {
@@ -141,16 +148,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
     );
     w.line("");
 
-    w.block(
-        "function wd_proto.dissector(tvb, pinfo, tree)",
-        |w| {
-            w.line(&format!("pinfo.cols.protocol = {}", lua_string(&model.short_name)));
-            w.line(&format!("local root = tree:add(wd_proto, tvb(0, tvb:len()), {})", lua_string(&model.full_name)));
-            w.line("dissect_top(tvb, pinfo, root, 0)");
-            w.line("return tvb:len()");
-        },
-        "end",
-    );
+    dissector(&mut w, model);
     w.line("");
 
     if !model.port_preferences.is_empty() {
@@ -160,6 +158,58 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.line("DissectorTable.get(\"udp.port\"):add_for_decode_as(wd_proto)");
     w.line("DissectorTable.get(\"tcp.port\"):add_for_decode_as(wd_proto)");
     w.out
+}
+
+/// The Dissector's entry point: it sets the columns and reads the Message into the protocol's
+/// tree.
+fn dissector(w: &mut Writer, model: &Dissector) {
+    w.block(
+        "function wd_proto.dissector(tvb, pinfo, tree)",
+        |w| {
+            w.line(&format!("pinfo.cols.protocol = {}", lua_string(&model.short_name)));
+            if model.chunks.contains(&prelude::INFO_CASES) {
+                w.line("wd_info_cases = {}");
+            }
+            w.line(&format!("local root = tree:add(wd_proto, tvb(0, tvb:len()), {})", lua_string(&model.full_name)));
+            w.line("dissect_top(tvb, pinfo, root, 0)");
+            if let Some(info) = &model.info {
+                info_column(w, model, info);
+            }
+            w.line("return tvb:len()");
+        },
+        "end",
+    );
+}
+
+/// Sets the Info column once the Message is read, however far it was read (spec §3.14).
+fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
+    let case = |path: &str| format!("wd_info_cases[{}]", lua_string(path));
+    match info {
+        Info::Template(parts) => {
+            let parts: Vec<String> = parts
+                .iter()
+                .map(|part| match part {
+                    InfoPart::Text(text) => lua_string(text),
+                    InfoPart::Display(extractor) => {
+                        format!("wd_info_display({})", model.extractors[*extractor].local)
+                    }
+                    InfoPart::Label { extractor, names } => {
+                        format!("wd_info_label({}, {})", model.extractors[*extractor].local, model.names[*names].local)
+                    }
+                    InfoPart::Case(path) => format!("({} or \"\")", case(path)),
+                })
+                .collect();
+            let text = if parts.is_empty() { "\"\"".to_owned() } else { parts.join(" .. ") };
+            w.line(&format!("pinfo.cols.info = {text}"));
+        }
+        Info::Case(path) => {
+            w.block(
+                &format!("if {} then", case(path)),
+                |w| w.line(&format!("pinfo.cols.info = {}", case(path))),
+                "end",
+            );
+        }
+    }
 }
 
 /// Declares the range preferences and registers on the ports they hold (spec §3.12, §5.5).
@@ -421,6 +471,7 @@ struct SwitchStmt<'s> {
     hidden: bool,
     subject: &'s Computed,
     names: Option<usize>,
+    info: bool,
     cases: &'s [(Vec<(i64, i64)>, Branch)],
     default: Option<&'s Branch>,
 }
@@ -447,7 +498,15 @@ fn switch(w: &mut Writer, model: &Dissector, path: &str, stmt: &SwitchStmt<'_>, 
                 || "subject".to_owned(),
                 |index| format!("wd_case_name({}, subject)", model.names[index].local),
             );
-            w.line(&format!("tree:append_text(\": \" .. {name})"));
+            if stmt.info {
+                // The case name is kept for the Info column, as text (spec §3.14).
+                let name = if stmt.names.is_some() { name } else { format!("tostring({name})") };
+                w.line(&format!("local name = {name}"));
+                w.line("tree:append_text(\": \" .. name)");
+                w.line(&format!("wd_info_cases[{reported}] = name"));
+            } else {
+                w.line(&format!("tree:append_text(\": \" .. {name})"));
+            }
             for (index, (ranges, body)) in stmt.cases.iter().enumerate() {
                 let test: Vec<String> = ranges
                     .iter()
@@ -624,9 +683,9 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
         Stmt::Padding { parent, length } => padding(w, parent, length, scope),
         Stmt::If { path, condition, body } => conditional(w, model, path, condition, body, scope),
-        Stmt::Switch { field, path, hidden, subject, names, cases, default } => {
-            let stmt = SwitchStmt { field, hidden: *hidden, subject, names: *names, cases, default: default.as_ref() };
-            switch(w, model, path, &stmt, scope);
+        Stmt::Switch { field, path, hidden, subject, names, info, cases, default } => {
+            let (hidden, names, info, default) = (*hidden, *names, *info, default.as_ref());
+            switch(w, model, path, &SwitchStmt { field, hidden, subject, names, info, cases, default }, scope);
         }
         Stmt::Structure { path, .. } | Stmt::Call { path, .. } => {
             w.line(&format!("-- Field: {path}"));

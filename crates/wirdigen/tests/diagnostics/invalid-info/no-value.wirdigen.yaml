@@ -1,0 +1,13 @@
+# A structure, a Field of a Type and an array have no value to show.
+name: demo
+info: "{hdr} {body} {items}"
+fields:
+  - name: hdr
+    fields: [ { name: id, type: uint8 } ]
+  - { name: body, type: Body }
+  - name: items
+    count: 2
+    fields: [ { name: v, type: uint8 } ]
+types:
+  Body:
+    fields: [ { name: x, type: uint8 } ]

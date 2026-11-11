@@ -36,6 +36,12 @@ pub(crate) const UNEXPECTED: &str = "unexpected";
 pub(crate) const HANDOFF: &str = "handoff";
 /// Registering on the ports of the range preferences, and moving when they change.
 pub(crate) const PORTS: &str = "ports";
+/// Showing a Field in the Info column as Wireshark displays it.
+pub(crate) const INFO: &str = "info";
+/// Showing a Field in the Info column by the label of its value.
+pub(crate) const INFO_LABEL: &str = "info_label";
+/// Keeping the case names of `switch` Fields for the Info column.
+pub(crate) const INFO_CASES: &str = "info_cases";
 
 #[derive(Debug)]
 struct Chunk {

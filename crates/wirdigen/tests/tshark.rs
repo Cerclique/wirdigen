@@ -16,6 +16,10 @@
 //! Both supported Wireshark versions must produce the same `dissected.json`. A version-specific
 //! expectation is a documented exception: `dissected-<major>.<minor>.json` next to it, used only
 //! by that tshark version. `WIRDIGEN_BLESS=1` rewrites the file in use.
+//!
+//! The Info column is not in the protocol's layer. A case that carries `info.txt` also checks it
+//! (spec §3.14): one line per packet, the column as tshark's `_ws.col.info` field gives it.
+//! `WIRDIGEN_BLESS=1` rewrites it too.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -133,6 +137,21 @@ impl Scratch {
             .collect()
     }
 
+    /// Dissects `pcap` with the Dissector in `lua` and tshark's extra `options`, and returns the
+    /// Info column of each packet, one line each.
+    fn info_column(&self, lua: &Path, pcap: &Path, options: &[&str]) -> Result<String, String> {
+        let script = format!("lua_script:{}", path_str(lua));
+        let mut args = vec!["-r", path_str(pcap), "-X", &script];
+        args.extend(options);
+        args.extend(["-T", "fields", "-e", "_ws.col.info"]);
+        let output = self.run("tshark", &args);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            return Err(format!("tshark wrote to stderr ({}):\n{stderr}", output.status));
+        }
+        String::from_utf8(output.stdout).map_err(|e| format!("tshark's Info column is not UTF-8 ({e})"))
+    }
+
     /// The running tshark's `major.minor`.
     fn tshark_version(&self) -> String {
         let output = self.run("tshark", &["--version"]);
@@ -222,11 +241,9 @@ fn check(case: &str) {
 
     let scratch = Scratch::new(case);
     let pcap = scratch.capture(&packets);
-    let layers = if BY_DECLARED_PORT.contains(&case) {
-        scratch.dissect_with(&lua, proto, &pcap, &[])
-    } else {
-        scratch.dissect(&lua, proto, &pcap)
-    };
+    let decode_as = format!("udp.port=={PORT},{proto}");
+    let options: &[&str] = if BY_DECLARED_PORT.contains(&case) { &[] } else { &["-d", &decode_as] };
+    let layers = scratch.dissect_with(&lua, proto, &pcap, options);
     let layers = layers.unwrap_or_else(|e| panic!("{case}: {e}"));
     assert_eq!(layers.len(), expected_count, "{case}: tshark dissected a different number of packets");
 
@@ -238,6 +255,16 @@ fn check(case: &str) {
     let expected = fs::read_to_string(&golden)
         .unwrap_or_else(|_| panic!("{} is missing: bless it. tshark produced:\n{actual}", golden.display()));
     assert_eq!(actual, expected, "{case}: tshark's dissection differs from {}", golden.display());
+
+    let info = dir.join("info.txt");
+    if info.exists() {
+        let actual = scratch.info_column(&lua, &pcap, options).unwrap_or_else(|e| panic!("{case}: {e}"));
+        if std::env::var_os("WIRDIGEN_BLESS").is_some_and(|v| v == "1") {
+            fs::write(&info, &actual).unwrap();
+        }
+        let expected = fs::read_to_string(&info).unwrap();
+        assert_eq!(actual, expected, "{case}: tshark's Info column differs from {}", info.display());
+    }
 }
 
 macro_rules! cases {
@@ -287,6 +314,8 @@ cases! {
     expect => "expect",
     handoff => "handoff",
     registration => "registration",
+    info => "info",
+    info_default => "info-default",
 }
 
 /// Registration (spec §3.12): the declared ports follow their range preferences, and TCP ports

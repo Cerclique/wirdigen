@@ -1,0 +1,79 @@
+[
+  {
+    "info.kind": "1",
+    "info.seq": "0x0102",
+    "info.flags": "240",
+    "info.flags_tree": {
+      "info.flags.urgent": "1",
+      "info.flags.prio": "7"
+    },
+    "info.body": {
+      "info.body.user": "bob"
+    },
+    "info.hdr": {
+      "info.hdr.len": "1"
+    },
+    "info.addr": "192.0.2.1",
+    "info.big": "18446744073709551615",
+    "info.ok": "1",
+    "info.secret": "9"
+  },
+  {
+    "info.kind": "2",
+    "info.seq": "0x0003",
+    "info.flags": "48",
+    "info.flags_tree": {
+      "info.flags.urgent": "0",
+      "info.flags.prio": "3"
+    },
+    "info.body": {
+      "info.body.code": "5"
+    },
+    "info.note": "hi",
+    "info.hdr": {
+      "info.hdr.len": "2"
+    },
+    "info.addr": "10.0.0.1",
+    "info.big": "9223372036854775808",
+    "info.ok": "0",
+    "info.secret": "0"
+  },
+  {
+    "info.kind": "3",
+    "info.seq": "0x0004",
+    "info.flags": "0",
+    "info.flags_tree": {
+      "info.flags.urgent": "0",
+      "info.flags.prio": "0"
+    },
+    "info.body": {
+      "info._unmatched": "aa",
+      "info._unmatched_tree": {
+        "_ws.expert": {
+          "info._undecoded.unmatched": "",
+          "_ws.expert.message": "No case for 3: body",
+          "_ws.expert.severity": "4194304",
+          "_ws.expert.group": "83886080"
+        }
+      }
+    }
+  },
+  {
+    "info.kind": "1",
+    "info.seq": "0x0005",
+    "info.flags": "128",
+    "info.flags_tree": {
+      "info.flags.urgent": "1",
+      "info.flags.prio": "0"
+    },
+    "info.body": {
+      "_ws.expert": {
+        "info._malformed.truncated": "",
+        "_ws.expert.message": "Malformed: truncated: body.user",
+        "_ws.expert.severity": "8388608",
+        "_ws.expert.group": "117440512"
+      },
+      "_ws.malformed": "Malformed Packet"
+    }
+  }
+]

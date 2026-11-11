@@ -147,15 +147,15 @@ impl<'a> Types<'a> {
 /// Stage 4: checks every Type's name and body, the top-level layout `top`, which uses Types too,
 /// and the uses between Types.
 ///
-/// Returns the checked layout, and the Types in dependency order, each after the Types it uses,
-/// so lowering can define each one before its callers.
+/// Returns the checked layout, the Types in dependency order, each after the Types it uses, so
+/// lowering can define each one before its callers, and the Types as later checks look them up.
 pub(crate) fn check<'a>(
     raw: &'a [RawType],
     top: &'a [RawEntry],
     endian: Endian,
     enums: &mut Enums<'_>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> (Vec<Entry>, Vec<NamedType>) {
+) -> (Vec<Entry>, Vec<NamedType>, Types<'a>) {
     let mut types = Types::new(raw);
     let mut bodies = Vec::new();
     for t in raw {
@@ -174,7 +174,7 @@ pub(crate) fn check<'a>(
         bodies.push(Some(field::check(&t.fields, endian, enums, &mut types, scope, diagnostics)));
     }
     let layout = field::check(top, endian, enums, &mut types, Scope { ty: None, levels: &[] }, diagnostics);
-    diagnostics.extend(types.unknown.into_iter().map(|(_, d)| d));
+    diagnostics.extend(std::mem::take(&mut types.unknown).into_iter().map(|(_, d)| d));
     for (t, used) in raw.iter().zip(&types.used) {
         if !used {
             diagnostics.push(
@@ -191,7 +191,7 @@ pub(crate) fn check<'a>(
         name: raw[i].name.value.clone(),
         fields: bodies[i].take().expect("each Type comes once in the order"),
     });
-    (layout, named.collect())
+    (layout, named.collect(), types)
 }
 
 /// Where a depth-first walk over the uses between Types stands with one Type.

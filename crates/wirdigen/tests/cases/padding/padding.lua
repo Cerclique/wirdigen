@@ -98,6 +98,10 @@ local function wd_evaluate(compute)
     error(value, 0)
 end
 
+-- The case names of the `switch` Fields the Info column shows, by path, read in the packet
+-- being dissected (spec §3.14). The Dissector empties it before each packet.
+local wd_info_cases = {}
+
 local wd_proto = Proto("padding", "PADDING")
 
 local f_kind = ProtoField.uint8("padding.kind", "Kind", base.DEC)
@@ -269,7 +273,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
         local subject = v_kind
         local start = offset
         local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
-        tree:append_text(": " .. subject)
+        local name = tostring(subject)
+        tree:append_text(": " .. name)
+        wd_info_cases["body"] = name
         if subject == 1 then
             -- Padding in body
             if not wd_fits(tvb, offset, 2) then
@@ -330,8 +336,12 @@ end
 
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "PADDING"
+    wd_info_cases = {}
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "PADDING")
     dissect_top(tvb, pinfo, root, 0)
+    if wd_info_cases["body"] then
+        pinfo.cols.info = wd_info_cases["body"]
+    end
     return tvb:len()
 end
 

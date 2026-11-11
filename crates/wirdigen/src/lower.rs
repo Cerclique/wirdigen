@@ -13,6 +13,7 @@ use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
 use crate::field::{
     self, Amount, Array, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind, Operand, default_label,
 };
+use crate::info::{self, Template};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
 use crate::registration::Ports;
@@ -49,6 +50,44 @@ pub(crate) struct Dissector {
     pub(crate) chunks: Vec<&'static str>,
     /// The range preference of each transport with declared ports (spec §3.12, §5.5).
     pub(crate) port_preferences: Vec<PortPreference>,
+    /// The field extractors of the Fields the Info column shows, each declared once.
+    pub(crate) extractors: Vec<Extractor>,
+    /// What the Info column shows once the Message is read, when it shows anything (spec §3.14).
+    pub(crate) info: Option<Info>,
+}
+
+/// A field extractor (`Field.new`): the values a `ProtoField` took in the packet being read.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Extractor {
+    /// The Lua local (`x_msg_type`).
+    pub(crate) local: String,
+    /// The filter name of the `ProtoField` (`demo.msg_type`).
+    pub(crate) abbrev: String,
+}
+
+/// What the Info column shows (spec §3.14).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Info {
+    /// An `info:` template: its parts, one after another; a Field not read shows nothing.
+    Template(Vec<InfoPart>),
+    /// Without `info:`, the case name of the outermost `switch` Field, at this path. When it was
+    /// not read, the column keeps what the transport wrote.
+    Case(String),
+}
+
+/// A part of an `info:` template, as the Dissector shows it.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum InfoPart {
+    /// Text shown as is.
+    Text(String),
+    /// What Wireshark displays for the value of the Field an extractor finds: an index into
+    /// [`Dissector::extractors`].
+    Display(usize),
+    /// The label of the value of the Field an extractor finds, from a table of
+    /// [`Dissector::names`], or else the number.
+    Label { extractor: usize, names: usize },
+    /// The case name of the `switch` Field at this path.
+    Case(String),
 }
 
 /// A range preference holding the ports a Dissector is registered on in one dissector table.
@@ -160,8 +199,8 @@ pub(crate) struct SharedTable {
     pub(crate) table: LuaTable,
 }
 
-/// The labels of a `switch` subject's values (spec §3.9), as the Expression has them: signed
-/// 64-bit integers.
+/// The labels of a `switch` subject's values (spec §3.9), or of a Field's values in the Info
+/// column (§3.14), as an Expression has them: signed 64-bit integers.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct NamesTable {
     /// The Lua local (`names_body`).
@@ -355,6 +394,8 @@ pub(crate) enum Stmt {
         /// The table the subtree item names the subject's value from, an index into
         /// [`Dissector::names`]; without one it shows the number.
         names: Option<usize>,
+        /// Whether the case name is kept, under the Field's path, for the Info column.
+        info: bool,
         /// Each case, by the values it matches, as signed 64-bit ranges.
         cases: Vec<(Vec<(i64, i64)>, Branch)>,
         /// What is read when no case matches; without it, the rest of the message is shown
@@ -518,13 +559,19 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         sites: Vec::new(),
         // The layout is never empty, so every Dissector reads something and checks bounds.
         chunks: vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS],
+        function: None,
+        info_cases: BTreeSet::new(),
+        extractors: Vec::new(),
     };
+    // The `switch` Fields the Info column shows are known before any of them is lowered.
+    let info = lowering.info(protocol);
     // Every Type's slots are known before any use of it builds a site table.
     let mut types = Vec::new();
     for t in &protocol.types {
         let mut slots = Vec::new();
         lowering.plan = plans.remove(&t.name).expect("every Type has a plan");
         lowering.root = &t.fields;
+        lowering.function = Some(&t.name);
         let body = lowering.type_structure(&t.fields, &[], &mut slots);
         lowering.slots.insert(&t.name, slots);
         let plan = &lowering.plan;
@@ -533,12 +580,13 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     }
     lowering.plan = top;
     lowering.root = &protocol.fields;
+    lowering.function = None;
     let layout = lowering.structure(&protocol.fields, &[]);
     let locals = lowering.plan.locals();
     if !protocol.ports.is_empty() {
         lowering.use_chunk(prelude::PORTS);
     }
-    let Lowering { proto_fields, tables, names, sites, chunks, .. } = lowering;
+    let Lowering { proto_fields, tables, names, sites, chunks, extractors, .. } = lowering;
 
     let filter_name = protocol.name.clone();
     let short_name = filter_name.to_ascii_uppercase();
@@ -557,6 +605,8 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         locals,
         chunks,
         port_preferences,
+        extractors,
+        info,
     }
 }
 
@@ -792,9 +842,109 @@ struct Lowering<'p> {
     slots: BTreeMap<&'p str, Vec<Slot<'p>>>,
     sites: Vec<SharedSite>,
     chunks: Vec<&'static str>,
+    /// The Type whose dissect function is being lowered, `None` for the top-level layout.
+    function: Option<&'p str>,
+    /// The `switch` Fields whose case name the Info column shows: the Type each is in, `None`
+    /// in the top-level layout, and its path there.
+    info_cases: BTreeSet<(Option<&'p str>, Vec<String>)>,
+    extractors: Vec<Extractor>,
+}
+
+/// A Field the Info column shows, found from the top-level layout (spec §3.14).
+enum InfoTarget<'p> {
+    /// A Field of a built-in type.
+    Value(&'p BuiltinField),
+    /// A bitfield sub-Field.
+    Bit(&'p Bit),
+    /// A `switch` Field, in the Type `ty`, `None` in the top-level layout, at `path` there.
+    Switch { ty: Option<&'p str>, path: Vec<String> },
 }
 
 impl<'p> Lowering<'p> {
+    /// What the Info column shows: the `info:` template, or else the case name of the outermost
+    /// `switch` Field, if any. Marks the `switch` Fields whose case name is kept for it.
+    fn info(&mut self, protocol: &'p Protocol) -> Option<Info> {
+        let Some(Template { parts }) = &protocol.info else {
+            let (ty, path, absolute) = outermost_switch(&protocol.fields, &protocol.types)?;
+            self.info_cases.insert((ty, path));
+            self.use_chunk(prelude::INFO_CASES);
+            return Some(Info::Case(absolute.join(".")));
+        };
+        let parts = parts
+            .iter()
+            .map(|part| {
+                let path = match part {
+                    info::Part::Text(text) => return InfoPart::Text(text.clone()),
+                    info::Part::Field(path) => path,
+                };
+                let target = self.info_target(&protocol.fields, None, &[], path).expect("validation resolved the path");
+                let (mapping, range) = match target {
+                    InfoTarget::Switch { ty, path: at } => {
+                        self.info_cases.insert((ty, at));
+                        self.use_chunk(prelude::INFO_CASES);
+                        return InfoPart::Case(path.join("."));
+                    }
+                    InfoTarget::Value(value) => (value.mapping.as_ref(), value.ty.int_range()),
+                    InfoTarget::Bit(bit) => (bit.mapping.as_ref(), Some(0..=(1_i128 << bit.width) - 1)),
+                };
+                let extractor = self.extractor(path);
+                let segments: Vec<&str> = path.iter().map(String::as_str).collect();
+                if let Some(names) = mapping.zip(range).and_then(|(m, r)| self.names_table(m, &r, &segments)) {
+                    self.use_chunk(prelude::INFO_LABEL);
+                    InfoPart::Label { extractor, names }
+                } else {
+                    self.use_chunk(prelude::INFO);
+                    InfoPart::Display(extractor)
+                }
+            })
+            .collect();
+        Some(Info::Template(parts))
+    }
+
+    /// The Field at `path` from `fields`, in the Type `ty` at `at` from the Type's body, or the
+    /// top-level layout when `ty` is `None`. Cases add no segment, so the path goes on in the
+    /// case that reads the next Field.
+    fn info_target(
+        &self,
+        fields: &'p [field::Entry],
+        ty: Option<&'p str>,
+        at: &[String],
+        path: &[String],
+    ) -> Option<InfoTarget<'p>> {
+        let field = fields.iter().filter_map(field::Entry::field).find(|f| f.name == path[0])?;
+        let (rest, at) = (&path[1..], [at, &path[..1]].concat());
+        let in_type = |name: &'p str| {
+            let body = &self.types.iter().find(|t| t.name == name)?.fields;
+            self.info_target(body, Some(name), &[], rest)
+        };
+        match &field.kind {
+            FieldKind::Builtin(value) => match rest {
+                [] => Some(InfoTarget::Value(value)),
+                [bit] => value.bits.iter().find(|b| b.name == *bit).map(InfoTarget::Bit),
+                _ => None,
+            },
+            FieldKind::Switch(_) if rest.is_empty() => Some(InfoTarget::Switch { ty, path: at }),
+            _ if rest.is_empty() => None,
+            FieldKind::Structure(children) => self.info_target(children, ty, &at, rest),
+            FieldKind::Type { name, .. } => in_type(name),
+            FieldKind::Switch(switch) => switch.bodies().find_map(|body| match body {
+                Body::Fields(children) => self.info_target(children, ty, &at, rest),
+                Body::Type { name, .. } => in_type(name),
+            }),
+        }
+    }
+
+    /// The field extractor of the `ProtoField` at `path`, declared once.
+    fn extractor(&mut self, path: &[String]) -> usize {
+        let abbrev = format!("{}.{}", self.filter_name, path.join("."));
+        if let Some(index) = self.extractors.iter().position(|x| x.abbrev == abbrev) {
+            return index;
+        }
+        let local = unique(&format!("x_{}", path.join("__")), |name| self.extractors.iter().any(|x| x.local == name));
+        self.extractors.push(Extractor { local, abbrev });
+        self.extractors.len() - 1
+    }
+
     /// The statements of a structure outside any Type whose Fields' paths start with `parent`.
     fn structure(&mut self, entries: &'p [field::Entry], parent: &[&'p str]) -> Vec<Stmt> {
         entries
@@ -863,6 +1013,7 @@ impl<'p> Lowering<'p> {
     ) -> Stmt {
         let subject = self.operand(&switch.subject);
         let names = self.names(&switch.subject, segments);
+        let info = self.info_cases.contains(&(self.function, owned(segments)));
         let cases = switch
             .cases
             .iter()
@@ -873,7 +1024,7 @@ impl<'p> Lowering<'p> {
             self.use_chunk(prelude::UNMATCHED);
         }
         let path = segments.join(".");
-        Stmt::Switch { field: proto_field, path, hidden: field.hidden, subject, names, cases, default }
+        Stmt::Switch { field: proto_field, path, hidden: field.hidden, subject, names, info, cases, default }
     }
 
     /// What a case of the `switch` Field at `segments` reads. A case adds no segment to paths, so
@@ -926,16 +1077,24 @@ impl<'p> Lowering<'p> {
             }
             Reference::Context(_) => return None,
         };
+        let names = self.names_table(mapping, &range, segments)?;
+        self.use_chunk(prelude::NAMES);
+        Some(names)
+    }
+
+    /// The table naming the values in `range` of a Field with `mapping`, declared once, when the
+    /// mapping labels some of them. The local is named after the path `segments` that first
+    /// needs it.
+    fn names_table(&mut self, mapping: &Mapping, range: &RangeInclusive<i128>, segments: &[&str]) -> Option<usize> {
         let table = match mapping {
             Mapping::Values(Values::Inline(table)) => table,
             Mapping::Values(Values::Enum(name)) => &self.enums[name],
             Mapping::Bool { .. } | Mapping::Unit { .. } => return None,
         };
-        let entries = names_entries(table, &range);
+        let entries = names_entries(table, range);
         if entries.is_empty() {
             return None;
         }
-        self.use_chunk(prelude::NAMES);
         Some(self.names.iter().position(|n| n.entries == entries).unwrap_or_else(|| {
             let local =
                 unique(&format!("names_{}", segments.join("__")), |name| self.names.iter().any(|n| n.local == name));
@@ -1291,6 +1450,39 @@ impl<'p> Lowering<'p> {
     fn local(&self, segments: &[&str]) -> String {
         unique(&format!("f_{}", segments.join("__")), |name| self.proto_fields.iter().any(|f| f.local == name))
     }
+}
+
+/// The outermost `switch` Field of the layout `fields` (spec §3.14): the one fewest structures
+/// and Fields of Types away from the top level, the first in layout order among them. Arrays
+/// are not looked into: their Fields are read once per Element. Returns the Type it is in,
+/// `None` in the top-level layout, its path there, and its path from the top level.
+fn outermost_switch<'p>(
+    fields: &'p [field::Entry],
+    types: &'p [NamedType],
+) -> Option<(Option<&'p str>, Vec<String>, Vec<String>)> {
+    let mut level = vec![(fields, None, Vec::new(), Vec::new())];
+    while !level.is_empty() {
+        let mut next = Vec::new();
+        for (entries, ty, at, absolute) in level {
+            for field in entries.iter().filter_map(field::Entry::field).filter(|f| f.array.is_none()) {
+                let extend = |path: &Vec<String>| [path.as_slice(), std::slice::from_ref(&field.name)].concat();
+                match &field.kind {
+                    FieldKind::Switch(_) => return Some((ty, extend(&at), extend(&absolute))),
+                    FieldKind::Structure(children) => {
+                        next.push((children.as_slice(), ty, extend(&at), extend(&absolute)));
+                    }
+                    FieldKind::Type { name, .. } => {
+                        let body =
+                            &types.iter().find(|t| t.name == *name).expect("validation resolved the Type").fields;
+                        next.push((body.as_slice(), Some(name.as_str()), Vec::new(), extend(&absolute)));
+                    }
+                    FieldKind::Builtin(_) => {}
+                }
+            }
+        }
+        level = next;
+    }
+    None
 }
 
 /// A path as the plans key it.
@@ -1961,6 +2153,74 @@ mod tests {
         assert_eq!(chunks("~0 & 3"), ["bitwise"]);
         assert_eq!(chunks("(1 < 2) + !0"), ["arithmetic", "logic"]);
         assert_eq!(chunks("1 || 0"), ["logic"]);
+    }
+
+    #[test]
+    fn without_info_the_column_names_the_outermost_switch() {
+        let info = |fields: &str| {
+            lowered(&format!("name: demo\nfields:\n{fields}types:\n  T:\n    fields:\n      - {{ name: k, type: uint8 }}\n      - {{ name: s, switch: k, cases: {{ 1: [ {{ name: x, type: uint8 }} ] }} }}\n"), "x").info
+        };
+        let case = |path: &str| Some(Info::Case(path.to_owned()));
+        // A Field of a Type at the top level is as deep as an inline structure.
+        assert_eq!(
+            info(
+                "  - { name: t, type: T }\n  - { name: k, type: uint8 }\n  - { name: s, switch: k, cases: { 1: [ { name: x, type: uint8 } ] } }\n"
+            ),
+            case("s")
+        );
+        assert_eq!(info("  - { name: t, type: T }\n  - name: g\n    fields: [ { name: t, type: T } ]\n"), case("t.s"));
+        // Arrays are not looked into.
+        assert_eq!(info("  - { name: a, type: T, count: 2 }\n"), None);
+        assert_eq!(info("  - { name: a, type: uint8 }\n  - { name: t, type: T, if: a }\n"), case("t.s"));
+    }
+
+    #[test]
+    fn the_info_column_keeps_only_the_case_names_it_shows() {
+        let d = lowered(
+            "name: demo\nfields:\n  - { name: k, type: uint8 }\n  - { name: t, type: T }\n  - { name: u, type: T }\n\
+             types:\n  T:\n    fields:\n      - { name: s, switch: k, cases: { 1: [ { name: x, type: uint8 } ] } }\n",
+            "x",
+        );
+        assert_eq!(d.info, Some(Info::Case("t.s".to_owned())));
+        // The Type's switch keeps its case name under the path of each use: only `t.s` is shown.
+        let Stmt::Switch { info, .. } = &d.types[0].body[0] else { panic!("a switch") };
+        assert!(info);
+        assert!(d.chunks.contains(&prelude::INFO_CASES));
+        assert!(!d.chunks.contains(&prelude::INFO));
+    }
+
+    #[test]
+    fn info_references_select_their_rendering() {
+        let d = lowered(
+            "name: demo\ninfo: \"{a}-{b}{c.f}{{{s}}}\"\nfields:\n  - { name: a, type: uint8, values: { 1: one } }\n\
+             \x20 - { name: b, type: uint16, values: { 70000: unreachable } }\n\
+             \x20 - { name: c, type: uint8, bits: [ { name: f, width: 8, values: { 2: two } } ] }\n\
+             \x20 - { name: s, switch: a, cases: { 1: [ { name: x, type: uint8 } ] } }\nallow: [unreachable-value]\n",
+            "x",
+        );
+        let Some(Info::Template(parts)) = &d.info else { panic!("a template") };
+        let label = |extractor, local: &str| InfoPart::Label {
+            extractor,
+            names: d.names.iter().position(|n| n.local == local).unwrap(),
+        };
+        assert_eq!(
+            parts,
+            &[
+                label(0, "names_a"),
+                InfoPart::Text("-".to_owned()),
+                // No label of `b` fits a `uint16`: the value is shown as Wireshark displays it.
+                InfoPart::Display(1),
+                label(2, "names_c__f"),
+                InfoPart::Text("{".to_owned()),
+                InfoPart::Case("s".to_owned()),
+                InfoPart::Text("}".to_owned()),
+            ]
+        );
+        let abbrevs: Vec<&str> = d.extractors.iter().map(|x| x.abbrev.as_str()).collect();
+        assert_eq!(abbrevs, ["demo.a", "demo.b", "demo.c.f"]);
+        for chunk in [prelude::INFO, prelude::INFO_LABEL, prelude::INFO_CASES] {
+            assert!(d.chunks.contains(&chunk), "{chunk}");
+        }
     }
 
     /// The statement reading or calling the Field at `path` among `stmts`, structures included.
