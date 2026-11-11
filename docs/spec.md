@@ -41,19 +41,9 @@ A WASM/npm surface comes after v1, as a third crate on top of the library (§14)
 
 ## 2. Domain model
 
-| Term | Meaning |
-|---|---|
-| **Protocol Description** | The document a user writes to describe one protocol: its identity, its Registration, and the layout of its payload. |
-| **Registration** | How a Dissector attaches to traffic in Wireshark: the ports it claims by default, and its availability in Decode As. |
-| **Field** | One named element of the payload layout, with a built-in type or a Type, and display settings. |
-| **Type** | A named, reusable group of Fields, defined once and used wherever a layout is needed, including as one kind of message among several. |
-| **Enum** | A named table of labels for integer values and value ranges, defined once and shared by every Field whose values it names. |
-| **Framing** | How a Dissector finds where each message starts and ends in a TCP stream. |
-| **Expression** | A formula that computes a size, a count, a condition or a switch subject from Fields read earlier. |
-| **Diagnostic** | An error or a warning about a Protocol Description, with a stable name and a location. An error stops generation; a warning does not. |
-| **Dissector** | The Wireshark Lua plugin generated from a Protocol Description. |
+The domain terms (Protocol Description, Field, Structure, Type, Switch, Case, Message, Framing and the rest) are defined in [`GLOSSARY.md`](../GLOSSARY.md), the single source for their meaning; this spec uses them as defined there.
 
-There is no first-class *message* concept: a protocol with several message kinds is a `switch` whose cases use Types (§3.9).
+There is no `messages:` key: a protocol with several kinds of Message is a `switch` whose Cases use Types (§3.9).
 
 The flow is: **Source** (description text plus a name) → `validate` → **ValidDescription** (or Diagnostics) → `generate` → Lua text. The CLI adds files around it.
 
