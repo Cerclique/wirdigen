@@ -16,6 +16,18 @@ _Avoid_: Connection, network information, binding
 One named element of a Protocol Description's payload layout, with a built-in type or a Type, and display settings.
 _Avoid_: Data chunk, data, attribute
 
+**Structure**:
+An ordered list of entries read one after another, each a Field or Padding: the top-level layout, an inline group of Fields, a Type's body or a case of a switch.
+_Avoid_: Record, block, section
+
+**Padding**:
+An entry of a Structure that skips a number of bytes: it has no name, is shown as one "Padding" item, and cannot be filtered or referenced.
+_Avoid_: Gap, filler, reserved bytes, alignment
+
+**Hidden Field**:
+A Field read but left out of the protocol tree; it can still be filtered and used in Expressions.
+_Avoid_: Invisible field, private field, internal field
+
 **Type**:
 A named, reusable group of Fields, defined once in a Protocol Description and used wherever a layout is needed, including as one kind of message among several.
 _Avoid_: Struct, message, template
