@@ -66,8 +66,8 @@ fn colour_is_opt_in() {
 
 #[test]
 fn denied_warnings_render_as_errors_with_a_note() {
-    let text = "name: demo\nfields: [ {name: id, type: uint8} ]\ntypes:\n  Header:\n    fields: [ {name: len, type: uint16} ]\n";
-    let source = Source::new("x.wirdigen.yaml", text);
+    let text = include_str!("diagnostics/unused-type/unused.wirdigen.yaml");
+    let source = Source::new("unused.wirdigen.yaml", text);
     let valid = wirdigen::validate(&source).unwrap();
     let warning = &valid.warnings()[0];
     let mut options = RenderOptions::default();

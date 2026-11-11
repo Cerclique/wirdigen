@@ -64,13 +64,13 @@ impl Verbosity {
 #[derive(Subcommand)]
 enum Command {
     /// Validate Protocol Descriptions; write nothing.
-    Validate(ValidateArgs),
+    Validate(ValidationArgs),
     /// Validate Protocol Descriptions and write their Dissectors.
     Generate(GenerateArgs),
 }
 
 #[derive(clap::Args)]
-struct ValidateArgs {
+struct ValidationArgs {
     /// Protocol Description files; `-` reads standard input.
     #[arg(required = true)]
     inputs: Vec<PathBuf>,
@@ -83,7 +83,7 @@ struct ValidateArgs {
 #[derive(clap::Args)]
 struct GenerateArgs {
     #[command(flatten)]
-    validate: ValidateArgs,
+    validation: ValidationArgs,
 
     /// Write the Dissector of the only input to this file, or to standard output for `-`.
     #[arg(short = 'o', value_name = "FILE|-", conflicts_with = "out_dir")]
@@ -107,17 +107,17 @@ fn main() -> ExitCode {
         std::io::stderr().is_terminal(),
     );
     let verbosity = Verbosity::from_flags(cli.quiet, cli.verbose);
-    let (subcommand, validate_args, placement, check) = match cli.command {
-        Command::Validate(validate_args) => ("validate", validate_args, None, false),
-        Command::Generate(GenerateArgs { validate, output, out_dir, check }) => {
-            ("generate", validate, Some(Placement::from_args(output, out_dir)), check)
+    let (subcommand, validation, placement, check) = match cli.command {
+        Command::Validate(validation) => ("validate", validation, None, false),
+        Command::Generate(GenerateArgs { validation, output, out_dir, check }) => {
+            ("generate", validation, Some(Placement::from_args(output, out_dir)), check)
         }
     };
-    let ValidateArgs { inputs: args, deny_warnings } = validate_args;
+    let ValidationArgs { inputs: paths, deny_warnings } = validation;
     let mut options = RenderOptions::default();
     options.color = color;
     options.deny_warnings = deny_warnings;
-    let inputs = placement::inputs(args).unwrap_or_else(|message| usage_error(subcommand, &message));
+    let inputs = placement::inputs(paths).unwrap_or_else(|message| usage_error(subcommand, &message));
     let actions = match &placement {
         None => vec![Action::Validate; inputs.len()],
         Some(placement) => {

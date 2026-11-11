@@ -22,8 +22,8 @@ const DIAGNOSTICS_INDEX: &str = "https://cerclique.github.io/wirdigen/diagnostic
 pub struct RenderOptions {
     /// Whether to colour the output with ANSI escape codes. Off by default.
     pub color: bool,
-    /// Whether to render warnings as errors, each with a note saying it is denied, as the CLI's
-    /// `--deny-warnings` does. Off by default.
+    /// Whether to render warnings as errors, each with a note saying it is denied, for a caller
+    /// that fails on warnings (the CLI's `--deny-warnings`). Off by default.
     pub deny_warnings: bool,
 }
 

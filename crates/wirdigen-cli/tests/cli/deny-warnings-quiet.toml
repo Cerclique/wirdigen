@@ -1,13 +1,13 @@
 bin.name = "wirdigen"
 env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
-args = ["validate", "-q", "--deny-warnings", "warn.wirdigen.yaml"]
-fs.base = "inputs-argument-order.in"
+args = ["validate", "-q", "--deny-warnings", "unused.wirdigen.yaml"]
+fs.base = "../../../wirdigen/tests/diagnostics/unused-type"
 fs.sandbox = true
 status.code = 1
 stdout = ""
 stderr = """
 error[unused-type]: the Type `Header` is never used
- --> warn.wirdigen.yaml:5:3
+ --> unused.wirdigen.yaml:5:3
   |
 5 |   Header:
   |   ^^^^^^
