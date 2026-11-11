@@ -9,6 +9,7 @@ use crate::diagnostic::{Diagnostic, Name, record};
 use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping};
 use crate::scalar::{Kind, resolve_plain};
+use crate::types::Types;
 use crate::yaml::{Node, Value};
 
 /// The keys of a Field this version reads, in documentation order.
@@ -473,6 +474,12 @@ pub(crate) enum Endian {
 }
 
 impl Endian {
+    /// The byte order an optional `endian:` value sets, else `default`. An invalid value is
+    /// reported and gives `default`: the run fails on it anyway, so any stand-in will do.
+    pub(crate) fn resolve(value: Option<&Spanned<String>>, default: Self, diagnostics: &mut Vec<Diagnostic>) -> Self {
+        value.and_then(|v| record(Self::check(v), diagnostics)).unwrap_or(default)
+    }
+
     /// Reads an `endian:` value, reporting anything but `big` or `little`.
     pub(crate) fn check(value: &Spanned<String>) -> Result<Self, Diagnostic> {
         match value.value.as_str() {
@@ -491,11 +498,16 @@ impl Endian {
 const VALUE_KEYS: [&str; 9] =
     ["size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit"];
 
+/// The keys a Field of a Type does not take, in documentation order: the value keys, and
+/// `endian:`, since a Type is read in its own byte order (spec §3.5, §3.11).
+const TYPE_USE_KEYS: [&str; 10] =
+    ["endian", "size", "prefix", "terminator", "encoding", "display", "values", "true", "false", "unit"];
+
 /// What a Field is, as written.
 #[derive(Debug, Clone)]
 enum RawKind {
-    /// `type:` with a type name.
-    Type(Spanned<String>),
+    /// `type:` with a type name, and the keys present that a Field of a Type does not take.
+    Type { name: Spanned<String>, type_use_keys: Vec<Spanned<&'static str>> },
     /// `fields:` with an inline structure, and the keys present that only a value takes.
     Structure { fields: Vec<RawField>, value_keys: Vec<Spanned<&'static str>> },
 }
@@ -533,6 +545,8 @@ pub(crate) enum FieldKind {
     Builtin(BuiltinField),
     /// An inline structure: its Fields, in order, shown as a subtree.
     Structure(Vec<Field>),
+    /// A Field of the named Type, shown as a subtree.
+    Type(String),
 }
 
 /// How a Field of a built-in type is read and shown.
@@ -631,15 +645,12 @@ fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Opti
         }
         [("type", _)] => {
             let value = keys.get("type").expect("the key was found");
-            record(expect_string(value, "type", Name::WrongValueType), errors).map(RawKind::Type)
+            let name = record(expect_string(value, "type", Name::WrongValueType), errors)?;
+            Some(RawKind::Type { name, type_use_keys: present(keys, &TYPE_USE_KEYS) })
         }
         [("fields", _)] => {
             let fields = read_structure(keys.get("fields").expect("the key was found"), errors)?;
-            let value_keys = VALUE_KEYS
-                .iter()
-                .filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() }))
-                .collect();
-            Some(RawKind::Structure { fields, value_keys })
+            Some(RawKind::Structure { fields, value_keys: present(keys, &VALUE_KEYS) })
         }
         [(kind, key)] => {
             errors.push(Diagnostic::new(
@@ -665,6 +676,31 @@ fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Opti
     }
 }
 
+/// Which of `names` are keys of a Field, with their spans.
+fn present(keys: &Keys<'_>, names: &[&'static str]) -> Vec<Spanned<&'static str>> {
+    names.iter().filter_map(|k| keys.key_of(k).map(|key| Spanned { value: *k, span: key.span.clone() })).collect()
+}
+
+/// The `type:` names of `fields` that are not built-ins, inline structures included, in source
+/// order: the Types they use, and names [`check`] reports as unknown.
+pub(crate) fn type_uses(fields: &[RawField]) -> Vec<&Spanned<String>> {
+    fields
+        .iter()
+        .flat_map(|field| match &field.kind {
+            RawKind::Type { name, .. } if Builtin::from_name(&name.value).is_none() => vec![name],
+            RawKind::Type { .. } => Vec::new(),
+            RawKind::Structure { fields, .. } => type_uses(fields),
+        })
+        .collect()
+}
+
+/// Whether a `type:` names a Type rather than a built-in. Every built-in is lowercase, so an
+/// uppercase first letter means a Type (spec §3.4.2); so does a lowercase name `types:` declares,
+/// which is `invalid-type-name` already and must not also be `unknown-type`.
+fn names_type(name: &str, types: &Types<'_>) -> bool {
+    Builtin::from_name(name).is_none() && (name.starts_with(|c: char| c.is_ascii_uppercase()) || types.declares(name))
+}
+
 /// Stage 4: checks the Fields of one structure, pushing every Diagnostic.
 ///
 /// Returns the Fields that passed. A wrong Field is left out, so the layout is complete only
@@ -673,6 +709,7 @@ pub(crate) fn check(
     fields: &[RawField],
     endian: Endian,
     enums: &mut Enums<'_>,
+    types: &mut Types<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<Field> {
     let mut layout = Vec::new();
@@ -698,21 +735,28 @@ pub(crate) fn check(
                 .with_note("first defined here", Some(first.name.span.clone())),
             );
         }
-        let endian = match &field.endian {
-            Some(value) => record(Endian::check(value), diagnostics),
-            None => Some(endian),
-        };
         // A Field naming an Enum uses it, whatever else is wrong with the Field (spec §3.4.7).
         enums.mark_used(&field.mappings);
         let kind = match &field.kind {
-            RawKind::Type(ty) => check_builtin(field, ty, endian, enums, diagnostics).map(FieldKind::Builtin),
-            RawKind::Structure { fields, value_keys } => {
-                for key in value_keys {
-                    diagnostics.push(value_key_on_structure(key));
+            RawKind::Type { name, type_use_keys } if names_type(&name.value, types) => {
+                for key in type_use_keys {
+                    diagnostics.push(misplaced_key(key, "a Field whose type is a Type", "the Type"));
                 }
-                // An invalid byte order is an error already, so any stand-in will do.
-                let fields = check(fields, endian.unwrap_or_default(), enums, diagnostics);
-                Some(FieldKind::Structure(fields))
+                types.resolve(name).map(FieldKind::Type)
+            }
+            RawKind::Type { name, .. } => {
+                let endian = match &field.endian {
+                    Some(value) => record(Endian::check(value), diagnostics),
+                    None => Some(endian),
+                };
+                check_builtin(field, name, endian, enums, diagnostics).map(FieldKind::Builtin)
+            }
+            RawKind::Structure { fields, value_keys } => {
+                let endian = Endian::resolve(field.endian.as_ref(), endian, diagnostics);
+                for key in value_keys {
+                    diagnostics.push(misplaced_key(key, "an inline structure", "the structure"));
+                }
+                Some(FieldKind::Structure(check(fields, endian, enums, types, diagnostics)))
             }
         };
         check_tree_text(field, diagnostics);
@@ -758,16 +802,21 @@ fn check_builtin(
     Some(BuiltinField { ty, endian, length, encoding, display, mapping })
 }
 
-/// A key that only a value takes, on an inline structure: a length key is `unexpected-length`,
-/// any other `incompatible-display` (spec §3.4.3, §3.4.6).
-fn value_key_on_structure(key: &Spanned<&'static str>) -> Diagnostic {
-    let name = if LENGTH_KEYS.iter().any(|(k, _)| *k == key.value) {
-        Name::UnexpectedLength
-    } else {
-        Name::IncompatibleDisplay
+/// A key that `what` (an inline structure, a Field whose type is a Type) does not take, though
+/// the Fields of `inner` may: a length key is `unexpected-length`, `endian:` `invalid-endian`,
+/// any other `incompatible-display` (spec §3.4.3, §3.4.6, §3.5).
+fn misplaced_key(key: &Spanned<&'static str>, what: &str, inner: &str) -> Diagnostic {
+    let name = match key.value {
+        k if LENGTH_KEYS.iter().any(|(l, _)| *l == k) => Name::UnexpectedLength,
+        "endian" => Name::InvalidEndian,
+        _ => Name::IncompatibleDisplay,
     };
-    Diagnostic::new(name, key.span.clone(), format!("an inline structure takes no `{}`", key.value))
-        .with_note(format!("remove `{}`, or give it to a Field inside the structure", key.value), None)
+    let error = Diagnostic::new(name, key.span.clone(), format!("{what} takes no `{}`", key.value));
+    if key.value == "endian" {
+        error.with_note("a Type is read in its own byte order: set `endian` on the Type", None)
+    } else {
+        error.with_note(format!("remove `{}`, or give it to a Field of {inner}", key.value), None)
+    }
 }
 
 /// The length of a Field of type `ty`, written `ty_name`, encoded as `encoding`: a fixed-size
@@ -834,12 +883,9 @@ fn check_tree_text(field: &RawField, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Why a `type:` names no built-in: an unknown Type, or no type at all.
+/// Why a lowercase `type:` names no built-in.
 fn unresolved_type(ty: &Spanned<String>) -> Diagnostic {
     let name = ty.value.as_str();
-    if name.starts_with(|c: char| c.is_ascii_uppercase()) {
-        return Diagnostic::new(Name::UnknownType, ty.span.clone(), format!("there is no Type named `{name}`"));
-    }
     let names: Vec<&'static str> = BUILTINS.iter().map(|(n, _)| *n).collect();
     let unknown = Diagnostic::new(Name::UnknownType, ty.span.clone(), format!("there is no built-in type `{name}`"));
     match closest(name, &names) {

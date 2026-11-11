@@ -64,7 +64,7 @@ local function dissect_top(tvb, tree, offset)
     -- Field: id
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "id")
-        return offset
+        return nil
     end
     tree:add(f_id, tvb(offset, 1))
     offset = offset + 1
@@ -75,7 +75,7 @@ local function dissect_top(tvb, tree, offset)
         -- Field: header.id
         if not wd_fits(tvb, offset, 2) then
             wd_truncated(tree, wd_ei_truncated, "header.id")
-            return offset
+            return nil
         end
         tree:add_le(f_header__id, tvb(offset, 2))
         offset = offset + 2
@@ -86,7 +86,7 @@ local function dissect_top(tvb, tree, offset)
             -- Field: header.flags.kind
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "header.flags.kind")
-                return offset
+                return nil
             end
             tree:add(f_header__flags__kind, tvb(offset, 1))
             offset = offset + 1
@@ -97,7 +97,7 @@ local function dissect_top(tvb, tree, offset)
                 -- Field: header.flags.extra.id
                 if not wd_fits(tvb, offset, 2) then
                     wd_truncated(tree, wd_ei_truncated, "header.flags.extra.id")
-                    return offset
+                    return nil
                 end
                 tree:add(f_header__flags__extra__id, tvb(offset, 2))
                 offset = offset + 2
@@ -111,13 +111,13 @@ local function dissect_top(tvb, tree, offset)
     do
         if not wd_fits(tvb, offset, 1) then
             wd_truncated(tree, wd_ei_truncated, "name")
-            return offset
+            return nil
         end
         local len = tvb(offset, 1):uint()
         offset = offset + 1
         if not wd_fits(tvb, offset, len) then
             wd_truncated(tree, wd_ei_truncated, "name")
-            return offset
+            return nil
         end
         tree:add_packet_field(f_name, tvb(offset, len), ENC_UTF_8)
         offset = offset + len

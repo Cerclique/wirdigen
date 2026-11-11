@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - { name: req, type: Hedaer }
+  - { name: resp, type: Hedaer }
+types:
+  Header:
+    fields: [ { name: len, type: uint16 } ]

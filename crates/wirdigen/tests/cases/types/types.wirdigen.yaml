@@ -1,0 +1,25 @@
+# Named Types: one Type used twice, a Type inside a Type and inside an inline structure, and a
+# Type with its own byte order. Filter names follow Field paths, never Type names.
+name: types
+fields:
+  - { name: req_hdr, type: Header, label: Request header }
+  - { name: resp_hdr, type: Header }
+  - name: trailer
+    fields:
+      - { name: stamp, type: Stamp }
+types:
+  Header:
+    fields:
+      - { name: kind, type: uint8, values: Kind }
+      - { name: len, type: uint16 }
+      - name: opts
+        fields:
+          - { name: ttl, type: uint8 }
+      - { name: stamp, type: Stamp }
+  Stamp:
+    endian: little
+    fields:
+      - { name: secs, type: uint32 }
+      - { name: tag, type: string, terminator: 0 }
+enums:
+  Kind: { 1: Request, 2: Response }

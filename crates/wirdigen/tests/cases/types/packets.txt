@@ -1,0 +1,6 @@
+# req_hdr: kind=1, len=16 (big), opts.ttl=64, stamp.secs=1 (little), stamp.tag="a";
+# resp_hdr: kind=2, len=32, opts.ttl=65, stamp.secs=2, stamp.tag="b"; trailer.stamp: secs=3, tag="c".
+0000  01 00 10 40 01 00 00 00 61 00 02 00 20 41 02 00
+0010  00 00 62 00 03 00 00 00 63 00
+# Truncated inside resp_hdr.stamp.secs: two bytes of its uint32.
+0000  01 00 10 40 01 00 00 00 61 00 02 00 20 41 02 00

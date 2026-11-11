@@ -1,0 +1,11 @@
+name: demo
+fields:
+  - { name: a, type: A }
+  - { name: b, type: B }
+types:
+  A:
+    fields:
+      - name: inner
+        fields: [ { name: b, type: B } ]
+  B:
+    fields: [ { name: a, type: A } ]

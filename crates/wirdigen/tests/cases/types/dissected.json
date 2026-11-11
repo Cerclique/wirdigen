@@ -1,0 +1,61 @@
+[
+  {
+    "types.req_hdr": {
+      "types.req_hdr.kind": "1",
+      "types.req_hdr.len": "16",
+      "types.req_hdr.opts": {
+        "types.req_hdr.opts.ttl": "64"
+      },
+      "types.req_hdr.stamp": {
+        "types.req_hdr.stamp.secs": "1",
+        "types.req_hdr.stamp.tag": "a"
+      }
+    },
+    "types.resp_hdr": {
+      "types.resp_hdr.kind": "2",
+      "types.resp_hdr.len": "32",
+      "types.resp_hdr.opts": {
+        "types.resp_hdr.opts.ttl": "65"
+      },
+      "types.resp_hdr.stamp": {
+        "types.resp_hdr.stamp.secs": "2",
+        "types.resp_hdr.stamp.tag": "b"
+      }
+    },
+    "types.trailer": {
+      "types.trailer.stamp": {
+        "types.trailer.stamp.secs": "3",
+        "types.trailer.stamp.tag": "c"
+      }
+    }
+  },
+  {
+    "types.req_hdr": {
+      "types.req_hdr.kind": "1",
+      "types.req_hdr.len": "16",
+      "types.req_hdr.opts": {
+        "types.req_hdr.opts.ttl": "64"
+      },
+      "types.req_hdr.stamp": {
+        "types.req_hdr.stamp.secs": "1",
+        "types.req_hdr.stamp.tag": "a"
+      }
+    },
+    "types.resp_hdr": {
+      "types.resp_hdr.kind": "2",
+      "types.resp_hdr.len": "32",
+      "types.resp_hdr.opts": {
+        "types.resp_hdr.opts.ttl": "65"
+      },
+      "types.resp_hdr.stamp": {
+        "_ws.expert": {
+          "types._malformed.truncated": "",
+          "_ws.expert.message": "Malformed: truncated: resp_hdr.stamp.secs",
+          "_ws.expert.severity": "8388608",
+          "_ws.expert.group": "117440512"
+        },
+        "_ws.malformed": "Malformed Packet"
+      }
+    }
+  }
+]

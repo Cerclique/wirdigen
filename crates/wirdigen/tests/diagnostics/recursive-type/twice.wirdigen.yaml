@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - { name: node, type: Node }
+types:
+  Node:
+    fields:
+      - { name: left, type: Node }
+      - { name: right, type: Node }

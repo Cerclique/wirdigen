@@ -6,6 +6,7 @@ use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Endian, Field, RawField};
 use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, RawEnum, Table};
+use crate::types::{self, NamedType, RawType};
 use crate::yaml::{Node, Value};
 
 /// The longest protocol name Wireshark filters accept here (spec §3.3, ADR 0014).
@@ -25,6 +26,8 @@ pub(crate) struct Description {
     pub(crate) endian: Option<Spanned<String>>,
     /// The top-level Fields, in order.
     pub(crate) fields: Vec<RawField>,
+    /// The Types of `types:`, in order.
+    pub(crate) types: Vec<RawType>,
     /// The Enums of `enums:`, in order.
     pub(crate) enums: Vec<RawEnum>,
     /// The `allow:` entries, as written.
@@ -44,6 +47,8 @@ pub(crate) struct Protocol {
     pub(crate) name: String,
     pub(crate) title: Option<String>,
     pub(crate) fields: Vec<Field>,
+    /// The Types, each after the Types it uses (spec §7.3).
+    pub(crate) types: Vec<NamedType>,
     /// The tables of the Enums, by name.
     pub(crate) enums: BTreeMap<String, Table>,
 }
@@ -83,11 +88,12 @@ pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagno
     let endian = string_value("endian", Name::InvalidEndian);
     let layout = keys.get("fields").and_then(|fields| field::read_structure(fields, &mut errors)).unwrap_or_default();
 
+    let types = keys.get("types").map_or_else(Vec::new, |node| types::read(node, &mut errors));
     let enums = keys.get("enums").map_or_else(Vec::new, |node| mapping::read_enums(node, &mut errors));
     let allow = keys.get("allow").map_or_else(Vec::new, |node| read_allow(node, &mut errors));
 
     match name {
-        Some(name) if errors.is_empty() => Ok(Description { name, title, endian, fields: layout, enums, allow }),
+        Some(name) if errors.is_empty() => Ok(Description { name, title, endian, fields: layout, types, enums, allow }),
         _ => Err(errors),
     }
 }
@@ -140,19 +146,16 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
         };
         diagnostics.push(Diagnostic::new(Name::UnknownAllow, entry.span.clone(), message));
     }
-    let endian = match &description.endian {
-        Some(value) => record(Endian::check(value), &mut diagnostics),
-        None => Some(Endian::default()),
-    };
-    // An invalid top-level byte order is an error already, so any stand-in will do.
+    let endian = Endian::resolve(description.endian.as_ref(), Endian::default(), &mut diagnostics);
     let mut enums = Enums::check(&description.enums, &mut diagnostics);
-    let fields = field::check(&description.fields, endian.unwrap_or_default(), &mut enums, &mut diagnostics);
+    let (fields, types) = types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
     let enums = enums.finish(&mut diagnostics);
     let has_errors = diagnostics.iter().any(|d| d.severity() == Severity::Error);
     let protocol = (!has_errors).then(|| Protocol {
         name: description.name.value.clone(),
         title: description.title.as_ref().map(|t| t.value.clone()),
         fields,
+        types,
         enums,
     });
     (protocol, diagnostics)

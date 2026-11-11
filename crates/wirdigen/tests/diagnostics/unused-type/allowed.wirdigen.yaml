@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - { name: id, type: uint8 }
+types:
+  Header:
+    fields: [ { name: len, type: uint16 } ]
+allow: [unused-type]

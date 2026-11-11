@@ -61,56 +61,56 @@ local function dissect_top(tvb, tree, offset)
     -- Field: is_set
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "is_set")
-        return offset
+        return nil
     end
     tree:add(f_is_set, tvb(offset, 1))
     offset = offset + 1
     -- Field: ratio
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "ratio")
-        return offset
+        return nil
     end
     tree:add(f_ratio, tvb(offset, 4))
     offset = offset + 4
     -- Field: precise_ratio
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "precise_ratio")
-        return offset
+        return nil
     end
     tree:add(f_precise_ratio, tvb(offset, 8))
     offset = offset + 8
     -- Field: ipv4_addr
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "ipv4_addr")
-        return offset
+        return nil
     end
     tree:add(f_ipv4_addr, tvb(offset, 4))
     offset = offset + 4
     -- Field: ipv6_addr
     if not wd_fits(tvb, offset, 16) then
         wd_truncated(tree, wd_ei_truncated, "ipv6_addr")
-        return offset
+        return nil
     end
     tree:add(f_ipv6_addr, tvb(offset, 16))
     offset = offset + 16
     -- Field: mac_addr
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "mac_addr")
-        return offset
+        return nil
     end
     tree:add(f_mac_addr, tvb(offset, 6))
     offset = offset + 6
     -- Field: eui64_addr
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "eui64_addr")
-        return offset
+        return nil
     end
     tree:add(f_eui64_addr, tvb(offset, 8))
     offset = offset + 8
     -- Field: uuid
     if not wd_fits(tvb, offset, 16) then
         wd_truncated(tree, wd_ei_truncated, "uuid")
-        return offset
+        return nil
     end
     tree:add(f_uuid, tvb(offset, 16))
     offset = offset + 16

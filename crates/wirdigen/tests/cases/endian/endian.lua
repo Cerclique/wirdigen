@@ -75,105 +75,105 @@ local function dissect_top(tvb, tree, offset)
     -- Field: le16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "le16")
-        return offset
+        return nil
     end
     tree:add_le(f_le16, tvb(offset, 2))
     offset = offset + 2
     -- Field: be16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "be16")
-        return offset
+        return nil
     end
     tree:add(f_be16, tvb(offset, 2))
     offset = offset + 2
     -- Field: le_signed
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "le_signed")
-        return offset
+        return nil
     end
     tree:add_le(f_le_signed, tvb(offset, 4))
     offset = offset + 4
     -- Field: le40
     if not wd_fits(tvb, offset, 5) then
         wd_truncated(tree, wd_ei_truncated, "le40")
-        return offset
+        return nil
     end
     tree:add(f_le40, tvb(offset, 5), tvb(offset, 5):le_uint64())
     offset = offset + 5
     -- Field: be40
     if not wd_fits(tvb, offset, 5) then
         wd_truncated(tree, wd_ei_truncated, "be40")
-        return offset
+        return nil
     end
     tree:add(f_be40, tvb(offset, 5), tvb(offset, 5):uint64())
     offset = offset + 5
     -- Field: le_signed48
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "le_signed48")
-        return offset
+        return nil
     end
     tree:add(f_le_signed48, tvb(offset, 6), tvb(offset, 6):le_int64())
     offset = offset + 6
     -- Field: le_float
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "le_float")
-        return offset
+        return nil
     end
     tree:add_le(f_le_float, tvb(offset, 4))
     offset = offset + 4
     -- Field: le_double
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "le_double")
-        return offset
+        return nil
     end
     tree:add_le(f_le_double, tvb(offset, 8))
     offset = offset + 8
     -- Field: le_ipv4
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "le_ipv4")
-        return offset
+        return nil
     end
     tree:add_le(f_le_ipv4, tvb(offset, 4))
     offset = offset + 4
     -- Field: be_ipv4
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "be_ipv4")
-        return offset
+        return nil
     end
     tree:add(f_be_ipv4, tvb(offset, 4))
     offset = offset + 4
     -- Field: le_eui64
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "le_eui64")
-        return offset
+        return nil
     end
     tree:add_le(f_le_eui64, tvb(offset, 8))
     offset = offset + 8
     -- Field: le_guid
     if not wd_fits(tvb, offset, 16) then
         wd_truncated(tree, wd_ei_truncated, "le_guid")
-        return offset
+        return nil
     end
     tree:add_le(f_le_guid, tvb(offset, 16))
     offset = offset + 16
     -- Field: ipv6_addr
     if not wd_fits(tvb, offset, 16) then
         wd_truncated(tree, wd_ei_truncated, "ipv6_addr")
-        return offset
+        return nil
     end
     tree:add(f_ipv6_addr, tvb(offset, 16))
     offset = offset + 16
     -- Field: mac_addr
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "mac_addr")
-        return offset
+        return nil
     end
     tree:add(f_mac_addr, tvb(offset, 6))
     offset = offset + 6
     -- Field: flag
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flag")
-        return offset
+        return nil
     end
     tree:add(f_flag, tvb(offset, 1))
     offset = offset + 1

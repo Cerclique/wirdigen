@@ -77,112 +77,112 @@ local function dissect_top(tvb, tree, offset)
     -- Field: u8
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "u8")
-        return offset
+        return nil
     end
     tree:add(f_u8, tvb(offset, 1))
     offset = offset + 1
     -- Field: u16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "u16")
-        return offset
+        return nil
     end
     tree:add(f_u16, tvb(offset, 2))
     offset = offset + 2
     -- Field: u24
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "u24")
-        return offset
+        return nil
     end
     tree:add(f_u24, tvb(offset, 3))
     offset = offset + 3
     -- Field: u32
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "u32")
-        return offset
+        return nil
     end
     tree:add(f_u32, tvb(offset, 4))
     offset = offset + 4
     -- Field: u40
     if not wd_fits(tvb, offset, 5) then
         wd_truncated(tree, wd_ei_truncated, "u40")
-        return offset
+        return nil
     end
     tree:add(f_u40, tvb(offset, 5), tvb(offset, 5):uint64())
     offset = offset + 5
     -- Field: u48
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "u48")
-        return offset
+        return nil
     end
     tree:add(f_u48, tvb(offset, 6), tvb(offset, 6):uint64())
     offset = offset + 6
     -- Field: u56
     if not wd_fits(tvb, offset, 7) then
         wd_truncated(tree, wd_ei_truncated, "u56")
-        return offset
+        return nil
     end
     tree:add(f_u56, tvb(offset, 7), tvb(offset, 7):uint64())
     offset = offset + 7
     -- Field: u64
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "u64")
-        return offset
+        return nil
     end
     tree:add(f_u64, tvb(offset, 8))
     offset = offset + 8
     -- Field: i8
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "i8")
-        return offset
+        return nil
     end
     tree:add(f_i8, tvb(offset, 1))
     offset = offset + 1
     -- Field: i16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "i16")
-        return offset
+        return nil
     end
     tree:add(f_i16, tvb(offset, 2))
     offset = offset + 2
     -- Field: i24
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "i24")
-        return offset
+        return nil
     end
     tree:add(f_i24, tvb(offset, 3))
     offset = offset + 3
     -- Field: i32
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "i32")
-        return offset
+        return nil
     end
     tree:add(f_i32, tvb(offset, 4))
     offset = offset + 4
     -- Field: i40
     if not wd_fits(tvb, offset, 5) then
         wd_truncated(tree, wd_ei_truncated, "i40")
-        return offset
+        return nil
     end
     tree:add(f_i40, tvb(offset, 5), tvb(offset, 5):int64())
     offset = offset + 5
     -- Field: i48
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "i48")
-        return offset
+        return nil
     end
     tree:add(f_i48, tvb(offset, 6), tvb(offset, 6):int64())
     offset = offset + 6
     -- Field: i56
     if not wd_fits(tvb, offset, 7) then
         wd_truncated(tree, wd_ei_truncated, "i56")
-        return offset
+        return nil
     end
     tree:add(f_i56, tvb(offset, 7), tvb(offset, 7):int64())
     offset = offset + 7
     -- Field: i64
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "i64")
-        return offset
+        return nil
     end
     tree:add(f_i64, tvb(offset, 8))
     offset = offset + 8

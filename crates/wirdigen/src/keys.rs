@@ -133,6 +133,12 @@ pub(crate) fn is_single_line(text: &str) -> bool {
     !text.contains(['\n', '\r', '\u{85}', '\u{2028}', '\u{2029}'])
 }
 
+/// `[A-Z][A-Za-z0-9]*`, the names of Types and Enums (spec §3.4.2).
+pub(crate) fn is_type_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
+}
+
 pub(crate) fn wrong_type(span: Range<usize>, message: impl Into<String>) -> Diagnostic {
     Diagnostic::new(Name::WrongValueType, span, message)
 }

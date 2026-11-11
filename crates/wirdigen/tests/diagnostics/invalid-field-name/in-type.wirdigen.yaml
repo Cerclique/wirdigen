@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - { name: a, type: Header }
+  - { name: b, type: Header }
+types:
+  Header:
+    fields: [ { name: Len, type: uint16 } ]
