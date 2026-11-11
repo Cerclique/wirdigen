@@ -11,6 +11,9 @@ use crate::keys::{Spanned, read_keys, wrong_type};
 use crate::mapping::{self, Key};
 use crate::yaml::{Node, Value};
 
+/// The keys of `registration:`.
+pub(crate) const KEYS: [&str; 1] = ["ports"];
+
 /// The lowest port a Dissector can claim: port 0 is reserved.
 const PORT_MIN: u16 = 1;
 
@@ -25,7 +28,7 @@ pub(crate) enum Transport {
 
 impl Transport {
     /// Every transport, in the order the keys of `ports:` are documented.
-    const ALL: [Transport; 2] = [Transport::Udp, Transport::Tcp];
+    pub(crate) const ALL: [Transport; 2] = [Transport::Udp, Transport::Tcp];
 
     /// The key of `ports:` declaring the transport's ports.
     pub(crate) const fn key(self) -> &'static str {
@@ -94,7 +97,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> RawRegistration
         );
         return RawRegistration::default();
     };
-    let keys = read_keys(entries, &["ports"], errors);
+    let keys = read_keys(entries, &KEYS, errors);
     let Some(ports) = keys.get("ports") else { return RawRegistration::default() };
     let Value::Mapping(entries) = &ports.value else {
         errors.push(wrong_type(ports.span.clone(), "`ports` must map `udp` or `tcp` to a list of ports"));

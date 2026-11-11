@@ -34,7 +34,7 @@ pub enum Output {
 }
 
 impl Output {
-    fn from_arg(arg: PathBuf) -> Self {
+    pub fn from_arg(arg: PathBuf) -> Self {
         if is_dash(&arg) { Output::Stdout } else { Output::File(arg) }
     }
 }
