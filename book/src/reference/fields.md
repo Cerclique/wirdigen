@@ -549,7 +549,7 @@ fields:
   dissection of this protocol goes on.
 
 The name is one word: an empty name, one with a space, or a value that is not a string is
-[`wrong-value-type`](../diagnostics.md#wrong-value-type). `dissector:` on any other type is
+[`invalid-dissector`](../diagnostics.md#invalid-dissector). `dissector:` on any other type is
 [`incompatible-display`](../diagnostics.md#incompatible-display).
 
 ## Filter names {#filter-names}

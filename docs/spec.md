@@ -326,7 +326,7 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 - `expect:` goes on integer and `bool` Fields and on sub-Fields; elsewhere it is `incompatible-display`, like a value-mapping key. Its values are read like `values:` keys (§3.4.7), and an empty list is `wrong-value-type`. A `bool` holds 0 or 1, as Expressions read it (§4.4), and a `uint64` is compared as the unsigned value it is.
 - An `expect:` is `unreachable-expect` when none of its values is in the range of the Field's type or the sub-Field's width; it is kept, so every packet gets the warning.
 - A mismatch is an expert info warning (group Protocol) on the Field's item, hidden or not: "Unexpected value: <path> (expected <values as written>)", filtered `<protocol>._protocol.unexpected`.
-- `dissector:` goes on `bytes` Fields only; elsewhere it is `incompatible-display`, like a value-mapping key. Its value is a one-word string; anything else (empty, with whitespace, not a string) is `wrong-value-type`.
+- `dissector:` goes on `bytes` Fields only; elsewhere it is `incompatible-display`, like a value-mapping key. Its value is a one-word string: an empty one, one with whitespace, or a scalar that is not a string is `invalid-dissector`.
 - The handed-off Dissector's layer goes into the Field's structure, right after the Field's item, hidden or not, and the dissection goes on after it. A Field with no bytes calls no Dissector. The Protocol column keeps the short name (§5.5).
 - The Dissector is looked up by name the first time a packet reads the Field, empty or not. An unknown name is an expert info warning (group Undecoded) on the structure: "Unknown Dissector <name>: <path>", filtered `<protocol>._undecoded.dissector`. An error in the handed-off Dissector is shown in its own layer and never raises a Lua error.
 
@@ -514,7 +514,7 @@ Errors:
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - `overlapping-cases`: overlapping `switch` cases (§3.9);
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
-- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding` (§3.10);
+- `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding`, `invalid-dissector` (§3.10);
 - `framing:` `length` breaking the header-only rule;
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - invalid ports and port ranges (§3.12);

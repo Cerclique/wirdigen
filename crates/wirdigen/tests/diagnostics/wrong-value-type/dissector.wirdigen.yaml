@@ -1,6 +1,3 @@
 name: demo
 fields:
-  - { name: a, type: bytes, size: 1, dissector: 12 }
-  - { name: b, type: bytes, size: 1, dissector: [ json ] }
-  - { name: c, type: bytes, size: 1, dissector: "" }
-  - { name: d, type: bytes, size: 1, dissector: " " }
+  - { name: a, type: bytes, size: 1, dissector: [ json ] }

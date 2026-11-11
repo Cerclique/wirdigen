@@ -1127,12 +1127,12 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
     }
 }
 
-/// `dissector:` names a Dissector: a string of one word. Whether Wireshark has a Dissector by that
-/// name is only known when the packet is read (spec §3.10).
+/// `dissector:` names a Dissector: a string of one word, else `invalid-dissector`. Whether
+/// Wireshark has a Dissector by that name is only known when the packet is read (spec §3.10).
 fn read_dissector(node: &Node) -> Result<String, Diagnostic> {
-    let name = expect_string(node, "dissector", Name::WrongValueType)?;
+    let name = expect_string(node, "dissector", Name::InvalidDissector)?;
     if name.value.is_empty() || name.value.contains(char::is_whitespace) {
-        return Err(Diagnostic::new(Name::WrongValueType, name.span, "`dissector` must name a Dissector")
+        return Err(Diagnostic::new(Name::InvalidDissector, name.span, "`dissector` must name a Dissector")
             .with_note("a Dissector name is one word, such as `json`", None));
     }
     Ok(name.value)
