@@ -1,0 +1,12 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "--out-dir", "build", "a/p.yml", "b/p.wirdigen.yaml"]
+status.code = 2
+stdout = ""
+stderr = """
+error: `a/p.yml` and `b/p.wirdigen.yaml` would both be written to `build[..]p.lua`
+
+Usage: wirdigen generate [OPTIONS] <INPUTS>...
+
+For more information, try '--help'.
+"""

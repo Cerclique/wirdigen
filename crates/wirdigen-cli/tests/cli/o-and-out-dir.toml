@@ -1,0 +1,12 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "-o", "x.lua", "--out-dir", "build", "a.yml"]
+status.code = 2
+stdout = ""
+stderr = """
+error: the argument '-o <FILE|->' cannot be used with '--out-dir <DIR>'
+
+Usage: wirdigen generate -o <FILE|-> <INPUTS>...
+
+For more information, try '--help'.
+"""

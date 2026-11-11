@@ -1,0 +1,12 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "proto.lua"]
+status.code = 2
+stdout = ""
+stderr = """
+error: the Dissector of `proto.lua` would overwrite the input `proto.lua`
+
+Usage: wirdigen generate [OPTIONS] <INPUTS>...
+
+For more information, try '--help'.
+"""

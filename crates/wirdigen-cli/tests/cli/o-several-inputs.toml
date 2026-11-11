@@ -1,0 +1,12 @@
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["generate", "-o", "out.lua", "a.yml", "b.yml"]
+status.code = 2
+stdout = ""
+stderr = """
+error: `-o` requires exactly one input, but 2 were given
+
+Usage: wirdigen generate [OPTIONS] <INPUTS>...
+
+For more information, try '--help'.
+"""

@@ -1,16 +1,19 @@
 //! The `wirdigen` command (spec §9, ADR 0013).
 
 mod color;
+mod placement;
 
 use std::fs;
-use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::io::{self, IsTerminal, Write};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, Subcommand};
 use wirdigen::{Diagnostic, RenderOptions, Severity, Source};
 
 use crate::color::ColorChoice;
+use crate::placement::{Input, Output, Placement};
 
 /// Generate Wireshark Lua dissectors from YAML protocol descriptions.
 #[derive(Parser)]
@@ -28,15 +31,29 @@ struct Cli {
 enum Command {
     /// Validate Protocol Descriptions; write nothing.
     Validate(Inputs),
-    /// Validate Protocol Descriptions and write each Dissector next to its input.
-    Generate(Inputs),
+    /// Validate Protocol Descriptions and write their Dissectors.
+    Generate(GenerateArgs),
 }
 
 #[derive(clap::Args)]
 struct Inputs {
-    /// Protocol Description files.
+    /// Protocol Description files; `-` reads standard input.
     #[arg(required = true)]
     inputs: Vec<PathBuf>,
+}
+
+#[derive(clap::Args)]
+struct GenerateArgs {
+    #[command(flatten)]
+    inputs: Inputs,
+
+    /// Write the Dissector of the only input to this file, or to standard output for `-`.
+    #[arg(short = 'o', value_name = "FILE|-", conflicts_with = "out_dir")]
+    output: Option<PathBuf>,
+
+    /// Write each Dissector into this directory instead of next to its input.
+    #[arg(long, value_name = "DIR")]
+    out_dir: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -49,24 +66,44 @@ fn main() -> ExitCode {
     );
     let mut options = RenderOptions::default();
     options.color = color;
-    let (inputs, write) = match cli.command {
-        Command::Validate(Inputs { inputs }) => (inputs, false),
-        Command::Generate(Inputs { inputs }) => (inputs, true),
+    let (subcommand, args, placement) = match cli.command {
+        Command::Validate(Inputs { inputs }) => ("validate", inputs, None),
+        Command::Generate(GenerateArgs { inputs: Inputs { inputs }, output, out_dir }) => {
+            ("generate", inputs, Some(Placement::from_args(output, out_dir)))
+        }
+    };
+    let inputs = placement::inputs(args).unwrap_or_else(|message| usage_error(subcommand, &message));
+    let outputs: Vec<Option<Output>> = match &placement {
+        None => vec![None; inputs.len()],
+        Some(placement) => {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            placement::outputs(&inputs, placement, &cwd)
+                .unwrap_or_else(|message| usage_error(subcommand, &message))
+                .into_iter()
+                .map(Some)
+                .collect()
+        }
     };
 
-    let mut run = Run { options, write, failed: false, errors: 0, warnings: 0, files_with_diagnostics: 0 };
-    for input in &inputs {
-        run.process(input);
+    let mut run = Run { options, failed: false, errors: 0, warnings: 0, files_with_diagnostics: 0 };
+    for (input, output) in inputs.iter().zip(&outputs) {
+        run.process(input, output.as_ref());
     }
     run.print_summary(inputs.len());
     if run.failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 
+/// Exits with clap's usage error (code 2) for a mistake clap cannot see on its own.
+fn usage_error(subcommand: &str, message: &str) -> ! {
+    let mut command = Cli::command();
+    command.build();
+    let command = command.find_subcommand_mut(subcommand).expect("the subcommand exists");
+    command.error(ErrorKind::ArgumentConflict, message).exit()
+}
+
 /// The state of one `validate` or `generate` run across its inputs.
 struct Run {
     options: RenderOptions,
-    /// Whether valid inputs get their Dissector written (`generate`).
-    write: bool,
     failed: bool,
     errors: usize,
     warnings: usize,
@@ -74,9 +111,14 @@ struct Run {
 }
 
 impl Run {
-    fn process(&mut self, input: &Path) {
-        let name = input.to_string_lossy();
-        let text = match fs::read_to_string(input) {
+    /// Validates one input and, under `generate`, writes its Dissector to `output`.
+    fn process(&mut self, input: &Input, output: Option<&Output>) {
+        let name = input.name();
+        let text = match input {
+            Input::Stdin => io::read_to_string(io::stdin()),
+            Input::File(path) => fs::read_to_string(path),
+        };
+        let text = match text {
             Ok(text) => text,
             Err(err) => return self.fail(&format!("cannot read `{name}`: {err}")),
         };
@@ -89,13 +131,13 @@ impl Run {
         self.report(&source, diagnostics);
         match valid {
             Err(_) => self.failed = true,
-            Ok(valid) if self.write => {
-                let output = output_path(input);
-                if let Err(err) = fs::write(&output, valid.generate()) {
-                    self.fail(&format!("cannot write `{}`: {err}", output.display()));
+            Ok(valid) => {
+                if let Some(output) = output {
+                    if let Err(message) = write(output, &valid.generate()) {
+                        self.fail(&message);
+                    }
                 }
             }
-            Ok(_) => {}
         }
     }
 
@@ -138,11 +180,24 @@ impl Run {
     }
 }
 
-/// The Dissector path next to `input`: `foo.wirdigen.yaml` gives `foo.lua`, any other name has
-/// its last extension replaced (spec §9.3).
-fn output_path(input: &Path) -> PathBuf {
-    match input.file_name().and_then(|name| name.to_str()).and_then(|name| name.strip_suffix(".wirdigen.yaml")) {
-        Some(stem) => input.with_file_name(format!("{stem}.lua")),
-        None => input.with_extension("lua"),
+/// Writes a Dissector to its output, creating missing parent directories of a file.
+fn write(output: &Output, lua: &str) -> Result<(), String> {
+    match output {
+        Output::Stdout => {
+            let mut stdout = io::stdout().lock();
+            stdout
+                .write_all(lua.as_bytes())
+                .and_then(|()| stdout.flush())
+                .map_err(|err| format!("cannot write to standard output: {err}"))
+        }
+        Output::File(path) => {
+            let created = match path.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => fs::create_dir_all(parent),
+                _ => Ok(()),
+            };
+            created
+                .and_then(|()| fs::write(path, lua))
+                .map_err(|err| format!("cannot write `{}`: {err}", path.display()))
+        }
     }
 }
