@@ -91,6 +91,7 @@ names! {
     UnknownField => "unknown-field", Error;
     ForwardReference => "forward-reference", Error;
     NonNumericReference => "non-numeric-reference", Error;
+    ConditionalReference => "conditional-reference", Error;
     NotSupportedYet => "not-supported-yet", Error;
     UnreachableValue => "unreachable-value", Warning;
     UnreachableField => "unreachable-field", Warning;

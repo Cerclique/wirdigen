@@ -1,0 +1,14 @@
+name: demo
+fields:
+  - { name: flags, type: uint8 }
+  - { name: hdr, type: Header }
+  - { name: data, type: bytes, size: hdr.len }
+  - { name: size, type: uint8, if: flags }
+  - { name: block, type: Block }
+types:
+  Header:
+    fields:
+      - { name: kind, type: uint8 }
+      - { name: len, type: uint8, if: kind }
+  Block:
+    fields: [ {name: data, type: bytes, size: size} ]

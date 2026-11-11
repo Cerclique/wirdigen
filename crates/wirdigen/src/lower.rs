@@ -9,7 +9,9 @@ use std::ops::RangeInclusive;
 use crate::bits::Bit;
 use crate::description::Protocol;
 use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
-use crate::field::{self, Amount, Array, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind};
+use crate::field::{
+    self, Amount, Array, Builtin, BuiltinField, Condition, Display, Encoding, Endian, Field, FieldKind,
+};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
 use crate::scope::Reference;
@@ -258,6 +260,15 @@ pub(crate) enum Stmt {
         path: String,
         repeat: Repeat,
         element: Box<Stmt>,
+    },
+    /// A Field under `if:` (spec §3.9): `body`, the statement reading it, runs only when the
+    /// condition is not zero.
+    If {
+        /// The Field's path, for the malformed-packet report of a condition with no value.
+        path: String,
+        /// The condition, never checked for a sign: any value other than zero is true (§4.4).
+        condition: Computed,
+        body: Box<Stmt>,
     },
 }
 
@@ -558,6 +569,9 @@ impl Plan {
 /// uses of Types make, inline structures included.
 fn references(fields: &[Field], f: &mut impl FnMut(&Reference)) {
     for field in fields {
+        if let Some(Condition::Expression { references, .. }) = &field.condition {
+            references.values().for_each(&mut *f);
+        }
         if let Some(Array::Count(Amount::Expression { references, .. })) = &field.array {
             references.values().for_each(&mut *f);
         }
@@ -643,7 +657,28 @@ impl<'p> Lowering<'p> {
                 self.call(Ref::Local(index), &segments, name, site, context)
             }
         };
-        self.array(field, &segments, stmt)
+        let stmt = self.array(field, &segments, stmt);
+        self.condition(field, &segments, stmt)
+    }
+
+    /// The statement of `field`, at `segments`, given the statement `stmt` reading it, array and
+    /// all: `stmt` itself, or `stmt` under the Field's `if:`.
+    fn condition(&mut self, field: &Field, segments: &[&str], stmt: Stmt) -> Stmt {
+        let condition = match field.condition.as_ref() {
+            None => return stmt,
+            Some(Condition::Constant(value)) => {
+                // A negative constant wraps to the Lua literal with the same 64 bits.
+                Computed::checked_already(LuaExpr::Int(u64::from_ne_bytes(value.to_ne_bytes())))
+            }
+            Some(Condition::Expression { expr, references }) => {
+                let faults = can_fault(expr);
+                if faults {
+                    self.use_chunk(prelude::INVALID);
+                }
+                Computed { value: self.expression(expr, references), checked: false, faults }
+            }
+        };
+        Stmt::If { path: segments.join("."), condition, body: Box::new(stmt) }
     }
 
     /// The statement of `field`, at `segments`, given the statement `stmt` reading it once:
@@ -698,7 +733,8 @@ impl<'p> Lowering<'p> {
                         self.call(field_ref, &segments, name, site, context)
                     }
                 };
-                self.array(field, &segments, stmt)
+                let stmt = self.array(field, &segments, stmt);
+                self.condition(field, &segments, stmt)
             })
             .collect()
     }
@@ -1209,7 +1245,10 @@ mod tests {
             .iter()
             .map(|stmt| match stmt {
                 Stmt::Read { length, decode, .. } => (length.clone(), *decode),
-                Stmt::Structure { path, .. } | Stmt::Call { path, .. } | Stmt::Array { path, .. } => {
+                Stmt::Structure { path, .. }
+                | Stmt::Call { path, .. }
+                | Stmt::Array { path, .. }
+                | Stmt::If { path, .. } => {
                     panic!("{path} is not a read")
                 }
             })
@@ -1372,7 +1411,9 @@ mod tests {
             .flat_map(|stmt| match stmt {
                 Stmt::Read { decode, .. } => vec![*decode],
                 Stmt::Structure { body, .. } => all_decodes(body),
-                Stmt::Array { element, .. } => all_decodes(std::slice::from_ref(element)),
+                Stmt::Array { element: inner, .. } | Stmt::If { body: inner, .. } => {
+                    all_decodes(std::slice::from_ref(inner))
+                }
                 Stmt::Call { .. } => Vec::new(),
             })
             .collect()
@@ -1426,7 +1467,9 @@ mod tests {
                     Stmt::Structure { field, path, body } => {
                         [slot(field, path)].into_iter().chain(slots(body)).collect()
                     }
-                    Stmt::Array { element, .. } => slots(std::slice::from_ref(element)),
+                    Stmt::Array { element: inner, .. } | Stmt::If { body: inner, .. } => {
+                        slots(std::slice::from_ref(inner))
+                    }
                 })
                 .collect()
         }
@@ -1544,7 +1587,9 @@ mod tests {
             stmts.iter().find_map(|s| match s {
                 Stmt::Read { path: p, .. } | Stmt::Call { path: p, .. } if p == path => Some(s),
                 Stmt::Structure { body, .. } => find(body, path),
-                Stmt::Array { element, .. } => find(std::slice::from_ref(element), path),
+                Stmt::Array { element: inner, .. } | Stmt::If { body: inner, .. } => {
+                    find(std::slice::from_ref(inner), path)
+                }
                 Stmt::Read { .. } | Stmt::Call { .. } => None,
             })
         }

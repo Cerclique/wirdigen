@@ -337,7 +337,7 @@ fn subtree(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope, index: 
             w.line(&format!("{assigned} = dissect_{ty}(tvb, tree, offset, {})", args.join(", ")));
             w.block("if not offset then", |w| w.line("return nil"), "end");
         }
-        Stmt::Read { .. } | Stmt::Array { .. } => unreachable!("matched above"),
+        Stmt::Read { .. } | Stmt::Array { .. } | Stmt::If { .. } => unreachable!("matched above"),
     }
     w.line("tree:set_len(offset - start)");
 }
@@ -385,8 +385,26 @@ fn malformed(w: &mut Writer, reported: &str, reason: &str) {
     w.line("return nil");
 }
 
+/// Writes `body`, the statement reading the Field at `path`, run only when `condition` is not
+/// zero (spec §3.9). The condition's local is scoped by `do`, so locals never pile up against
+/// Lua's limit of 200 per function.
+fn conditional(w: &mut Writer, model: &Dissector, path: &str, condition: &Computed, body: &Stmt, scope: Scope) {
+    let reported = reported_path(path, scope);
+    let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
+    w.line(&format!("-- If: {path}"));
+    w.block(
+        "do",
+        |w| {
+            evaluate(w, "condition", "condition", condition, &invalid);
+            w.block("if condition ~= 0 then", |w| statement(w, model, body, scope), "end");
+        },
+        "end",
+    );
+}
+
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
+        Stmt::If { path, condition, body } => conditional(w, model, path, condition, body, scope),
         Stmt::Structure { path, .. } | Stmt::Call { path, .. } => {
             w.line(&format!("-- Field: {path}"));
             w.block("do", |w| subtree(w, model, stmt, scope, None), "end");

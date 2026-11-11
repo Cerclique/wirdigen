@@ -1,7 +1,7 @@
 # Expressions
 
 An Expression is a small formula that computes a number from constants and Fields read
-earlier: a size, a count, and later a condition or a `switch` subject. It is written as a YAML
+earlier: a size, a count, a condition, and later a `switch` subject. It is written as a YAML
 string.
 
 ```yaml
@@ -12,7 +12,8 @@ fields:
   - { name: records, type: bytes, size: "count * 8" }
 ```
 
-This version reads Expressions in `size:` and in the `count:` of an [array](arrays.md).
+This version reads Expressions in `size:`, in the `count:` of an [array](arrays.md), and in
+[`if:`](conditionals.md).
 
 ## Writing an Expression in YAML {#yaml}
 
@@ -122,6 +123,9 @@ A name in an Expression reads the value of a Field read earlier in the packet.
 - **Not into arrays.** A Field inside an element of an [array](arrays.md) can be read only from
   inside that element: after `items`, `items.len` is
   [`unknown-field`](../diagnostics.md#unknown-field), since each element has its own `len`.
+- **Not into conditionals.** A Field under [`if:`](conditionals.md), or inside one, can be read
+  only from inside the Field carrying the `if:`; from anywhere else it is
+  [`conditional-reference`](../diagnostics.md#conditional-reference).
 - **Only numbers.** Integer and `bool` Fields and bitfield sub-Fields can be read; a `bool`
   or a boolean sub-Field reads as 1 or 0. A
   `string`, `bytes`, float, address, timestamp or structure is

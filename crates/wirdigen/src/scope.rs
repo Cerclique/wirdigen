@@ -76,6 +76,9 @@ enum Miss {
     NotStructure(String),
     /// A Field on the path is an array, whose Fields only its elements can read (spec §4.3).
     IntoArray(String),
+    /// A Field on the path is read under an `if:`, at this span, that does not enclose the
+    /// reference (spec §3.9, §4.3).
+    Conditional { field: String, condition: Range<usize> },
     /// The path ends on a Field that is not an integer or a `bool`.
     NonNumeric { what: String, span: Range<usize> },
 }
@@ -128,9 +131,14 @@ fn resolve<'a>(segments: &[String], scope: Scope<'a, '_>, types: &Types<'a>) -> 
     Resolution::Miss(Miss::Unknown(earlier))
 }
 
-/// Follows the rest of a path from `field`, found at `path`.
+/// Follows the rest of a path from `field`, found at `path`. Every Field on the way must be read
+/// unconditionally: `field` is an earlier Field, never one enclosing the reference, so no `if:`
+/// on the way encloses it either (spec §4.3).
 fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, types: &Types<'a>) -> Resolution {
     for (index, segment) in rest.iter().enumerate() {
+        if let Some(miss) = conditional_miss(field) {
+            return Resolution::Miss(miss);
+        }
         if field.is_array() {
             return Resolution::Miss(Miss::IntoArray(field.name().value.clone()));
         }
@@ -165,6 +173,9 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
         field = child;
         path.push(segment.clone());
     }
+    if let Some(miss) = conditional_miss(field) {
+        return Resolution::Miss(miss);
+    }
     let what = match field.shape(types) {
         Shape::Unknown => return Resolution::Suppressed,
         _ if field.is_array() => "an array".to_owned(),
@@ -174,6 +185,12 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
         Shape::Type { name, .. } => format!("a Field of the Type `{name}`"),
     };
     Resolution::Miss(Miss::NonNumeric { what, span: field.name().span.clone() })
+}
+
+/// Why a path cannot go through `field`, when it is read under an `if:`.
+fn conditional_miss(field: &RawField) -> Option<Miss> {
+    let condition = field.condition_span()?.clone();
+    Some(Miss::Conditional { field: field.name().value.clone(), condition })
 }
 
 /// The notes of a Diagnostic: each message, with the span it points at if any.
@@ -218,6 +235,20 @@ fn explain(miss: &Miss, key: &str, segments: &[String]) -> (Name, String, Notes)
             Name::UnknownField,
             format!("`{array}` is an array, whose Fields are read once per element"),
             vec![(format!("only Fields inside an element of `{array}` can read its Fields"), None)],
+        ),
+        Miss::Conditional { field, condition } => (
+            Name::ConditionalReference,
+            format!("`{field}` is read only under its `if`, which does not enclose this"),
+            vec![
+                (format!("`{field}` is read only when this is not zero"), Some(condition.clone())),
+                (
+                    format!(
+                        "only Fields inside the Field carrying that `if` can read `{key}`: read it from \
+                         an inline structure carrying the `if`"
+                    ),
+                    None,
+                ),
+            ],
         ),
         Miss::NonNumeric { what, span } => {
             let last = segments.last().expect("a path has a name");

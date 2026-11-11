@@ -309,7 +309,7 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 
 *Language capabilities in v1, Expression mini-language, ADR 0009.*
 
-- `if: <expr>` on a Field reads it only when the Expression is non-zero.
+- `if: <expr>` on a Field reads it only when the Expression is non-zero. It goes on any Field kind (a built-in, an inline structure, a Field of a Type, an array, where it is evaluated before `count:`) and also takes an integer constant. A condition that faults is malformed at runtime (§4.4), even a constant one; a negative one is true. A Field after a conditional `size: "_remaining"` Field or `repeat: to_end` array is not `unreachable-field`.
 - `switch: <expr>` with `cases:` and an optional `default:` picks a layout from a value:
   - case keys are integers or `"low-high"` range strings;
   - each case is a Type name or inline Fields;
@@ -509,7 +509,7 @@ Errors:
 - `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - `mismatched-bit-widths`: bitfield widths not adding up to the container; `invalid-bit-width`: a width below 1;
-- `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field, or that goes into an array from outside its elements; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; conditional Fields used outside their scope;
+- `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field, or that goes into an array from outside its elements; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; `conditional-reference`: a Field under `if:` or inside a case, or a Field inside one, used outside its conditional scope (§4.3);
 - duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
 - overlapping `switch` cases;
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);

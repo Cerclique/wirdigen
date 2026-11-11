@@ -243,6 +243,7 @@ cases! {
     bitfields => "bitfields",
     bitfield_references => "bitfield-references",
     arrays => "arrays",
+    conditionals => "conditionals",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.
