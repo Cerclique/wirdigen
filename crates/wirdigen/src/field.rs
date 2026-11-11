@@ -623,6 +623,7 @@ pub(crate) struct RawField {
     mappings: mapping::RawMappings,
     /// The sub-Fields, when the Field is a bitfield (spec §3.8).
     bits: Option<RawBits>,
+    /// `hidden:`, which leaves the Field out of the tree; only a bitfield takes it in this version.
     hidden: Option<Spanned<bool>>,
 }
 

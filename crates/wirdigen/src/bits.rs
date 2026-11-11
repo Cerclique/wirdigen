@@ -7,7 +7,7 @@
 
 use std::ops::Range;
 
-use crate::diagnostic::{Diagnostic, Name, record};
+use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::field::{self, Builtin, Display};
 use crate::keys::{Spanned, expect_bool, expect_integer, expect_string, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping, Subject};
@@ -30,6 +30,7 @@ pub(crate) struct RawBits {
 /// One entry of `bits:` as written.
 #[derive(Debug, Clone)]
 enum RawBit {
+    /// A named sub-Field.
     SubField(Box<RawSubField>),
     /// `{ padding: n }`: `n` bits nothing names.
     Padding(Spanned<i64>),
@@ -38,16 +39,24 @@ enum RawBit {
 /// A sub-Field as written, after stage 2: its keys are known and of the right kinds.
 #[derive(Debug, Clone)]
 struct RawSubField {
+    /// The name, not yet checked against the naming rule.
     name: Spanned<String>,
+    /// The number of bits, not yet checked to be at least 1.
     width: Spanned<i64>,
+    /// The `display:` value, not yet checked against the displays of an unsigned integer.
     display: Option<Spanned<String>>,
+    /// `hidden:`, which leaves the sub-Field out of the tree.
     hidden: Option<Spanned<bool>>,
+    /// The tree text, not yet checked to be a non-empty single line.
     label: Option<Spanned<String>>,
+    /// The `ProtoField` blurb, not yet checked to be a single line.
     description: Option<Spanned<String>>,
+    /// `values:`, `unit:`, `true:` and `false:`, as written.
     mappings: mapping::RawMappings,
 }
 
 impl RawBit {
+    /// The number of bits the entry takes, as written.
     fn width(&self) -> &Spanned<i64> {
         match self {
             Self::SubField(sub) => &sub.width,
@@ -73,6 +82,7 @@ impl RawBits {
         &self.key
     }
 
+    /// The named entries, in order, without the padding.
     fn sub_fields(&self) -> impl Iterator<Item = &RawSubField> {
         self.entries.iter().filter_map(|e| match e {
             RawBit::SubField(sub) => Some(sub.as_ref()),
@@ -266,7 +276,7 @@ pub(crate) fn check(
         field::check_text(sub.label.as_ref(), sub.description.as_ref(), diagnostics);
         checked.push((display, mapping));
     }
-    if diagnostics[start..].iter().any(|d| d.severity() == crate::Severity::Error) {
+    if diagnostics[start..].iter().any(|d| d.severity() == Severity::Error) {
         return None;
     }
 

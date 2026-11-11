@@ -62,6 +62,7 @@ pub(crate) struct ProtoField {
 /// The mask of a bitfield sub-Field's `ProtoField`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Mask {
+    /// The bits of the container the sub-Field holds.
     pub(crate) bits: u64,
     /// The bytes of the container, which the mask is written as wide as.
     pub(crate) bytes: usize,
@@ -255,6 +256,7 @@ pub(crate) enum Stmt {
 /// container's bytes, which Wireshark masks and shifts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BitItem {
+    /// The sub-Field's `ProtoField`.
     pub(crate) field: Ref,
     /// Whether the item is hidden, as every sub-Field of a hidden container is.
     pub(crate) hidden: bool,
@@ -592,7 +594,7 @@ impl<'p> Lowering<'p> {
                     .iter()
                     .map(|bit| {
                         let path: Vec<&str> = segments.iter().copied().chain([bit.name.as_str()]).collect();
-                        Ref::Local(self.proto_field_bit(value, bit, &path))
+                        (Ref::Local(self.proto_field_bit(value, bit, &path)), bit)
                     })
                     .collect();
                 self.read(value, Ref::Local(index), &segments, field.hidden, bits)
@@ -632,7 +634,7 @@ impl<'p> Lowering<'p> {
                             .iter()
                             .map(|bit| {
                                 let path = segments.iter().copied().chain([bit.name.as_str()]).collect();
-                                slot(slots, "f_", path, SlotKind::Bit(value, bit))
+                                (slot(slots, "f_", path, SlotKind::Bit(value, bit)), bit)
                             })
                             .collect();
                         self.read(value, field_ref, &segments, field.hidden, bits)
@@ -692,7 +694,7 @@ impl<'p> Lowering<'p> {
         field: Ref,
         segments: &[&str],
         hidden: bool,
-        bits: Vec<Ref>,
+        bits: Vec<(Ref, &Bit)>,
     ) -> Stmt {
         let length = match &field_value.length {
             field::Length::Expression { expr, references } => {
@@ -714,11 +716,8 @@ impl<'p> Lowering<'p> {
             self.use_chunk(prelude::LOGIC);
         }
         let little = field_value.endian == Endian::Little && field_value.ty.has_byte_order();
-        let bits = bits
-            .into_iter()
-            .zip(&field_value.bits)
-            .map(|(field, bit)| BitItem { field, hidden: hidden || bit.hidden, little })
-            .collect();
+        let bits =
+            bits.into_iter().map(|(field, bit)| BitItem { field, hidden: hidden || bit.hidden, little }).collect();
         Stmt::Read { field, length, decode: decode(field_value), path: segments.join("."), value, hidden, bits }
     }
 
@@ -791,7 +790,7 @@ impl<'p> Lowering<'p> {
                 value
                     .mapping
                     .as_ref()
-                    .and_then(|m| strings(m, Keys::of(value.ty).as_ref(), self.enums, &mut self.tables)),
+                    .and_then(|m| strings(m, KeyRange::of(value.ty).as_ref(), self.enums, &mut self.tables)),
             ),
             FieldKind::Structure(_) | FieldKind::Type { .. } => (FieldType::new("none", Args::Plain), None),
         };
@@ -816,7 +815,7 @@ impl<'p> Lowering<'p> {
             panic!("validation gives `bits` only to unsigned integers")
         };
         let (field_type, strings) = if let Some(display) = bit.display {
-            let keys = Keys { range: 0..=(1_i128 << bit.width) - 1, signed32: false };
+            let keys = KeyRange { range: 0..=(1_i128 << bit.width) - 1, signed32: false };
             let strings = bit.mapping.as_ref().and_then(|m| strings(m, Some(&keys), self.enums, &mut self.tables));
             (FieldType::new(field_type(container).constructor, Args::Display(base(display))), strings)
         } else {
@@ -938,7 +937,7 @@ fn bool_width(bytes: usize) -> &'static str {
 
 /// The values a Field's table keys can reach, as its `ProtoField` compares them.
 #[derive(Debug, Clone)]
-struct Keys {
+struct KeyRange {
     /// The values of the Field: its type's, or a sub-Field's.
     range: RangeInclusive<i128>,
     /// Whether it is a signed integer of 32 bits or fewer, whose negative values Wireshark
@@ -946,7 +945,7 @@ struct Keys {
     signed32: bool,
 }
 
-impl Keys {
+impl KeyRange {
     /// The keys of a Field of type `ty`, `None` when it is not an integer.
     fn of(ty: Builtin) -> Option<Self> {
         let Builtin::Int { signed, bytes } = ty else { return None };
@@ -960,7 +959,7 @@ impl Keys {
 /// "Unknown".
 fn strings(
     mapping: &Mapping,
-    keys: Option<&Keys>,
+    keys: Option<&KeyRange>,
     enums: &BTreeMap<String, Table>,
     tables: &mut Vec<SharedTable>,
 ) -> Option<Strings> {
@@ -1010,7 +1009,7 @@ fn strings(
 /// - a range string compares values as unsigned integers, so a range crossing zero is split in
 ///   two, and a negative bound of a 32-bit or narrower signed type is written as its 32-bit two's
 ///   complement, which is what the value is compared as.
-fn lua_table(table: &[Entry], keys: &Keys) -> LuaTable {
+fn lua_table(table: &[Entry], keys: &KeyRange) -> LuaTable {
     let (min, max) = (*keys.range.start(), *keys.range.end());
     let reachable = table.iter().filter_map(|e| {
         let (low, high) = (e.key.low.max(min), e.key.high.min(max));
