@@ -630,7 +630,7 @@ not declare is looked up where the Type is used, and the error points at that us
 name: demo
 fields:
   - { name: length, type: uint8 }
-  - { name: data, type: bytes, size: "lenght * 2" }
+  - { name: data, type: bytes, size: "lengths * 2" }
 ```
 
 ```yaml,diagnostic=unknown-field
