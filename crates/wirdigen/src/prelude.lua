@@ -200,3 +200,25 @@ local function wd_unmatched(tree, field, expert_info, tvb, offset, value, path)
     local item = tree:add(field, tvb(offset, tvb:len() - offset))
     item:add_proto_expert_info(expert_info, "No case for " .. value .. ": " .. path)
 end
+
+--@chunk unexpected
+-- Reporting of a value outside a Field's `expect:` (spec §3.10, §5.3): a warning, after which
+-- the dissection goes on. The `_` segment is reserved: no Field path can reach it (spec §3.4.2,
+-- §5.2).
+local function wd_expert_unexpected(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._protocol.unexpected",
+        "Unexpected value",
+        expert.group.PROTOCOL,
+        expert.severity.WARN
+    )
+end
+
+-- Adds the warning to `item` unless `value` lies in one of `ranges`, the inclusive bounds
+-- `{ low, high, low, high, ... }`, which `expected` shows.
+local function wd_expect(item, value, ranges, expected, expert_info, path)
+    for i = 1, #ranges, 2 do
+        if value >= ranges[i] and value <= ranges[i + 1] then return end
+    end
+    item:add_proto_expert_info(expert_info, "Unexpected value: " .. path .. " (expected " .. expected .. ")")
+end

@@ -318,11 +318,14 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 |---|---|
 | `{ padding: <n \| expr> }` | A standalone structure entry, shown as one "Padding" item, with no filter name. |
 | `hidden: true` | Reads the Field (usable in Expressions, filters and `info:`) without adding it to the tree. |
-| `expect: <value \| "low-high" \| list>` | A mismatch adds an expert info **warning** and dissection goes on. A list may mix values and ranges. An `expect:` that can never match is a validation warning. |
+| `expect: <value \| "low-high" \| list>` | A mismatch adds an expert info **warning** and dissection goes on. A list may mix values and ranges. An `expect:` that can never match is a validation warning (`unreachable-expect`). |
 | `dissector: <name>` | On a bytes Field: passes the bytes to an existing Wireshark Dissector by name (static handoff). |
 
 - `{ padding: … }` takes no other key. Its amount follows the rules of a `size:` (§3.6): a negative constant, or a constant Expression that is negative or has no value, is `invalid-padding`; at runtime, a negative or faulting Expression is malformed (§4.4).
 - A padding after a Field that reads to the end is the warning `unreachable-field`, as a Field would be.
+- `expect:` goes on integer and `bool` Fields and on sub-Fields; elsewhere it is `incompatible-display`, like a value-mapping key. Its values are read like `values:` keys (§3.4.7), and an empty list is `wrong-value-type`. A `bool` holds 0 or 1, as Expressions read it (§4.4), and a `uint64` is compared as the unsigned value it is.
+- An `expect:` is `unreachable-expect` when none of its values is in the range of the Field's type or the sub-Field's width; it is kept, so every packet gets the warning.
+- A mismatch is an expert info warning (group Protocol) on the Field's item, hidden or not: "Unexpected value: <path> (expected <values as written>)", filtered `<protocol>._protocol.unexpected`.
 
 There is no `align:` in v1.
 
@@ -450,7 +453,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
+- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
@@ -522,7 +525,7 @@ Warnings:
 - `unused-type`, `unused-enum`;
 - `unreachable-value`: a `values:` key outside the Field type's range;
 - `unreachable-field`: a Field after a `repeat: to_end` array or a `size: "_remaining"` Field in the same structure;
-- an `expect:` that can never match;
+- `unreachable-expect`: an `expect:` that can never match (§3.10);
 - `protocol-name-taken`;
 - `unknown-allow`: an `allow:` entry that names no warning, either an unknown name or an error's (a warning so that a description allowing a warning from a newer minor still works).
 

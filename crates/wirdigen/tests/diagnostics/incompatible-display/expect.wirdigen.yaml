@@ -1,0 +1,15 @@
+name: demo
+fields:
+  - { name: text, type: string, size: 2, expect: 1 }
+  - { name: ratio, type: float32, expect: 1 }
+  - name: header
+    expect: 1
+    fields: [ { name: a, type: uint8 } ]
+  - { name: point, type: Point, expect: 1 }
+  - name: body
+    switch: header.a
+    expect: 1
+    cases: { 1: Point }
+types:
+  Point:
+    fields: [ { name: x, type: uint8 } ]

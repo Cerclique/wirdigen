@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use std::collections::BTreeMap;
 
 use crate::lower::{
-    Args, BitItem, Branch, Computed, Decode, Dissector, Export, Length, LuaExpr, LuaTable, ProtoField, Ref, Repeat,
-    Site, SiteEntry, Stmt, Strings, TableRef, Value, ValueRead,
+    Args, BitItem, Branch, Computed, Decode, Dissector, Expected, Export, Length, LuaExpr, LuaTable, ProtoField, Ref,
+    Repeat, Site, SiteEntry, Stmt, Strings, TableRef, ValueRead,
 };
 use crate::prelude;
 
@@ -171,6 +171,10 @@ fn experts(w: &mut Writer, model: &Dissector, proto: &str) {
     if model.chunks.contains(&prelude::UNMATCHED) {
         w.line(&format!("local wd_ei_unmatched = wd_expert_unmatched({proto})"));
         experts.push("wd_ei_unmatched");
+    }
+    if model.chunks.contains(&prelude::UNEXPECTED) {
+        w.line(&format!("local wd_ei_unexpected = wd_expert_unexpected({proto})"));
+        experts.push("wd_ei_unexpected");
     }
     w.line(&format!("wd_proto.experts = {{ {} }}", experts.join(", ")));
     w.line("");
@@ -471,14 +475,20 @@ fn evaluate(w: &mut Writer, local: &str, noun: &str, computed: &Computed, invali
     }
 }
 
-/// Keeps the value of a `size`-byte read at `offset` in the local an Expression reads.
-fn keep_value(w: &mut Writer, value: &Value, size: usize) {
-    match &value.read {
-        ValueRead::Integer(format) => {
-            w.line(&format!("{} = string.unpack({}, tvb:raw(offset, {size}))", value.local, lua_string(format)));
-        }
-        ValueRead::Bool => w.line(&format!("{} = wd_bool(tvb(offset, {size}):uint() ~= 0)", value.local)),
+/// The Lua expression of the value of a `size`-byte read at `offset`, read as `read` says.
+fn read_value(read: &ValueRead, size: usize) -> String {
+    match read {
+        ValueRead::Integer(format) => format!("string.unpack({}, tvb:raw(offset, {size}))", lua_string(format)),
+        ValueRead::Bool => format!("wd_bool(tvb(offset, {size}):uint() ~= 0)"),
     }
+}
+
+/// The line checking `expected` on `item`, the Lua expression of the checked item (spec §3.10).
+fn expect_line(item: &str, expected: &Expected, scope: Scope) -> String {
+    let reported = reported_path(&expected.path, scope);
+    let bounds: Vec<String> = expected.ranges.iter().flat_map(|(l, h)| [lua_integer(*l), lua_integer(*h)]).collect();
+    let (value, text) = (lua_expr(&expected.value), lua_string(&expected.text));
+    format!("wd_expect({item}, {value}, {{ {} }}, {text}, wd_ei_unexpected, {reported})", bounds.join(", "))
 }
 
 /// The Lua expression of the path a malformed-packet report names: inside a Type, the path of
@@ -597,7 +607,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             w.block("do", |w| subtree(w, model, stmt, scope, None), "end");
         }
         Stmt::Array { path, repeat, element } => array(w, model, path, repeat, element, scope),
-        Stmt::Read { field, length, decode, path, value, hidden, bits } => {
+        Stmt::Read { field, length, decode, path, value, hidden, bits, checked, expect } => {
             let local = field_ref(model, field);
             let reported = reported_path(path, scope);
             let truncated = |w: &mut Writer| {
@@ -623,9 +633,12 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 Length::Fixed(size) => {
                     w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
                     let range = format!("tvb(offset, {size})");
-                    add_item(w, model, &add(&range), &range, *hidden, bits);
+                    let item =
+                        Item { add: &add(&range), range: &range, hidden: *hidden, bits, expect: expect.as_ref() };
+                    let checked = checked.as_ref().map(|read| read_value(read, *size));
+                    add_item(w, model, &item, checked.as_deref(), scope);
                     if let Some(value) = value {
-                        keep_value(w, value, *size);
+                        w.line(&format!("{} = {}", value.local, read_value(&value.read, *size)));
                     }
                     w.line(&format!("offset = offset + {size}"));
                 }
@@ -666,25 +679,50 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     }
 }
 
-/// Adds the item of a fixed-size read with `add`, the call adding it from `range`. A bitfield's
-/// sub-Fields go under its item, each from the same bytes, which Wireshark masks and shifts (spec
-/// §3.8): the item is then kept in a local scoped by `do`, so locals never pile up against Lua's
-/// limit of 200 per function.
-fn add_item(w: &mut Writer, model: &Dissector, add: &str, range: &str, hidden: bool, bits: &[BitItem]) {
-    if bits.is_empty() {
-        w.line(&format!("{add}{}", hide(hidden)));
+/// The item of a fixed-size read.
+struct Item<'s> {
+    /// The call adding it.
+    add: &'s str,
+    /// The `TvbRange` it is added from.
+    range: &'s str,
+    hidden: bool,
+    /// The sub-Fields of a bitfield, added from the same range.
+    bits: &'s [BitItem],
+    /// The check of the Field's own `expect:`.
+    expect: Option<&'s Expected>,
+}
+
+/// Adds `item`, the item of a Field read in `scope`. A bitfield's sub-Fields go under it, each
+/// from the same bytes, which Wireshark masks and shifts (spec §3.8). `checked`, when the Field
+/// or a sub-Field has `expect:`, reads the value they check into the local `value` (§3.10). The
+/// item and the value are then kept in locals scoped by `do`, so locals never pile up against
+/// Lua's limit of 200 per function.
+fn add_item(w: &mut Writer, model: &Dissector, item: &Item<'_>, checked: Option<&str>, scope: Scope) {
+    if item.bits.is_empty() && checked.is_none() {
+        w.line(&format!("{}{}", item.add, hide(item.hidden)));
         return;
     }
     w.block(
         "do",
         |w| {
-            w.line(&format!("local item = {add}"));
-            if hidden {
+            w.line(&format!("local item = {}", item.add));
+            if item.hidden {
                 w.line("item:set_hidden(true)");
             }
-            for bit in bits {
+            if let Some(checked) = checked {
+                w.line(&format!("local value = {checked}"));
+            }
+            if let Some(expected) = item.expect {
+                w.line(&expect_line("item", expected, scope));
+            }
+            for bit in item.bits {
                 let method = if bit.little { "add_le" } else { "add" };
-                w.line(&format!("item:{method}({}, {range}){}", field_ref(model, &bit.field), hide(bit.hidden)));
+                let add =
+                    format!("item:{method}({}, {}){}", field_ref(model, &bit.field), item.range, hide(bit.hidden));
+                match &bit.expect {
+                    Some(expected) => w.line(&expect_line(&add, expected, scope)),
+                    None => w.line(&add),
+                }
             }
         },
         "end",

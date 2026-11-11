@@ -67,4 +67,5 @@ cases! {
     switch => "switch",
     hidden => "hidden",
     padding => "padding",
+    expect => "expect",
 }

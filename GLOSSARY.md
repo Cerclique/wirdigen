@@ -28,6 +28,10 @@ _Avoid_: Gap, filler, reserved bytes, unused bits, alignment
 A Field read but left out of the protocol tree; it can still be filtered and used in Expressions.
 _Avoid_: Invisible field, private field, internal field
 
+**Expected Values**:
+The values a Field or Sub-Field should hold. A Message holding another value gets a warning in Wireshark but is still read to the end; it is not Malformed.
+_Avoid_: Constraint, assertion, validation, magic value
+
 **Bitfield**:
 A Field of an unsigned integer type whose bits are split, most significant first, into Sub-Fields and Padding, every bit accounted for.
 _Avoid_: Flags, bitmask, packed field

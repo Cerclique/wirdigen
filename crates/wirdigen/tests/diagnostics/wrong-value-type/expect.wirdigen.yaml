@@ -1,0 +1,7 @@
+name: demo
+fields:
+  - { name: a, type: uint8, expect: [] }
+  - { name: b, type: uint8, expect: { 1: One } }
+  - { name: c, type: uint8, expect: [ 1, [ 2 ] ] }
+  - { name: d, type: uint8, expect: 1.5 }
+  - { name: e, type: uint8, expect: "7-5" }

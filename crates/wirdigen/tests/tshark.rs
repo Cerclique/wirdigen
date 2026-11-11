@@ -247,6 +247,7 @@ cases! {
     switch => "switch",
     hidden => "hidden",
     padding => "padding",
+    expect => "expect",
 }
 
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.

@@ -913,23 +913,6 @@ fields:
       - { name: data, type: bytes, size: len }
 ```
 
-## `not-supported-yet` {#not-supported-yet}
-
-**Severity**: error
-
-The description uses part of the format that this version of Wirdigen does not read yet:
-`expect:` on a [bitfield](reference/bitfields.md) sub-Field. A newer Wirdigen will accept it.
-
-```yaml,diagnostic=not-supported-yet
-name: demo
-fields:
-  - name: flags
-    type: uint8
-    bits: [ { name: version, width: 8, expect: 1 } ]
-```
-
-**Fix**: upgrade Wirdigen, or describe the layout with what this version supports.
-
 ## `unreachable-value` {#unreachable-value}
 
 **Severity**: warning
@@ -992,6 +975,31 @@ fields:
   - { name: body, type: bytes, size: "_remaining" }
   - { name: checksum, type: uint16 }
 allow: [unreachable-field]
+```
+
+## `unreachable-expect` {#unreachable-expect}
+
+**Severity**: warning
+
+An [`expect:`](reference/fields.md#expect) lists no value the Field's type can hold: `256` on
+a `uint8`, `2` on a `bool`, `4` on a 2-bit sub-Field. It never matches, so every packet gets
+the "Unexpected value" expert info. A list or a range is reported only when none of its values
+fit.
+
+```yaml,diagnostic=unreachable-expect
+name: demo
+fields:
+  - { name: version, type: uint8, expect: 256 }
+```
+
+**Fix**: correct the value, or widen the Field's type if the value can occur. To flag every
+packet on purpose, allow the warning:
+
+```yaml
+name: demo
+fields:
+  - { name: version, type: uint8, expect: 256 }
+allow: [unreachable-expect]
 ```
 
 ## `unused-enum` {#unused-enum}

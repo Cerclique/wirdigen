@@ -36,6 +36,7 @@ mod book;
 mod description;
 mod diagnostic;
 mod emit;
+mod expect;
 mod expr;
 mod field;
 mod filter;

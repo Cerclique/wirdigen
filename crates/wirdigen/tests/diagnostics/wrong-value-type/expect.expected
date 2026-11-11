@@ -1,0 +1,5 @@
+error wrong-value-type 3:37-3:40
+error wrong-value-type 4:37-4:48
+error wrong-value-type 5:42-5:48
+error wrong-value-type 6:37-6:40
+error wrong-value-type 7:37-7:42

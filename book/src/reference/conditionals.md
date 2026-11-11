@@ -126,7 +126,7 @@ enums:
 
 A `switch` Field takes `name:`, `label:`, `description:`, `if:`, [`hidden:`](fields.md#hidden),
 `switch:`, `cases:` and `default:` only. Any other key is an error under the name the key has
-elsewhere: `values:` or `display:` is
+elsewhere: `values:`, `display:` or `expect:` is
 [`incompatible-display`](../diagnostics.md#incompatible-display), `size:`
 [`unexpected-length`](../diagnostics.md#unexpected-length), `count:` or `repeat:`
 [`invalid-array`](../diagnostics.md#invalid-array), `endian:`

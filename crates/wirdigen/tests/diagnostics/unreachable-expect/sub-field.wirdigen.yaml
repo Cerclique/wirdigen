@@ -1,0 +1,10 @@
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: kind, width: 2, expect: [ 3, 4 ] }
+      - { name: mode, width: 2, expect: 4 }
+      - { name: on, width: 1, expect: 2 }
+      - { name: off, width: 1, expect: 0 }
+      - { padding: 2 }
