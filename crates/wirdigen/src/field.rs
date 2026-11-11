@@ -756,7 +756,9 @@ enum RawKind {
 /// An entry of a structure as written, after stage 2 (spec §3.4.1): a Field, or bytes to skip.
 #[derive(Debug, Clone)]
 pub(crate) enum RawEntry {
+    /// A Field, boxed: it is many times the size of a padding.
     Field(Box<RawField>),
+    /// `{ padding: n }`.
     Padding(RawPadding),
 }
 
@@ -914,6 +916,7 @@ impl RawField {
 /// A validated entry of a structure: a Field, or bytes to skip (spec §3.10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Entry {
+    /// A Field, boxed: it is many times the size of a padding.
     Field(Box<Field>),
     /// `{ padding: n }`: as many bytes as the amount gives, shown as one "Padding" item with no
     /// filter name.

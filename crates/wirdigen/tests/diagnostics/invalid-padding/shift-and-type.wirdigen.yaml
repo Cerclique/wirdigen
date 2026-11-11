@@ -1,0 +1,9 @@
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - { padding: "1 << 64" }
+  - { name: rec, type: Record }
+types:
+  Record:
+    fields:
+      - { padding: -1 }

@@ -552,18 +552,18 @@ fn array(w: &mut Writer, model: &Dissector, path: &str, repeat: &Repeat, element
 /// as one text item, "Padding", which has no `ProtoField` and so no filter name. Having no path
 /// of its own, it is reported as the padding of its structure.
 fn padding(w: &mut Writer, parent: &str, length: &Length, scope: Scope) {
-    let reported = match (scope, parent.is_empty()) {
-        (Scope::Top, true) => lua_string("Padding"),
-        (Scope::Top, false) => lua_string(&format!("Padding in {parent}")),
-        (Scope::Type, true) => "\"Padding in \" .. site.path".to_owned(),
-        (Scope::Type, false) => format!("\"Padding in \" .. site.path .. {}", lua_string(&format!(".{parent}"))),
+    let label = if parent.is_empty() { "Padding".to_owned() } else { format!("Padding in {parent}") };
+    let reported = match scope {
+        Scope::Top => lua_string(&label),
+        Scope::Type if parent.is_empty() => "\"Padding in \" .. site.path".to_owned(),
+        Scope::Type => format!("\"Padding in \" .. site.path .. {}", lua_string(&format!(".{parent}"))),
     };
     let truncated = |w: &mut Writer| {
         w.line(&format!("wd_truncated(tree, wd_ei_truncated, {reported})"));
         w.line("return nil");
     };
     let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
-    w.line(if parent.is_empty() { "-- Padding".to_owned() } else { format!("-- Padding in {parent}") }.as_str());
+    w.line(&format!("-- {label}"));
     match length {
         Length::Fixed(size) => {
             w.block(&format!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
@@ -615,7 +615,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                 Decode::Lua(method) => format!("tree:add({local}, {range}, {range}:{method}())"),
             };
             // Only a fixed-size read can be a bitfield, whose item `add_item` keeps.
-            let add_line = |range: &str| if *hidden { format!("{}:set_hidden(true)", add(range)) } else { add(range) };
+            let add_line = |range: &str| format!("{}{}", add(range), hide(*hidden));
             w.line(&format!("-- Field: {path}"));
             // A variable length goes in a `len` local, scoped by `do` so locals never pile up
             // against Lua's limit of 200 per function.
@@ -672,8 +672,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
 /// limit of 200 per function.
 fn add_item(w: &mut Writer, model: &Dissector, add: &str, range: &str, hidden: bool, bits: &[BitItem]) {
     if bits.is_empty() {
-        let hide = if hidden { ":set_hidden(true)" } else { "" };
-        w.line(&format!("{add}{hide}"));
+        w.line(&format!("{add}{}", hide(hidden)));
         return;
     }
     w.block(
@@ -685,12 +684,16 @@ fn add_item(w: &mut Writer, model: &Dissector, add: &str, range: &str, hidden: b
             }
             for bit in bits {
                 let method = if bit.little { "add_le" } else { "add" };
-                let hide = if bit.hidden { ":set_hidden(true)" } else { "" };
-                w.line(&format!("item:{method}({}, {range}){hide}", field_ref(model, &bit.field)));
+                w.line(&format!("item:{method}({}, {range}){}", field_ref(model, &bit.field), hide(bit.hidden)));
             }
         },
         "end",
     );
+}
+
+/// What follows a call adding an item to hide it, when `hidden` (spec §3.10).
+const fn hide(hidden: bool) -> &'static str {
+    if hidden { ":set_hidden(true)" } else { "" }
 }
 
 /// An Expression as Lua: helper calls, and Lua's short-circuit `and`/`or` for `&&`/`||`.
