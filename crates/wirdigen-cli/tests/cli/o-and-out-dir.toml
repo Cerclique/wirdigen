@@ -6,7 +6,7 @@ stdout = ""
 stderr = """
 error: the argument '-o <FILE|->' cannot be used with '--out-dir <DIR>'
 
-Usage: wirdigen generate -o <FILE|-> <INPUTS>...
+Usage: wirdigen[EXE] generate -o <FILE|-> <INPUTS>...
 
 For more information, try '--help'.
 """
