@@ -37,9 +37,10 @@ local function wd_truncated(tree, expert_info, path)
 end
 
 --@chunk bounds
--- True when `size` bytes are available at `offset`.
+-- True when `size` bytes are available at `offset`. Written so that a huge `size` from an
+-- Expression cannot overflow `offset + size` into a small number.
 local function wd_fits(tvb, offset, size)
-    return offset + size <= tvb:len()
+    return size <= tvb:len() - offset
 end
 
 --@chunk terminated
@@ -56,6 +57,13 @@ local function wd_terminated(tvb, offset, terminator, width)
     return nil
 end
 
+--@chunk fault
+-- Stops evaluating an Expression that has no value (spec §4.4). The error is a table that
+-- `wd_evaluate` catches, so it never escapes the Dissector as a Lua error.
+local function wd_fail(reason)
+    error({ wd_fault = reason }, 0)
+end
+
 --@chunk arithmetic
 -- Expression operators `+ - *` and negation (ADR 0007). Lua 5.3+ integers wrap on overflow,
 -- as Expressions do.
@@ -65,10 +73,14 @@ local function wd_mul(a, b) return a * b end
 local function wd_neg(a) return -a end
 
 --@chunk division
+--@requires fault
 -- C's `/`, truncating toward zero, and `%`, taking the dividend's sign (ADR 0007): Lua's own
 -- `//` and `%` floor. They use Lua 5.3 operators, which Lua 5.2 cannot parse, so they are
--- compiled at load: the version guard has already ruled out a Lua older than 5.3.
-local wd_div, wd_mod = load([[
+-- compiled at load: the version guard has already ruled out a Lua older than 5.3. Dividing by
+-- zero fails the Expression.
+local wd_div, wd_mod
+do
+    local div, rem = load([[
     local function rem(a, b)
         local r = a % b
         if r ~= 0 and (r ~ a) < 0 then r = r - b end
@@ -81,11 +93,25 @@ local wd_div, wd_mod = load([[
     end
     return div, rem
 ]], "=wd_division")()
+    wd_div = function(a, b)
+        if b == 0 then wd_fail("division by zero") end
+        return div(a, b)
+    end
+    wd_mod = function(a, b)
+        if b == 0 then wd_fail("division by zero") end
+        return rem(a, b)
+    end
+end
 
 --@chunk bitwise
+--@requires fault
 -- 64-bit `& | ^ ~ << >>`, with `>>` arithmetic (ADR 0007). Wireshark's `bit` library works on
--- 32 bits, so these use Lua 5.3 operators, compiled at load as in the division chunk.
-local wd_band, wd_bor, wd_bxor, wd_bnot, wd_shl, wd_shr = load([[
+-- 32 bits, so these use Lua 5.3 operators, compiled at load as in the division chunk. A shift
+-- count outside 0..63 fails the Expression.
+local wd_band, wd_bor, wd_bxor, wd_bnot, wd_shl, wd_shr
+do
+    local shl, shr
+    wd_band, wd_bor, wd_bxor, wd_bnot, shl, shr = load([[
     return function(a, b) return a & b end,
         function(a, b) return a | b end,
         function(a, b) return a ~ b end,
@@ -96,6 +122,13 @@ local wd_band, wd_bor, wd_bxor, wd_bnot, wd_shl, wd_shr = load([[
             return ~(~a >> n)
         end
 ]], "=wd_bitwise")()
+    local function count(n)
+        if n < 0 or n > 63 then wd_fail("shift by " .. n .. ", outside 0 to 63") end
+        return n
+    end
+    wd_shl = function(a, n) return shl(a, count(n)) end
+    wd_shr = function(a, n) return shr(a, count(n)) end
+end
 
 --@chunk logic
 -- Comparisons and `!` give 1 or 0, as in C; `wd_bool` turns the result of Lua's
@@ -108,3 +141,28 @@ local function wd_le(a, b) return wd_bool(a <= b) end
 local function wd_gt(a, b) return wd_bool(a > b) end
 local function wd_ge(a, b) return wd_bool(a >= b) end
 local function wd_not(a) return wd_bool(a == 0) end
+
+--@chunk invalid
+-- Reporting of Expressions with no value when a packet is read (spec §4.4): division by zero,
+-- a shift count outside 0..63, a negative size. Like a truncation, it is a "Malformed" error.
+local function wd_expert_invalid(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._malformed.expression",
+        "Malformed: invalid Expression value",
+        expert.group.MALFORMED,
+        expert.severity.ERROR
+    )
+end
+
+local function wd_invalid(tree, expert_info, reason, path)
+    tree:add_proto_expert_info(expert_info, "Malformed: " .. reason .. ": " .. path)
+end
+
+-- The value `compute` returns, or nil and the reason it failed with `wd_fail`. Any other error
+-- is a Wirdigen bug, raised again so it is not mistaken for a malformed packet.
+local function wd_evaluate(compute)
+    local ok, value = pcall(compute)
+    if ok then return value end
+    if type(value) == "table" and value.wd_fault then return nil, value.wd_fault end
+    error(value, 0)
+end

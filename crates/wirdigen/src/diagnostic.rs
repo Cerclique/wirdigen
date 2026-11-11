@@ -81,8 +81,12 @@ names! {
     ExpressionSyntax => "expression-syntax", Error;
     LeadingZeroLiteral => "leading-zero-literal", Error;
     ChainedComparison => "chained-comparison", Error;
+    UnknownField => "unknown-field", Error;
+    ForwardReference => "forward-reference", Error;
+    NonNumericReference => "non-numeric-reference", Error;
     NotSupportedYet => "not-supported-yet", Error;
     UnreachableValue => "unreachable-value", Warning;
+    UnreachableField => "unreachable-field", Warning;
     UnusedEnum => "unused-enum", Warning;
     UnusedType => "unused-type", Warning;
     UnknownAllow => "unknown-allow", Warning;

@@ -617,23 +617,81 @@ fields: [ {name: data, type: bytes, size: "1 < 2 < 3"} ]
 **Fix**: join the two comparisons with `&&`, as in `a < b && b < c`, or add parentheses to
 compare the 1 or 0 of the first: `(a < b) < c`.
 
+## `unknown-field` {#unknown-field}
+
+**Severity**: error
+
+A name in an [Expression](reference/expressions.md#references) matches no Field read before
+it: a misspelling, a path into a structure that has no such Field or into a Field that is not a
+structure, or a path into the structure still being read. Inside a Type, a name the Type does
+not declare is looked up where the Type is used, and the error points at that use.
+
+```yaml,diagnostic=unknown-field
+name: demo
+fields:
+  - { name: length, type: uint8 }
+  - { name: data, type: bytes, size: "lengths * 2" }
+```
+
+```yaml,diagnostic=unknown-field
+name: demo
+fields:
+  - { name: record, type: Record }
+types:
+  Record:
+    fields: [ {name: data, type: bytes, size: count} ]
+```
+
+**Fix**: correct the name, or declare the Field it reads before the Field that reads it: here
+`length`, and a `count` Field before `record`.
+
+## `forward-reference` {#forward-reference}
+
+**Severity**: error
+
+An Expression reads a Field that is read only after it, or reads its own Field. A Dissector
+reads a packet in order, so the value does not exist yet. A note points at the later Field.
+
+```yaml,diagnostic=forward-reference
+name: demo
+fields:
+  - { name: data, type: bytes, size: length }
+  - { name: length, type: uint8 }
+```
+
+**Fix**: move the Field that is read before the Field that reads it.
+
+## `non-numeric-reference` {#non-numeric-reference}
+
+**Severity**: error
+
+An Expression reads a Field that has no number: a `string`, `bytes`, float, address, timestamp,
+inline structure or Field of a Type. Only integer and `bool` Fields can be read.
+
+```yaml,diagnostic=non-numeric-reference
+name: demo
+fields:
+  - { name: tag, type: string, size: 4 }
+  - { name: data, type: bytes, size: tag }
+```
+
+**Fix**: read an integer Field, or go into the structure for one: `header.length` rather than
+`header`.
+
 ## `not-supported-yet` {#not-supported-yet}
 
 **Severity**: error
 
 The description uses part of the format that this version of Wirdigen does not read yet: a
-`switch:` Field, or a `size:` Expression that reads a Field or a built-in such as
-`"_remaining"`. Constant Expressions such as `"4 * 6"` are read. A newer Wirdigen will accept
-the rest.
+`switch:` Field. A newer Wirdigen will accept it.
 
 ```yaml,diagnostic=not-supported-yet
 name: demo
 fields:
-  - { name: data, type: bytes, size: "_remaining" }
+  - { name: body, switch: kind }
 ```
 
-**Fix**: upgrade Wirdigen, or describe the layout with what this version supports, here by
-giving the size as a constant.
+**Fix**: upgrade Wirdigen, or describe the layout with what this version supports.
 
 ## `unreachable-value` {#unreachable-value}
 
@@ -661,6 +719,31 @@ fields:
 enums:
   Kind: { 1: One, 256: Wide }
 allow: [unreachable-value]
+```
+
+## `unreachable-field` {#unreachable-field}
+
+**Severity**: warning
+
+A Field comes after a `size: "_remaining"` Field in the same structure. That Field reads every
+byte left, so the one after it is always empty or truncated.
+
+```yaml,diagnostic=unreachable-field
+name: demo
+fields:
+  - { name: body, type: bytes, size: "_remaining" }
+  - { name: checksum, type: uint16 }
+```
+
+**Fix**: give the earlier Field a size that leaves room, such as `"_remaining - 2"`, or remove
+the later Field. When the later Field is meant to be empty, allow the warning:
+
+```yaml
+name: demo
+fields:
+  - { name: body, type: bytes, size: "_remaining" }
+  - { name: checksum, type: uint16 }
+allow: [unreachable-field]
 ```
 
 ## `unused-enum` {#unused-enum}

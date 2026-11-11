@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - name: hdr
+    fields: [ {name: len, type: uint8} ]
+  - { name: data, type: bytes, size: "hdr * 2" }

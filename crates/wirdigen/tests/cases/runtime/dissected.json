@@ -1,0 +1,76 @@
+[
+  {
+    "runtime.a": "-7",
+    "runtime.b": "2",
+    "runtime.s": "2",
+    "runtime.quotient": "01",
+    "runtime.remainder": "02",
+    "runtime.shifted": "03",
+    "runtime.big": "9223372036854775809",
+    "runtime.wrapped": "aa:bb:cc"
+  },
+  {
+    "runtime.a": "-7",
+    "runtime.b": "0",
+    "runtime.s": "2",
+    "_ws.expert": {
+      "runtime._malformed.expression": "",
+      "_ws.expert.message": "Malformed: division by zero: quotient",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "runtime.a": "-7",
+    "runtime.b": "2",
+    "runtime.s": "0",
+    "runtime.quotient": "01",
+    "_ws.expert": {
+      "runtime._malformed.expression": "",
+      "_ws.expert.message": "Malformed: division by zero: remainder",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "runtime.a": "-7",
+    "runtime.b": "2",
+    "runtime.s": "-1",
+    "runtime.quotient": "01",
+    "runtime.remainder": "02:03",
+    "_ws.expert": {
+      "runtime._malformed.expression": "",
+      "_ws.expert.message": "Malformed: shift by -1, outside 0 to 63: shifted",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "runtime.a": "-7",
+    "runtime.b": "2",
+    "runtime.s": "64",
+    "runtime.quotient": "01",
+    "_ws.expert": {
+      "runtime._malformed.expression": "",
+      "_ws.expert.message": "Malformed: size -5 is negative: remainder",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  },
+  {
+    "runtime.a": "127",
+    "runtime.b": "1",
+    "runtime.s": "2",
+    "_ws.expert": {
+      "runtime._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: quotient",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

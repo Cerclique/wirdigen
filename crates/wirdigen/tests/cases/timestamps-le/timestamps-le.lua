@@ -26,9 +26,10 @@ local function wd_truncated(tree, expert_info, path)
     tree:add_proto_expert_info(expert_info, "Malformed: truncated: " .. path)
 end
 
--- True when `size` bytes are available at `offset`.
+-- True when `size` bytes are available at `offset`. Written so that a huge `size` from an
+-- Expression cannot overflow `offset + size` into a small number.
 local function wd_fits(tvb, offset, size)
-    return offset + size <= tvb:len()
+    return size <= tvb:len() - offset
 end
 
 local wd_proto = Proto("timestamps-le", "TIMESTAMPS-LE")

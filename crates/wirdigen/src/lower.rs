@@ -3,13 +3,14 @@
 //! Everything lowering relies on is checked by validation, so it cannot fail: a surprise here is
 //! a Wirdigen bug and panics, it is never a Diagnostic.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::description::Protocol;
-use crate::expr::{BinaryOp, Expr, ExprKind, UnaryOp};
+use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
 use crate::field::{self, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
+use crate::scope::Reference;
 
 /// The model the emitter prints.
 #[derive(Debug, PartialEq, Eq)]
@@ -32,6 +33,8 @@ pub(crate) struct Dissector {
     pub(crate) types: Vec<TypeFunction>,
     /// The statements of the top-level layout.
     pub(crate) layout: Vec<Stmt>,
+    /// The locals the top-level layout keeps values Expressions read in, declared up front.
+    pub(crate) locals: Vec<String>,
     /// The prelude chunks the Dissector uses, before dependencies are added.
     pub(crate) chunks: Vec<&'static str>,
 }
@@ -137,6 +140,22 @@ pub(crate) struct TypeFunction {
     /// The statements of its Fields, whose paths are relative to the Type and whose
     /// `ProtoField`s are slots of the site table it is passed.
     pub(crate) body: Vec<Stmt>,
+    /// Whether it takes a context table: the values of names it reads but does not declare.
+    pub(crate) context: bool,
+    /// The locals it keeps values Expressions read in, declared up front.
+    pub(crate) locals: Vec<String>,
+    /// What it returns after the offset, for callers whose Expressions read inside it: by key,
+    /// a local, or a table of them. Empty when no caller reads inside it.
+    pub(crate) exports: BTreeMap<String, Export>,
+}
+
+/// An entry of the table a Type's dissect function returns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Export {
+    /// The local holding a value, or the table a Type's function returned.
+    Local(String),
+    /// The entries of an inline structure.
+    Table(BTreeMap<String, Export>),
 }
 
 /// The site table of one use of a Type: the `ProtoField`s registered for that use (spec §5.2),
@@ -187,6 +206,8 @@ pub(crate) enum Stmt {
         decode: Decode,
         /// The Field's path, for the comment and the truncation report.
         path: String,
+        /// The local its value is kept in, when an Expression reads it.
+        value: Option<Value>,
     },
     /// An inline structure: a subtree item holding the statements of its Fields, as long as
     /// the bytes they read.
@@ -207,7 +228,28 @@ pub(crate) enum Stmt {
         ty: String,
         /// The site table of this use.
         site: Ref,
+        /// The context table passed, by key, when the Type reads names it does not declare.
+        context: Vec<(String, LuaExpr)>,
+        /// The local the table the Type returns is kept in, when an Expression reads inside it.
+        result: Option<String>,
     },
+}
+
+/// Where the value of a read is kept for Expressions, and how it is read (spec §4.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Value {
+    pub(crate) local: String,
+    pub(crate) read: ValueRead,
+}
+
+/// How an Expression reads a value: as a signed 64-bit integer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ValueRead {
+    /// An integer, with this `string.unpack` format (`">I2"`): a `uint64` above 2^63 wraps to
+    /// a negative value.
+    Integer(String),
+    /// A `bool`: 1 when the byte is not zero, else 0.
+    Bool,
 }
 
 /// Where the value of a read ends.
@@ -216,7 +258,15 @@ pub(crate) enum Length {
     /// After this many bytes.
     Fixed(usize),
     /// After as many bytes as this Expression gives.
-    Expression(LuaExpr),
+    Expression {
+        value: LuaExpr,
+        /// Whether the value is known only when the packet is read, so a negative one is
+        /// reported as malformed (spec §4.4).
+        checked: bool,
+        /// Whether evaluating it can fault (division by zero, a shift out of 0..63), so it runs
+        /// under `wd_evaluate`.
+        faults: bool,
+    },
     /// After as many bytes as the unsigned integer of `size` bytes just before the value says,
     /// read with the `TvbRange` call `read` (`uint()`).
     Prefix { size: usize, read: &'static str },
@@ -237,6 +287,14 @@ pub(crate) enum LuaExpr {
     And(Box<LuaExpr>, Box<LuaExpr>),
     /// C's `||`: 1 when either is non-zero, evaluating the right side only when the left is zero.
     Or(Box<LuaExpr>, Box<LuaExpr>),
+    /// A value kept in a local, or inside the table a Type returned, by the keys down to it.
+    Local { local: String, keys: Vec<String> },
+    /// A value of the context table, by its key.
+    Context(String),
+    /// `_offset`: the offset of the Field being read.
+    Offset,
+    /// `_remaining`: the bytes from the Field being read to the end of the packet.
+    Remaining,
 }
 
 /// Who decodes the bytes of a read, and how.
@@ -255,7 +313,9 @@ pub(crate) enum Decode {
 }
 
 pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
+    let (top, mut plans) = plans(protocol);
     let mut lowering = Lowering {
+        plan: Plan::default(),
         filter_name: &protocol.name,
         enums: &protocol.enums,
         proto_fields: Vec::new(),
@@ -269,11 +329,16 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     let mut types = Vec::new();
     for t in &protocol.types {
         let mut slots = Vec::new();
+        lowering.plan = plans.remove(&t.name).expect("every Type has a plan");
         let body = lowering.type_structure(&t.fields, &[], &mut slots);
         lowering.slots.insert(&t.name, slots);
-        types.push(TypeFunction { name: t.name.clone(), body });
+        let plan = &lowering.plan;
+        let exports = plan.export_table();
+        types.push(TypeFunction { name: t.name.clone(), body, context: plan.context, locals: plan.locals(), exports });
     }
+    lowering.plan = top;
     let layout = lowering.structure(&protocol.fields, &[]);
+    let locals = lowering.plan.locals();
     let Lowering { proto_fields, tables, sites, chunks, .. } = lowering;
 
     let filter_name = protocol.name.clone();
@@ -288,7 +353,150 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         sites,
         types,
         layout,
+        locals,
         chunks,
+    }
+}
+
+/// What one dissect function keeps in locals, and for a Type, takes and returns (spec §7.3).
+#[derive(Debug, Default)]
+struct Plan {
+    /// The locals of values Expressions read, by the path of the Field from the function's root.
+    values: BTreeMap<Vec<String>, String>,
+    /// The locals of the tables Types return, by the path of the Field of the Type.
+    results: BTreeMap<Vec<String>, String>,
+    /// For a Type: the paths inside it its callers read, which it returns.
+    exports: BTreeSet<Vec<String>>,
+    /// For a Type: whether it reads its context table.
+    context: bool,
+}
+
+/// The plans of the top-level layout and of each Type. A caller's Expressions decide what a
+/// Type returns, so callers are planned first: the layout, then the Types from the last one,
+/// which no other Type uses.
+fn plans(protocol: &Protocol) -> (Plan, BTreeMap<String, Plan>) {
+    let mut demands: BTreeMap<String, BTreeSet<Vec<String>>> = BTreeMap::new();
+    let top = Plan::new(&protocol.fields, BTreeSet::new(), &mut demands);
+    let mut plans = BTreeMap::new();
+    for t in protocol.types.iter().rev() {
+        let exports = demands.remove(&t.name).unwrap_or_default();
+        plans.insert(t.name.clone(), Plan::new(&t.fields, exports, &mut demands));
+    }
+    (top, plans)
+}
+
+impl Plan {
+    /// The plan of a function reading `fields` that returns `exports`, adding to `demands` the
+    /// paths it reads inside each Type.
+    fn new(
+        fields: &[Field],
+        exports: BTreeSet<Vec<String>>,
+        demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>,
+    ) -> Self {
+        let mut read = Vec::new();
+        let mut context = false;
+        references(fields, &mut |reference| match reference {
+            Reference::Field(path) => read.push(path.clone()),
+            Reference::Context(_) => context = true,
+        });
+        let mut plan = Self { context, ..Self::default() };
+        for path in read.iter().chain(&exports) {
+            plan.keep(fields, path, demands);
+        }
+        plan.exports = exports;
+        plan
+    }
+
+    /// Gives the value at `path` a local: the Field's own, or the table of the Type it is in.
+    fn keep(&mut self, fields: &[Field], path: &[String], demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>) {
+        let mut list = fields;
+        for (depth, segment) in path.iter().enumerate() {
+            let field = list.iter().find(|f| f.name == *segment).expect("validation resolved the path");
+            match &field.kind {
+                FieldKind::Structure(children) => list = children,
+                FieldKind::Type { name, .. } => {
+                    let prefix = path[..=depth].to_vec();
+                    if !self.results.contains_key(&prefix) {
+                        let local = self.local(&prefix);
+                        self.results.insert(prefix, local);
+                    }
+                    demands.entry(name.clone()).or_default().insert(path[depth + 1..].to_vec());
+                    return;
+                }
+                FieldKind::Builtin(_) => {
+                    if !self.values.contains_key(path) {
+                        let local = self.local(path);
+                        self.values.insert(path.to_vec(), local);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// A fresh local for the value at `path`: `v_` then the segments joined by `__`.
+    fn local(&self, path: &[String]) -> String {
+        unique(&format!("v_{}", path.join("__")), |name| {
+            self.values.values().chain(self.results.values()).any(|l| l == name)
+        })
+    }
+
+    /// Every local, in path order.
+    fn locals(&self) -> Vec<String> {
+        let mut all: Vec<(&Vec<String>, &String)> = self.values.iter().chain(&self.results).collect();
+        all.sort();
+        all.into_iter().map(|(_, local)| local.clone()).collect()
+    }
+
+    /// The Field of a Type on `path` whose returned table holds the value, with its local.
+    fn result_for(&self, path: &[String]) -> Option<(&Vec<String>, &String)> {
+        self.results.iter().find(|(prefix, _)| path.starts_with(prefix))
+    }
+
+    /// How an Expression reads `reference`.
+    fn read(&self, reference: &Reference) -> LuaExpr {
+        match reference {
+            Reference::Context(key) => LuaExpr::Context(key.clone()),
+            Reference::Field(path) => match self.result_for(path) {
+                Some((prefix, local)) => LuaExpr::Local { local: local.clone(), keys: path[prefix.len()..].to_vec() },
+                None => LuaExpr::Local { local: self.values[path].clone(), keys: Vec::new() },
+            },
+        }
+    }
+
+    /// The table a Type returns: each exported path, nested as its Fields are.
+    fn export_table(&self) -> BTreeMap<String, Export> {
+        let mut table = BTreeMap::new();
+        for path in &self.exports {
+            let (keys, local) = match self.result_for(path) {
+                Some((prefix, local)) => (prefix.as_slice(), local),
+                None => (path.as_slice(), &self.values[path]),
+            };
+            let (last, parents) = keys.split_last().expect("an export has a path");
+            let mut entries = &mut table;
+            for key in parents {
+                let entry = entries.entry(key.clone()).or_insert_with(|| Export::Table(BTreeMap::new()));
+                let Export::Table(inner) = entry else { unreachable!("a structure is not a value") };
+                entries = inner;
+            }
+            entries.insert(last.clone(), Export::Local(local.clone()));
+        }
+        table
+    }
+}
+
+/// Calls `f` with every reference the Expressions of `fields` and the context tables of their
+/// uses of Types make, inline structures included.
+fn references(fields: &[Field], f: &mut impl FnMut(&Reference)) {
+    for field in fields {
+        match &field.kind {
+            FieldKind::Builtin(BuiltinField { length: field::Length::Expression { references, .. }, .. }) => {
+                references.values().for_each(&mut *f);
+            }
+            FieldKind::Builtin(_) => {}
+            FieldKind::Structure(children) => references(children, f),
+            FieldKind::Type { context, .. } => context.iter().for_each(|(_, r)| f(r)),
+        }
     }
 }
 
@@ -312,6 +520,8 @@ enum SlotKind<'p> {
 
 /// What lowering has built so far, while it walks the layout.
 struct Lowering<'p> {
+    /// The plan of the dissect function being lowered.
+    plan: Plan,
     /// The protocol's filter name, the first segment of every `ProtoField`'s.
     filter_name: &'p str,
     enums: &'p BTreeMap<String, Table>,
@@ -336,17 +546,17 @@ impl<'p> Lowering<'p> {
         let path = segments.join(".");
         let index = self.proto_field(field, &segments);
         match &field.kind {
-            FieldKind::Builtin(value) => self.read(value, Ref::Local(index), path),
+            FieldKind::Builtin(value) => self.read(value, Ref::Local(index), &segments),
             FieldKind::Structure(fields) => {
                 Stmt::Structure { field: Ref::Local(index), body: self.structure(fields, &segments), path }
             }
-            FieldKind::Type(ty) => {
-                let site = self.site(ty, &segments);
+            FieldKind::Type { name, context } => {
+                let site = self.site(name, &segments);
                 let local =
                     unique(&format!("site_{}", segments.join("__")), |n| self.sites.iter().any(|s| s.local == n));
                 self.sites.push(SharedSite { local, site });
                 let site = Ref::Local(self.sites.len() - 1);
-                Stmt::Call { field: Ref::Local(index), path, ty: ty.clone(), site }
+                self.call(Ref::Local(index), &segments, name, site, context)
             }
         }
     }
@@ -366,14 +576,14 @@ impl<'p> Lowering<'p> {
                 };
                 let field_ref = slot("f_", SlotKind::Field(field));
                 match &field.kind {
-                    FieldKind::Builtin(value) => self.read(value, field_ref, path),
+                    FieldKind::Builtin(value) => self.read(value, field_ref, &segments),
                     FieldKind::Structure(fields) => {
                         let body = self.type_structure(fields, &segments, slots);
                         Stmt::Structure { field: field_ref, path, body }
                     }
-                    FieldKind::Type(ty) => {
-                        let site = slot("t_", SlotKind::Site(ty));
-                        Stmt::Call { field: field_ref, path, ty: ty.clone(), site }
+                    FieldKind::Type { name, context } => {
+                        let site = slot("t_", SlotKind::Site(name));
+                        self.call(field_ref, &segments, name, site, context)
                     }
                 }
             })
@@ -398,16 +608,35 @@ impl<'p> Lowering<'p> {
         Site { path: segments.join("."), entries }
     }
 
-    /// The statement reading a Field of a built-in type through `field`, at `path`.
-    fn read(&mut self, value: &BuiltinField, field: Ref, path: String) -> Stmt {
-        let length = match &value.length {
-            field::Length::Expression(expr) => Length::Expression(self.expression(expr)),
-            _ => length(value),
+    /// The statement calling the dissect function of the Type `ty` for the Field at `segments`.
+    fn call(&mut self, field: Ref, segments: &[&str], ty: &str, site: Ref, context: &[(String, Reference)]) -> Stmt {
+        let context = context.iter().map(|(key, reference)| (key.clone(), self.plan.read(reference))).collect();
+        let result = self.plan.results.get(&owned(segments)).cloned();
+        Stmt::Call { field, path: segments.join("."), ty: ty.to_owned(), site, context, result }
+    }
+
+    /// The statement reading a Field of a built-in type through `field`, at `segments`.
+    fn read(&mut self, field_value: &BuiltinField, field: Ref, segments: &[&str]) -> Stmt {
+        let length = match &field_value.length {
+            field::Length::Expression { expr, references } => {
+                let checked = expr.constant().is_none();
+                let faults = checked && can_fault(expr);
+                if checked {
+                    self.use_chunk(prelude::INVALID);
+                }
+                Length::Expression { value: self.expression(expr, references), checked, faults }
+            }
+            _ => length(field_value),
         };
         if matches!(length, Length::Terminator { .. }) {
             self.use_chunk(prelude::TERMINATED);
         }
-        Stmt::Read { field, length, decode: decode(value), path }
+        let value =
+            self.plan.values.get(&owned(segments)).cloned().map(|local| Value { local, read: value_read(field_value) });
+        if value.as_ref().is_some_and(|v| v.read == ValueRead::Bool) {
+            self.use_chunk(prelude::LOGIC);
+        }
+        Stmt::Read { field, length, decode: decode(field_value), path: segments.join("."), value }
     }
 
     /// Adds a prelude chunk the Dissector needs, once.
@@ -417,11 +646,14 @@ impl<'p> Lowering<'p> {
         }
     }
 
-    /// Compiles an Expression to helper calls, using the prelude chunks that define them.
-    fn expression(&mut self, expr: &Expr) -> LuaExpr {
+    /// Compiles an Expression whose paths read `references` to helper calls, using the prelude
+    /// chunks that define them.
+    fn expression(&mut self, expr: &Expr, references: &BTreeMap<Vec<String>, Reference>) -> LuaExpr {
         let (helper, chunk, args) = match &expr.kind {
             ExprKind::Int(value) => return LuaExpr::Int(*value),
-            ExprKind::Path(_) | ExprKind::Builtin(_) => unreachable!("validation accepts only constant Expressions"),
+            ExprKind::Path(segments) => return self.plan.read(&references[segments]),
+            ExprKind::Builtin(expr::Builtin::Offset) => return LuaExpr::Offset,
+            ExprKind::Builtin(expr::Builtin::Remaining) => return LuaExpr::Remaining,
             ExprKind::Unary { op, operand } => {
                 let (helper, chunk) = match op.value {
                     UnaryOp::Not => ("wd_not", prelude::LOGIC),
@@ -435,7 +667,8 @@ impl<'p> Lowering<'p> {
                     BinaryOp::And | BinaryOp::Or => {
                         // `wd_bool` turns Lua's `and`/`or`, which short-circuit, into 1 or 0.
                         self.use_chunk(prelude::LOGIC);
-                        let (left, right) = (Box::new(self.expression(left)), Box::new(self.expression(right)));
+                        let left = Box::new(self.expression(left, references));
+                        let right = Box::new(self.expression(right, references));
                         return if op.value == BinaryOp::And {
                             LuaExpr::And(left, right)
                         } else {
@@ -463,7 +696,7 @@ impl<'p> Lowering<'p> {
             }
         };
         self.use_chunk(chunk);
-        LuaExpr::Call { helper, args: args.into_iter().map(|arg| self.expression(arg)).collect() }
+        LuaExpr::Call { helper, args: args.into_iter().map(|arg| self.expression(arg, references)).collect() }
     }
 
     /// Registers the `ProtoField` of a Field at the path `segments`, returning its index.
@@ -474,7 +707,7 @@ impl<'p> Lowering<'p> {
                 field_type(value),
                 value.mapping.as_ref().and_then(|m| strings(m, value.ty, self.enums, &mut self.tables)),
             ),
-            FieldKind::Structure(_) | FieldKind::Type(_) => (FieldType::new("none", Args::Plain), None),
+            FieldKind::Structure(_) | FieldKind::Type { .. } => (FieldType::new("none", Args::Plain), None),
         };
         self.proto_fields.push(ProtoField {
             local: self.local(segments),
@@ -491,6 +724,24 @@ impl<'p> Lowering<'p> {
     /// (`f_options__ttl`).
     fn local(&self, segments: &[&str]) -> String {
         unique(&format!("f_{}", segments.join("__")), |name| self.proto_fields.iter().any(|f| f.local == name))
+    }
+}
+
+/// A path as the plans key it.
+fn owned(segments: &[&str]) -> Vec<String> {
+    segments.iter().map(|s| (*s).to_owned()).collect()
+}
+
+/// Whether an Expression has an operator that can fault at runtime: `/`, `%`, `<<` or `>>`.
+fn can_fault(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Int(_) | ExprKind::Path(_) | ExprKind::Builtin(_) => false,
+        ExprKind::Unary { operand, .. } => can_fault(operand),
+        ExprKind::Binary { op, left, right } => {
+            matches!(op.value, BinaryOp::Div | BinaryOp::Rem | BinaryOp::Shl | BinaryOp::Shr)
+                || can_fault(left)
+                || can_fault(right)
+        }
     }
 }
 
@@ -652,7 +903,7 @@ fn base(display: Display) -> &'static str {
 /// that long, so the bounds check still fails it.
 fn length(field: &BuiltinField) -> Length {
     match field.length {
-        field::Length::Expression(_) => unreachable!("`Lowering::read` compiles Expressions"),
+        field::Length::Expression { .. } => unreachable!("`Lowering::read` compiles Expressions"),
         field::Length::Constant(size) => Length::Fixed(size),
         field::Length::Prefix(size) => {
             let read = match (size, size > 1 && field.endian == Endian::Little) {
@@ -691,6 +942,18 @@ fn enc_endian(endian: Endian) -> &'static str {
     match endian {
         Endian::Big => "ENC_BIG_ENDIAN",
         Endian::Little => "ENC_LITTLE_ENDIAN",
+    }
+}
+
+/// How an Expression reads the value of an integer or `bool` Field.
+fn value_read(field: &BuiltinField) -> ValueRead {
+    match field.ty {
+        Builtin::Int { signed, bytes } => {
+            let order = if field.endian == Endian::Little { '<' } else { '>' };
+            ValueRead::Integer(format!("{order}{}{bytes}", if signed { 'i' } else { 'I' }))
+        }
+        Builtin::Bool => ValueRead::Bool,
+        _ => unreachable!("validation references only integers and `bool`"),
     }
 }
 
@@ -825,7 +1088,7 @@ mod tests {
         let protocol = protocol.unwrap_or_else(|| panic!("{diagnostics:?}"));
         let mapping = |field: &Field| match &field.kind {
             FieldKind::Builtin(value) => value.mapping.clone(),
-            FieldKind::Structure(_) | FieldKind::Type(_) => None,
+            FieldKind::Structure(_) | FieldKind::Type { .. } => None,
         };
         assert_eq!(mapping(&protocol.fields[0]), mapping(&protocol.fields[1]));
         let d = lower(&protocol, "x");
@@ -1024,15 +1287,17 @@ mod tests {
             "x",
         );
         let call = |helper, args| LuaExpr::Call { helper, args };
+        // A constant was checked by validation: it is evaluated as is.
+        let constant = |value| Length::Expression { value, checked: false, faults: false };
         let lengths: Vec<Length> = reads(&d).into_iter().map(|(length, _)| length).collect();
         assert_eq!(
             lengths,
             [
-                Length::Expression(call(
+                constant(call(
                     "wd_add",
                     vec![call("wd_div", vec![LuaExpr::Int(4), call("wd_neg", vec![LuaExpr::Int(2)])]), LuaExpr::Int(3)]
                 )),
-                Length::Expression(LuaExpr::And(
+                constant(LuaExpr::And(
                     Box::new(LuaExpr::Int(0)),
                     Box::new(call("wd_shl", vec![LuaExpr::Int(1), LuaExpr::Int(2)]))
                 )),
@@ -1057,6 +1322,205 @@ mod tests {
         assert_eq!(chunks("~0 & 3"), ["bitwise"]);
         assert_eq!(chunks("(1 < 2) + !0"), ["arithmetic", "logic"]);
         assert_eq!(chunks("1 || 0"), ["logic"]);
+    }
+
+    /// The statement reading or calling the Field at `path` among `stmts`, structures included.
+    fn stmt<'d>(stmts: &'d [Stmt], path: &str) -> &'d Stmt {
+        fn find<'d>(stmts: &'d [Stmt], path: &str) -> Option<&'d Stmt> {
+            stmts.iter().find_map(|s| match s {
+                Stmt::Read { path: p, .. } | Stmt::Call { path: p, .. } if p == path => Some(s),
+                Stmt::Structure { body, .. } => find(body, path),
+                Stmt::Read { .. } | Stmt::Call { .. } => None,
+            })
+        }
+        find(stmts, path).unwrap_or_else(|| panic!("no statement reads `{path}`"))
+    }
+
+    /// The Expression a `size:` at `path` among `stmts` compiles to.
+    fn size<'d>(stmts: &'d [Stmt], path: &str) -> &'d LuaExpr {
+        match stmt(stmts, path) {
+            Stmt::Read { length: Length::Expression { value, .. }, .. } => value,
+            other => panic!("`{path}` has no Expression: {other:?}"),
+        }
+    }
+
+    fn local(name: &str, keys: &[&str]) -> LuaExpr {
+        LuaExpr::Local { local: name.to_owned(), keys: keys.iter().map(|k| (*k).to_owned()).collect() }
+    }
+
+    fn function<'d>(d: &'d Dissector, ty: &str) -> &'d TypeFunction {
+        d.types.iter().find(|t| t.name == ty).unwrap()
+    }
+
+    /// Spec §4.3: a name resolves to the nearest earlier Field, the structure's own before the
+    /// enclosing ones, and a dotted path reaches into a structure read earlier.
+    #[test]
+    fn references_read_the_nearest_earlier_field() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: len, type: uint8}\n  - name: hdr\n    fields:\n      - {name: len, type: uint16}\n      - {name: body, type: bytes, size: len}\n  - {name: data, type: bytes, size: len}\n  - {name: tail, type: bytes, size: hdr.len}\n",
+            "x",
+        );
+        assert_eq!(size(&d.layout, "hdr.body"), &local("v_hdr__len", &[]));
+        assert_eq!(size(&d.layout, "data"), &local("v_len", &[]));
+        assert_eq!(size(&d.layout, "tail"), &local("v_hdr__len", &[]));
+    }
+
+    /// Spec §7.3: locals only for the Fields Expressions read, each read as a signed 64-bit
+    /// integer in the Field's byte order, a `bool` as 1 or 0.
+    #[test]
+    fn only_referenced_fields_keep_their_values() {
+        let d = lowered(
+            "name: demo\nendian: little\nfields:\n  - {name: a, type: uint8}\n  - {name: b, type: int48}\n  - {name: c, type: uint64, endian: big}\n  - {name: d, type: bool}\n  - {name: e, type: uint16}\n  - {name: data, type: bytes, size: \"b + c + d\"}\n",
+            "x",
+        );
+        assert_eq!(d.locals, ["v_b", "v_c", "v_d"]);
+        let values: Vec<(&str, Option<&Value>)> = ["a", "b", "c", "d", "e"]
+            .into_iter()
+            .map(|path| match stmt(&d.layout, path) {
+                Stmt::Read { value, .. } => (path, value.as_ref()),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        let value = |local: &str, read| Value { local: local.to_owned(), read };
+        assert_eq!(
+            values,
+            [
+                ("a", None),
+                ("b", Some(&value("v_b", ValueRead::Integer("<i6".to_owned())))),
+                ("c", Some(&value("v_c", ValueRead::Integer(">I8".to_owned())))),
+                ("d", Some(&value("v_d", ValueRead::Bool))),
+                ("e", None),
+            ]
+        );
+    }
+
+    /// The built-ins read the offset and the bytes left where the Field starts (spec §4.5).
+    #[test]
+    fn builtins_read_the_offset_and_what_is_left() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: a, type: bytes, size: _offset}\n  - {name: b, type: bytes, size: _remaining}\n",
+            "x",
+        );
+        assert_eq!((size(&d.layout, "a"), size(&d.layout, "b")), (&LuaExpr::Offset, &LuaExpr::Remaining));
+    }
+
+    /// A Type, the same at every use, with a name it does not declare and two uses where that
+    /// name resolves to different Fields.
+    const CONTEXT: &str = "name: demo\nfields:\n  - {name: len, type: uint8}\n  - {name: first, type: Record}\n  - name: inner\n    fields:\n      - {name: len, type: uint16}\n      - {name: second, type: Record}\ntypes:\n  Record:\n    fields:\n      - {name: count, type: uint8}\n      - {name: items, type: bytes, size: \"count + len\"}\n";
+
+    /// Spec §3.5, §7.3: a Type reads its own Fields from locals, and a name it does not declare
+    /// from the context table each use passes, resolved at that use.
+    #[test]
+    fn a_type_reads_outer_names_through_the_context_table_of_each_use() {
+        let d = lowered(CONTEXT, "x");
+        let record = function(&d, "Record");
+        assert!(record.context);
+        assert_eq!(record.locals, ["v_count"]);
+        assert_eq!(
+            size(&record.body, "items"),
+            &LuaExpr::Call { helper: "wd_add", args: vec![local("v_count", &[]), LuaExpr::Context("len".to_owned())] }
+        );
+        let context = |path| match stmt(&d.layout, path) {
+            Stmt::Call { context, .. } => context.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(context("first"), [("len".to_owned(), local("v_len", &[]))]);
+        assert_eq!(context("inner.second"), [("len".to_owned(), local("v_inner__len", &[]))]);
+    }
+
+    /// A Type that does not resolve a name passes on the value its own caller gave.
+    #[test]
+    fn a_type_passes_on_names_it_does_not_declare() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: len, type: uint8}\n  - {name: outer, type: Outer}\ntypes:\n  Outer:\n    fields: [ {name: inner, type: Inner} ]\n  Inner:\n    fields: [ {name: data, type: bytes, size: len} ]\n",
+            "x",
+        );
+        let outer = function(&d, "Outer");
+        assert!(outer.context);
+        match stmt(&outer.body, "inner") {
+            Stmt::Call { context, .. } => {
+                assert_eq!(context, &[("len".to_owned(), LuaExpr::Context("len".to_owned()))]);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(size(&function(&d, "Inner").body, "data"), &LuaExpr::Context("len".to_owned()));
+    }
+
+    /// A Type without names from outside takes no context table, and returns nothing more than
+    /// the offset when no caller reads inside it.
+    #[test]
+    fn a_self_contained_type_takes_and_returns_only_the_offset() {
+        let d = lowered(TYPES, "x");
+        for t in &d.types {
+            assert!(!t.context && t.locals.is_empty() && t.exports.is_empty(), "{}", t.name);
+        }
+    }
+
+    /// Spec §4.3: a path into a Field of a Type reads what the Type returns, through each Type
+    /// and inline structure on the way.
+    #[test]
+    fn reading_inside_a_type_reads_the_table_it_returns() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: o, type: Outer}\n  - {name: data, type: bytes, size: \"o.inner.n + o.opts.m\"}\ntypes:\n  Outer:\n    fields:\n      - {name: inner, type: Inner}\n      - name: opts\n        fields: [ {name: m, type: uint8} ]\n  Inner:\n    fields: [ {name: n, type: uint8} ]\n",
+            "x",
+        );
+        assert_eq!(
+            size(&d.layout, "data"),
+            &LuaExpr::Call {
+                helper: "wd_add",
+                args: vec![local("v_o", &["inner", "n"]), local("v_o", &["opts", "m"])]
+            }
+        );
+        match stmt(&d.layout, "o") {
+            Stmt::Call { result, .. } => assert_eq!(result.as_deref(), Some("v_o")),
+            other => panic!("{other:?}"),
+        }
+        let outer = function(&d, "Outer");
+        assert_eq!(outer.locals, ["v_inner", "v_opts__m"]);
+        let table = |entries: &[(&str, Export)]| {
+            entries.iter().map(|(k, e)| ((*k).to_owned(), e.clone())).collect::<BTreeMap<_, _>>()
+        };
+        let export = |local: &str| Export::Local(local.to_owned());
+        assert_eq!(
+            outer.exports,
+            table(&[("inner", export("v_inner")), ("opts", Export::Table(table(&[("m", export("v_opts__m"))])))])
+        );
+        assert_eq!(function(&d, "Inner").exports, table(&[("n", export("v_n"))]));
+    }
+
+    /// Spec §4.4, §7.3: a size known only at runtime is checked for a negative value, under the
+    /// `invalid` chunk, and runs under `wd_evaluate` only when an operator can fault.
+    #[test]
+    fn runtime_sizes_select_their_checks_and_chunks() {
+        let checks = |size: &str| {
+            let d = lowered(
+                &format!(
+                    "name: demo\nfields:\n  - {{name: n, type: uint8}}\n  - {{name: a, type: bytes, size: \"{size}\"}}\n"
+                ),
+                "x",
+            );
+            let (checked, faults) = match stmt(&d.layout, "a") {
+                Stmt::Read { length: Length::Expression { checked, faults, .. }, .. } => (*checked, *faults),
+                other => panic!("{other:?}"),
+            };
+            (checked, faults, d.chunks.contains(&prelude::INVALID))
+        };
+        assert_eq!(checks("4 / 2"), (false, false, false));
+        assert_eq!(checks("n * 2"), (true, false, true));
+        assert_eq!(checks("_remaining - 1"), (true, false, true));
+        assert_eq!(checks("n / 2"), (true, true, true));
+        assert_eq!(checks("1 << n"), (true, true, true));
+        assert_eq!(checks("-(n % 3)"), (true, true, true));
+    }
+
+    /// Reading a `bool` for an Expression needs `wd_bool`.
+    #[test]
+    fn a_referenced_bool_brings_the_logic_chunk() {
+        let d = lowered(
+            "name: demo\nfields:\n  - {name: f, type: bool}\n  - {name: a, type: bytes, size: \"f * 4\"}\n",
+            "x",
+        );
+        assert!(d.chunks.contains(&prelude::LOGIC));
     }
 
     #[test]

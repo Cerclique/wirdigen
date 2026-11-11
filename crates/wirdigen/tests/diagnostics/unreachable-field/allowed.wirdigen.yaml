@@ -1,0 +1,5 @@
+name: demo
+fields:
+  - { name: body, type: bytes, size: "_remaining" }
+  - { name: crc, type: uint16 }
+allow: [unreachable-field]

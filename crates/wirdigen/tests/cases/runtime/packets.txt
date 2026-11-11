@@ -1,0 +1,13 @@
+# a=-7 b=2 s=2 quotient=01 remainder=02 shifted=03 big=0x8000000000000001 wrapped=aa:bb:cc
+0000  f9 02 02 01 02 03 80 00 00 00 00 00 00 01 aa bb
+0010  cc
+# b=0: quotient divides by zero.
+0000  f9 00 02 01 02 03
+# s=0: remainder divides by zero.
+0000  f9 02 00 01 02 03
+# s=-1: shifted shifts by a count outside 0 to 63.
+0000  f9 02 ff 01 02 03
+# s=64: remainder's size is -7 % 64 + 2 = -5.
+0000  f9 02 40 01 02 03
+# a=127 b=1: quotient's size is 131, more than the packet holds.
+0000  7f 01 02 01 02 03

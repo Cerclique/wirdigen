@@ -58,4 +58,6 @@ cases! {
     structures => "structures",
     types => "types",
     expressions => "expressions",
+    references => "references",
+    runtime => "runtime",
 }

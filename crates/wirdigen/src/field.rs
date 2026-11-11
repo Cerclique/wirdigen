@@ -3,6 +3,7 @@
 //! Stage 2 reads each entry's keys into a [`RawField`]; stage 4 turns the raw Fields into the
 //! validated [`Field`]s lowering relies on, so lowering never sees a Field validation rejected.
 
+use std::collections::BTreeMap;
 use std::ops::{Range, RangeInclusive};
 
 use crate::diagnostic::{Diagnostic, Name, record};
@@ -10,6 +11,7 @@ use crate::expr::{self, Expr, ExprKind, Fault};
 use crate::keys::{Keys, Spanned, closest, expect_integer, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping};
 use crate::scalar::{Kind, resolve_plain};
+use crate::scope::{self, Level, Reference, Scope};
 use crate::types::Types;
 use crate::yaml::{Node, Value};
 
@@ -380,9 +382,13 @@ impl Encoding {
 pub(crate) enum Length {
     /// A constant number of bytes: a fixed-size type's, or a constant `size:`.
     Constant(usize),
-    /// As many bytes as a `size:` Expression with operators gives. This version accepts only
-    /// constant Expressions, whose value validation checked is a size.
-    Expression(Expr),
+    /// As many bytes as a `size:` Expression with operators or references gives. A constant
+    /// one was checked to be a size; any other is checked when the packet is read (spec §4.4).
+    Expression {
+        expr: Expr,
+        /// What each Field path of the Expression reads, by its segments.
+        references: BTreeMap<Vec<String>, Reference>,
+    },
     /// The number of bytes is an unsigned integer of this many bytes just before the value
     /// (`prefix:`), in the Field's byte order.
     Prefix(usize),
@@ -433,18 +439,36 @@ fn read_terminator(node: &Node) -> Result<RawLength, Diagnostic> {
 
 impl LengthKey {
     /// Stage 4: the length this key gives a `string` or `bytes` Field, encoded as `encoding`.
-    fn check(&self, encoding: Option<Encoding>) -> Result<Length, Diagnostic> {
+    fn check<'a>(
+        &self,
+        encoding: Option<Encoding>,
+        scope: Scope<'a, '_>,
+        types: &Types<'a>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<Length> {
+        record(self.check_value(encoding, scope, types, diagnostics), diagnostics).flatten()
+    }
+
+    /// The length, or `Ok(None)` when an Expression's references were reported.
+    fn check_value<'a>(
+        &self,
+        encoding: Option<Encoding>,
+        scope: Scope<'a, '_>,
+        types: &Types<'a>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Result<Option<Length>, Diagnostic> {
         let span = self.value.span.clone();
         match &self.value.value {
-            RawLength::Size(size) => usize::try_from(*size).map(Length::Constant).map_err(|_| {
+            RawLength::Size(size) => usize::try_from(*size).map(|size| Some(Length::Constant(size))).map_err(|_| {
                 Diagnostic::new(Name::InvalidSize, span, format!("a size cannot be negative, found `{size}`"))
             }),
             RawLength::Expression(expression) => {
-                check_size(expression.as_ref().expect("stage 3 reported every syntax error"), span)
+                let expression = expression.as_ref().expect("stage 3 reported every syntax error");
+                check_size(expression, span, scope, types, diagnostics)
             }
             RawLength::Prefix(name) => {
                 if let Some(bytes) = Builtin::from_name(name).and_then(Builtin::unsigned_bytes) {
-                    return Ok(Length::Prefix(bytes));
+                    return Ok(Some(Length::Prefix(bytes)));
                 }
                 let unsigned: Vec<&str> =
                     BUILTINS.iter().filter(|(_, b)| b.unsigned_bytes().is_some()).map(|(n, _)| *n).collect();
@@ -458,7 +482,7 @@ impl LengthKey {
                     format!("a `{}` string ends at a 2-byte zero", encoding.as_str()),
                 )
                 .with_note("write `terminator: 0`", None)),
-                (Ok(byte), _) => Ok(Length::Terminator(byte)),
+                (Ok(byte), _) => Ok(Some(Length::Terminator(byte))),
                 (Err(_), _) => Err(Diagnostic::new(Name::InvalidTerminator, span, format!("`{value}` is not a byte"))
                     .with_note("a terminator is a byte, from 0 to 255", None)),
             },
@@ -466,20 +490,22 @@ impl LengthKey {
     }
 }
 
-/// Stage 4: the length a `size:` Expression at `span` gives. This version reads no references,
-/// and a constant must be a size: zero or more, reached without a fault (spec §3.6, §4.4).
-fn check_size(expression: &Expr, span: Range<usize>) -> Result<Length, Diagnostic> {
-    if let Some(first) = expression.references().first() {
-        let message = match &first.kind {
-            ExprKind::Builtin(builtin) => {
-                format!("`{}` is not supported by this version of Wirdigen yet", builtin.as_str())
-            }
-            _ => "Field references in Expressions are not supported by this version of Wirdigen yet".to_owned(),
-        };
-        return Err(Diagnostic::new(Name::NotSupportedYet, first.span.clone(), message)
-            .with_note("write the size as a constant", None));
-    }
-    let value = match expression.constant().expect("an Expression without references is constant") {
+/// Stage 4: the length a `size:` Expression at `span`, read from `scope`, gives (spec §3.6,
+/// §4.3). A constant must be a size: zero or more, reached without a fault (§4.4). `Ok(None)`
+/// when a reference was reported.
+fn check_size<'a>(
+    expression: &Expr,
+    span: Range<usize>,
+    scope: Scope<'a, '_>,
+    types: &Types<'a>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Option<Length>, Diagnostic> {
+    let Some(value) = expression.constant() else {
+        let paths = paths(expression);
+        let Some(references) = scope::resolve_paths(&paths, scope, types, diagnostics) else { return Ok(None) };
+        return Ok(Some(Length::Expression { expr: expression.clone(), references }));
+    };
+    let value = match value {
         Ok(value) => value,
         Err(fault) => {
             let message = match fault.value {
@@ -496,10 +522,22 @@ fn check_size(expression: &Expr, span: Range<usize>) -> Result<Length, Diagnosti
             format!("a size cannot be negative, this one is `{value}`"),
         ));
     };
-    Ok(match expression.kind {
+    Ok(Some(match expression.kind {
         ExprKind::Int(_) => Length::Constant(size),
-        _ => Length::Expression(expression.clone()),
-    })
+        _ => Length::Expression { expr: expression.clone(), references: BTreeMap::new() },
+    }))
+}
+
+/// The Field paths an Expression reads, by their segments, with their spans.
+fn paths(expression: &Expr) -> Vec<(&[String], Range<usize>)> {
+    expression
+        .references()
+        .into_iter()
+        .filter_map(|r| match &r.kind {
+            ExprKind::Path(segments) => Some((segments.as_slice(), r.span.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Stage 3: the syntax errors of the Expressions of `fields` and of their inline structures.
@@ -580,6 +618,55 @@ pub(crate) struct RawField {
     mappings: mapping::RawMappings,
 }
 
+/// What a Field written in a description is, as references see it (spec §4.3).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Shape<'a> {
+    /// A value of a built-in type, with the type's name as written.
+    Value(Builtin, &'a str),
+    /// An inline structure, with its Fields.
+    Structure(&'a [RawField]),
+    /// A Field of a Type, with the Type's Fields.
+    Type { name: &'a str, fields: &'a [RawField] },
+    /// A `type:` naming nothing known, which is an error of its own.
+    Unknown,
+}
+
+impl RawField {
+    pub(crate) fn name(&self) -> &Spanned<String> {
+        &self.name
+    }
+
+    /// What the Field is, its Type looked up in `types`.
+    pub(crate) fn shape<'a>(&'a self, types: &Types<'a>) -> Shape<'a> {
+        match &self.kind {
+            RawKind::Structure { fields, .. } => Shape::Structure(fields),
+            RawKind::Type { name, .. } => match (Builtin::from_name(&name.value), types.body(&name.value)) {
+                (Some(builtin), _) => Shape::Value(builtin, &name.value),
+                (None, Some(fields)) => Shape::Type { name: &name.value, fields },
+                (None, None) => Shape::Unknown,
+            },
+        }
+    }
+
+    /// The Field paths the Field's own Expressions read, by their segments, with their spans.
+    pub(crate) fn paths(&self) -> Vec<(&[String], Range<usize>)> {
+        self.expressions().flat_map(paths).collect()
+    }
+
+    fn expressions(&self) -> impl Iterator<Item = &Expr> {
+        self.lengths.iter().filter_map(|l| match &l.value.value {
+            RawLength::Expression(Ok(expr)) => Some(expr),
+            _ => None,
+        })
+    }
+
+    /// Whether the Field reads up to the end of its structure or the message, as
+    /// `size: "_remaining"` does (spec §3.6).
+    fn reads_to_end(&self) -> bool {
+        self.expressions().any(|e| e.kind == ExprKind::Builtin(expr::Builtin::Remaining))
+    }
+}
+
 /// A validated Field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Field {
@@ -599,7 +686,12 @@ pub(crate) enum FieldKind {
     /// An inline structure: its Fields, in order, shown as a subtree.
     Structure(Vec<Field>),
     /// A Field of the named Type, shown as a subtree.
-    Type(String),
+    Type {
+        name: String,
+        /// The context table this use passes: what each name the Type reads but does not
+        /// declare resolves to here, by the name as written (spec §4.3).
+        context: Vec<(String, Reference)>,
+    },
 }
 
 /// How a Field of a built-in type is read and shown.
@@ -758,16 +850,29 @@ fn names_type(name: &str, types: &Types<'_>) -> bool {
 ///
 /// Returns the Fields that passed. A wrong Field is left out, so the layout is complete only
 /// when no error was pushed: the caller decides on the run as a whole.
-pub(crate) fn check(
-    fields: &[RawField],
+pub(crate) fn check<'a>(
+    fields: &'a [RawField],
     endian: Endian,
     enums: &mut Enums<'_>,
-    types: &mut Types<'_>,
+    types: &mut Types<'a>,
+    scope: Scope<'a, '_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<Field> {
     let mut layout = Vec::new();
     for (index, field) in fields.iter().enumerate() {
+        let levels: Vec<Level<'a>> = scope.levels.iter().copied().chain([Level { fields, at: index }]).collect();
+        let scope = Scope { ty: scope.ty, levels: &levels };
         let name = &field.name;
+        if let Some(previous) = index.checked_sub(1).map(|i| &fields[i]).filter(|f| f.reads_to_end()) {
+            diagnostics.push(
+                Diagnostic::new(
+                    Name::UnreachableField,
+                    name.span.clone(),
+                    format!("`{}` comes after `{}`, which reads to the end", name.value, previous.name.value),
+                )
+                .with_note("`size: \"_remaining\"` leaves no bytes for the Fields after it", None),
+            );
+        }
         if !is_field_name(&name.value) {
             diagnostics.push(
                 Diagnostic::new(
@@ -795,21 +900,24 @@ pub(crate) fn check(
                 for key in type_use_keys {
                     diagnostics.push(misplaced_key(key, "a Field whose type is a Type", "the Type"));
                 }
-                types.resolve(name).map(FieldKind::Type)
+                types.resolve(name).and_then(|ty| {
+                    let context = scope::resolve_context(&ty, &name.span, scope, types, diagnostics)?;
+                    Some(FieldKind::Type { name: ty, context })
+                })
             }
             RawKind::Type { name, .. } => {
                 let endian = match &field.endian {
                     Some(value) => record(Endian::check(value), diagnostics),
                     None => Some(endian),
                 };
-                check_builtin(field, name, endian, enums, diagnostics).map(FieldKind::Builtin)
+                check_builtin(field, name, endian, enums, types, scope, diagnostics).map(FieldKind::Builtin)
             }
             RawKind::Structure { fields, value_keys } => {
                 let endian = Endian::resolve(field.endian.as_ref(), endian, diagnostics);
                 for key in value_keys {
                     diagnostics.push(misplaced_key(key, "an inline structure", "the structure"));
                 }
-                Some(FieldKind::Structure(check(fields, endian, enums, types, diagnostics)))
+                Some(FieldKind::Structure(check(fields, endian, enums, types, scope, diagnostics)))
             }
         };
         check_tree_text(field, diagnostics);
@@ -828,11 +936,13 @@ pub(crate) fn check(
 
 /// Checks a Field of type `ty` read with the byte order `endian` (`None` when its own is
 /// invalid), returning how it is read when nothing is wrong.
-fn check_builtin(
+fn check_builtin<'a>(
     field: &RawField,
     ty_name: &Spanned<String>,
     endian: Option<Endian>,
     enums: &mut Enums<'_>,
+    types: &Types<'a>,
+    scope: Scope<'a, '_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<BuiltinField> {
     let ty = Builtin::from_name(&ty_name.value);
@@ -844,7 +954,9 @@ fn check_builtin(
         (Some(ty), None) => Some(ty.encodings().first().copied()),
         (None, _) => Some(None),
     };
-    let length = ty.zip(encoding).and_then(|(ty, encoding)| check_length(field, ty_name, ty, encoding, diagnostics));
+    let length = ty
+        .zip(encoding)
+        .and_then(|(ty, encoding)| check_length(field, ty_name, ty, encoding, types, scope, diagnostics));
     let display = match (ty, &field.display) {
         (Some(ty), Some(value)) => record(Display::check(value, ty_name, ty), diagnostics).map(Some),
         (Some(ty), None) => Some(ty.displays().first().copied()),
@@ -875,11 +987,13 @@ fn misplaced_key(key: &Spanned<&'static str>, what: &str, inner: &str) -> Diagno
 /// The length of a Field of type `ty`, written `ty_name`, encoded as `encoding`: a fixed-size
 /// type's own or a timestamp's encoding's, which take no length key, or the one length key a
 /// `string` or `bytes` needs (spec §3.4.5, §3.6).
-fn check_length(
+fn check_length<'a>(
     field: &RawField,
     ty_name: &Spanned<String>,
     ty: Builtin,
     encoding: Option<Encoding>,
+    types: &Types<'a>,
+    scope: Scope<'a, '_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Length> {
     if let Some(size) = ty.fixed_size().or_else(|| encoding.and_then(Encoding::time_size)) {
@@ -903,7 +1017,7 @@ fn check_length(
         return None;
     };
     if rest.is_empty() {
-        return record(length.check(encoding), diagnostics);
+        return length.check(encoding, scope, types, diagnostics);
     }
     for other in rest {
         diagnostics.push(

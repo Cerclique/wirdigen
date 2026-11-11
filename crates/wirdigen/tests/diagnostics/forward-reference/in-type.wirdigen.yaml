@@ -1,0 +1,8 @@
+name: demo
+fields:
+  - { name: rec, type: Record }
+types:
+  Record:
+    fields:
+      - { name: data, type: bytes, size: len }
+      - { name: len, type: uint8 }

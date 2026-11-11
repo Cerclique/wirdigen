@@ -1,3 +1,4 @@
 name: demo
 fields:
   - { name: data, type: bytes, size: len }
+  - { name: len, type: uint8 }

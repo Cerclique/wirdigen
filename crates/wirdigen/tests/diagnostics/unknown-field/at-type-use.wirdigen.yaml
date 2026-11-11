@@ -1,0 +1,11 @@
+name: demo
+fields:
+  - name: inner
+    fields:
+      - { name: len, type: uint8 }
+      - { name: first, type: Record }
+  - { name: second, type: Record }
+types:
+  Record:
+    fields:
+      - { name: data, type: bytes, size: "len + 1" }
