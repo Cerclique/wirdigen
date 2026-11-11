@@ -143,6 +143,7 @@ pub(crate) enum Stmt {
         field: usize,
         /// The Field's path, for the comment.
         path: String,
+        /// The statements of its Fields, inside the subtree.
         body: Vec<Stmt>,
     },
 }
@@ -217,6 +218,8 @@ impl Lowering<'_> {
         fields.iter().map(|field| self.field(field, parent)).collect()
     }
 
+    /// Registers the `ProtoField` of a Field whose path starts with `parent`, and returns the
+    /// statement that reads it.
     fn field(&mut self, field: &Field, parent: &[&str]) -> Stmt {
         let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
         let path = segments.join(".");
