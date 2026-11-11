@@ -42,7 +42,7 @@ element, as Wireshark matches every occurrence of a field in a packet.
 ## `count:` {#count}
 
 `count:` is a constant or an Expression over the Fields read before the array, written like a
-[`size:`](expressions.md). It is computed once, before the first element.
+[`size:`](sizes.md#size). It is computed once, before the first element.
 
 - A constant `count:` that is negative, divides by zero or shifts by a count outside 0 to 63 is
   [`invalid-count`](../diagnostics.md#invalid-count).

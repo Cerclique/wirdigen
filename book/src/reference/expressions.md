@@ -179,9 +179,7 @@ types:
 | `_offset` | the number of bytes from the start of the message to the Field being read |
 | `_remaining` | the number of bytes left in the message from the Field being read |
 
-`size: "_remaining"` reads everything left. A Field after it in the same structure can only be
-empty or truncated, which is the warning
-[`unreachable-field`](../diagnostics.md#unreachable-field).
+`size: "_remaining"` reads everything left (see [Sizes](sizes.md#remaining)).
 
 ```yaml
 name: demo
