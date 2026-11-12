@@ -1,0 +1,189 @@
+# The long-running checks of spec §10.9 and §12.2, each week: the bad-input harness with a random
+# seed and large counts, high PROPTEST_CASES, random descriptions x random and truncated packets
+# on both tshark versions, the beta toolchain (tests and clippy) and `cargo deny check
+# advisories`. A failure opens one issue, or comments on the one already open, with the seed and
+# the smallest failing packet (docker/README.md). Never required by PRs.
+
+name: Weekly
+
+on:
+  schedule:
+    # Sunday 03:23 UTC, ahead of Refresh protocols on Monday.
+    - cron: "23 3 * * 0"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: weekly
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # One seed for every job, so a failure on one tshark version replays on the other.
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      seed: ${{ steps.seed.outputs.seed }}
+    steps:
+      - id: seed
+        run: echo "seed=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+  tshark:
+    needs: seed
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["4.4", stable]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      PROPTEST_RNG_SEED: ${{ needs.seed.outputs.seed }}
+      PROPTEST_CASES: "5000"
+      WIRDIGEN_RANDOM_PACKETS: "64"
+      WIRDIGEN_BAD_SEED: ${{ needs.seed.outputs.seed }}
+      WIRDIGEN_BAD_MUTATIONS: "1000"
+      WIRDIGEN_BAD_RANDOM: "1000"
+      VERSION: ${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # A new cache scope each week, so the stable image picks up new releases from the PPA.
+      - name: Week of the year
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/tshark-${{ matrix.version }}/Dockerfile
+          tags: wirdigen-tshark-${{ matrix.version }}
+          load: true
+          cache-from: type=gha,scope=tshark-${{ matrix.version }}-${{ steps.week.outputs.week }}
+          cache-to: type=gha,scope=tshark-${{ matrix.version }}-${{ steps.week.outputs.week }},mode=max
+      # Both runs go on after a failure of the first, so that one issue reports both.
+      - name: Bad packets, large counts, random seed
+        id: bad
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make "docker-test-tshark-$VERSION" DOCKER_PREBUILT=1 2>&1 | tee "$RUNNER_TEMP/bad.log"
+      - name: Random descriptions x random and truncated packets
+        id: random
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make "docker-test-tshark-random-$VERSION" DOCKER_PREBUILT=1 2>&1 | tee "$RUNNER_TEMP/random.log"
+      - name: Keep the tails of the failing logs
+        if: steps.bad.outcome == 'failure' || steps.random.outcome == 'failure'
+        run: |
+          mkdir failure
+          for log in bad random; do
+            [ -f "$RUNNER_TEMP/$log.log" ] && tail -n 120 "$RUNNER_TEMP/$log.log" > "failure/$log-$VERSION.log"
+          done
+          true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.bad.outcome == 'failure' || steps.random.outcome == 'failure'
+        with:
+          name: failure-tshark-${{ matrix.version }}
+          path: failure/
+      - name: Fail on a failing run
+        if: steps.bad.outcome == 'failure' || steps.random.outcome == 'failure'
+        run: exit 1
+
+  beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install beta --profile minimal --component clippy
+      - run: cargo +beta test --workspace --locked --all-targets
+      - run: cargo +beta clippy --workspace --locked --all-targets -- -D warnings
+
+  advisories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check advisories
+
+  # One issue for every failure: opened, or commented on while it is open.
+  report:
+    needs: [seed, tshark, beta, advisories]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SEED: ${{ needs.seed.outputs.seed }}
+      TSHARK_RESULT: ${{ needs.tshark.result }}
+      BETA_RESULT: ${{ needs.beta.result }}
+      ADVISORIES_RESULT: ${{ needs.advisories.result }}
+      TITLE: Weekly scheduled tests are failing
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: failure-tshark-*
+          path: failures
+      - name: Open the issue or comment on it
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID"
+          {
+            echo "The [weekly run]($run_url) failed."
+            echo
+            echo "- tshark jobs: $TSHARK_RESULT"
+            echo "- beta toolchain: $BETA_RESULT"
+            echo "- cargo deny advisories: $ADVISORIES_RESULT"
+            echo
+            echo "Seed: \`$SEED\`. Replay on a tshark version with:"
+            echo
+            echo '```sh'
+            echo "PROPTEST_RNG_SEED=$SEED PROPTEST_CASES=5000 WIRDIGEN_RANDOM_PACKETS=64 make docker-test-tshark-random-stable"
+            echo "WIRDIGEN_BAD_SEED=$SEED WIRDIGEN_BAD_MUTATIONS=1000 WIRDIGEN_BAD_RANDOM=1000 make docker-test-tshark-stable"
+            echo '```'
+            echo
+            echo "A bad packet found by the bad-input harness, or by the random descriptions, becomes a \`packets.txt\` regression, or a corpus case (spec §10.6, §10.7)."
+            if [ -d failures ]; then
+              for log in failures/*/*.log; do
+                echo
+                echo "<details><summary><code>$(basename "$log")</code>: the smallest failing packet and the end of the log</summary>"
+                echo
+                echo '```text'
+                tail -c 20000 "$log"
+                echo '```'
+                echo
+                echo "</details>"
+              done
+            fi
+          } > "$RUNNER_TEMP/body.md"
+
+          issue=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")][0].number // empty")
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file "$RUNNER_TEMP/body.md"
+            echo "Commented on #$issue."
+          else
+            gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
+          fi

@@ -58,6 +58,8 @@ mod schema;
 mod scope;
 mod source;
 mod switch;
+#[cfg(test)]
+mod tshark_random;
 mod types;
 mod yaml;
 
