@@ -1,0 +1,71 @@
+[
+  {
+    "telemetry.version": "1",
+    "telemetry.node": "0x00a1",
+    "telemetry.seq": "1",
+    "telemetry.sensor": "1",
+    "telemetry.status": "0x50",
+    "telemetry.status_tree": {
+      "telemetry.status.low_battery": "0",
+      "telemetry.status.calibrated": "1",
+      "telemetry.status.priority": "1"
+    },
+    "telemetry.reading": "21.5",
+    "telemetry.battery": "87"
+  },
+  {
+    "telemetry.version": "1",
+    "telemetry.node": "0x00a1",
+    "telemetry.seq": "2",
+    "telemetry.sensor": "2",
+    "telemetry.status": "0x50",
+    "telemetry.status_tree": {
+      "telemetry.status.low_battery": "0",
+      "telemetry.status.calibrated": "1",
+      "telemetry.status.priority": "1"
+    },
+    "telemetry.reading": "48.25",
+    "telemetry.battery": "86"
+  },
+  {
+    "telemetry.version": "1",
+    "telemetry.node": "0x00b7",
+    "telemetry.seq": "7",
+    "telemetry.sensor": "3",
+    "telemetry.status": "0xb0",
+    "telemetry.status_tree": {
+      "telemetry.status.low_battery": "1",
+      "telemetry.status.calibrated": "0",
+      "telemetry.status.priority": "3"
+    },
+    "telemetry.reading": "1013.25",
+    "telemetry.battery": "9"
+  },
+  {
+    "telemetry.version": "1",
+    "telemetry.node": "0x00c3",
+    "telemetry.seq": "1",
+    "telemetry.sensor": "9",
+    "telemetry.status": "0x40",
+    "telemetry.status_tree": {
+      "telemetry.status.low_battery": "0",
+      "telemetry.status.calibrated": "1",
+      "telemetry.status.priority": "0"
+    },
+    "telemetry.reading": "0",
+    "telemetry.battery": "100"
+  },
+  {
+    "telemetry.version": "1",
+    "telemetry.node": "0x00c3",
+    "telemetry.seq": "2",
+    "telemetry.sensor": "1",
+    "_ws.expert": {
+      "telemetry._malformed.truncated": "",
+      "_ws.expert.message": "Malformed: truncated: status",
+      "_ws.expert.severity": "8388608",
+      "_ws.expert.group": "117440512"
+    },
+    "_ws.malformed": "Malformed Packet"
+  }
+]

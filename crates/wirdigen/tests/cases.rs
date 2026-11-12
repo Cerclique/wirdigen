@@ -1,5 +1,9 @@
 //! Generation corpus (spec §10.2): `tests/cases/<case>/<case>.wirdigen.yaml` next to a golden
 //! `<case>.lua`, compared byte for byte. `WIRDIGEN_BLESS=1` rewrites the goldens.
+//!
+//! The examples of `examples/<example>/` (spec §11) are corpus cases too: each of their files
+//! is a copy of the file of the same name in `tests/cases/<example>/`, so the goldens and the
+//! tshark tests cover them.
 
 use std::fs;
 use std::path::Path;
@@ -75,4 +79,32 @@ cases! {
     info_default => "info-default",
     info_empty => "info-empty",
     info_framing => "info-framing",
+    telemetry => "telemetry",
+}
+
+/// Spec §11: every example is a corpus case, so its description and packets are checked.
+#[test]
+fn every_example_is_a_copy_of_its_corpus_case() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let examples = root.join("../../examples");
+    let mut count = 0;
+    for entry in fs::read_dir(&examples).unwrap() {
+        let dir = entry.unwrap().path();
+        let example = dir.file_name().and_then(|n| n.to_str()).unwrap().to_owned();
+        let case = root.join("tests/cases").join(&example);
+        assert!(dir.join(format!("{example}.wirdigen.yaml")).exists(), "examples/{example} has no description");
+        for file in fs::read_dir(&dir).unwrap() {
+            let file = file.unwrap();
+            let name = file.file_name().into_string().unwrap();
+            let copy = fs::read_to_string(case.join(&name))
+                .unwrap_or_else(|_| panic!("examples/{example}/{name} is not in tests/cases/{example}"));
+            assert_eq!(
+                fs::read_to_string(file.path()).unwrap(),
+                copy,
+                "examples/{example}/{name} differs from its corpus case"
+            );
+        }
+        count += 1;
+    }
+    assert!(count > 0, "examples/ is empty");
 }

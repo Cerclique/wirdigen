@@ -216,3 +216,13 @@ fn the_rendered_link_resolves_to_the_index_entry() {
         assert_eq!(anchor, name.as_str(), "{url} points at another entry");
     }
 }
+
+/// Spec §11: the tutorial is built on the UDP telemetry example, and shows it whole.
+#[test]
+fn the_tutorial_shows_the_telemetry_example_whole() {
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/telemetry/telemetry.wirdigen.yaml");
+    let example = fs::read_to_string(&example).unwrap_or_else(|e| panic!("{}: {e}", example.display()));
+    let page = "tutorial.md";
+    let shown = snippets(page, &read_page(page)).iter().any(|s| s.text == example);
+    assert!(shown, "{page} has no ```yaml block identical to examples/telemetry/telemetry.wirdigen.yaml");
+}

@@ -1,278 +1,64 @@
-![CI](https://github.com/cerclique/wirdigen/actions/workflows/ci.yml/badge.svg)
+# Wirdigen
 
----
+[![CI](https://github.com/Cerclique/wirdigen/actions/workflows/ci.yml/badge.svg)](https://github.com/Cerclique/wirdigen/actions/workflows/ci.yml)
 
+**Wirdigen** (*Wir*eshark *Di*ssector *Gen*erator) turns a declarative description of a
+network protocol into a Wireshark dissector.
 
-### Table of Contents
+You write a **Protocol Description**: a YAML file that names the protocol, the ports it uses
+and the Fields of its payload. Wirdigen checks it, reports every mistake with its exact
+location, and generates a Lua **Dissector** for Wireshark 4.4 and later. The Dissector shows
+each Field in the protocol tree, makes it filterable, and marks a short packet Malformed
+instead of failing.
 
-* [Overview](#overview)
-* [How to use](#howtouse)
-    * [Validator](#howtouse_validator)
-    * [Generator](#howtouse_generator)
-* [Dissector format](#dissector_format)
-    * [Name](#dissector_name)
-    * [Endianness](#dissector_endianness)
-    * [Connection](#dissector_connection)
-    * [Data](#dissector_data)
-* [Compatibility matrices](#compat_matrices)
-    * [Numeric](#matrix_numeric)
-    * [Time](#matrix_time)
-    * [Raw](#matrix_raw)
-    * [Specific](#matrix_specific)
-* [Import dissector into wireshark](#import_dissector)
-* [Roadmap](#roadmap)
-* [Related tools](#related_tools)
+## Install
 
-# **Overview** <a class="anchor" id="overview"></a>
+The `wirdigen` command comes from the `wirdigen-cli` crate, built with
+[Rust](https://rustup.rs/):
 
-**Wirdigen** (_**Wir**eshark **Di**ssector **Gen**erator_) is a small library that aims to generate LUA dissector for Wireshark based on a JSON description of the packet you want to analyze.
-
-For more information about packet dissection, please refer to Wireshark [documentation](https://www.wireshark.org/docs/wsdg_html_chunked/ChapterDissection.html) and [wiki](https://wiki.wireshark.org/Lua/Dissectors).
-
-# **How to use** <a class="anchor" id="howtouse"></a>
-
-The library is composed of two tools:
-
-## **Validator** <a class="anchor" id="howtouse_validator"></a>
-
-`Validator` compare a JSON packet description with a predefined JSON schema to ensure data integrity for plugin generation.
-
-If the packet description is invalid, errors are automatically reported to the user through `stderr` with detailed location/description.
-
-``` rust
-use wirdigen::validator::Validator;
-use wirdigen::error::WirdigenError;
-
-fn foo() -> Result<(), WirdigenError> {
-    // Load JSON file
-    let file_path = "./example/example_dissector.json";
-    let file = File::open(file_path)?;
-    let rdr = BufReader::new(file);
-
-    // Create serde JSON value from the file
-    let value: Value = serde_json::from_reader(rdr)?;
-
-    // Create Validator object
-    let val = Validator::new()?;
-
-    // Call to validation function
-    match val.validate(&value) {
-        true => println!("{}: VALID", file_path),
-        false => println!("{}: INVALID", file_path)
-    }
-    Ok(())
-}
+```sh
+cargo install --locked wirdigen-cli
 ```
 
-## **Generator** <a class="anchor" id="howtouse_generator"></a>
+Wirdigen 1.0 is in pre-release: name one to install it, as in
+`--version 1.0.0-alpha.0`. To use the generated Dissectors you need
+[Wireshark](https://www.wireshark.org/) 4.4 or later.
 
-`Generator` generate LUA plugin based on JSON input given by the user.
+## Quickstart
 
-```rust
-use wirdigen::generator::Generator;
-use wirdigen::error::WirdigenError;
+Describe the protocol in `demo.wirdigen.yaml`:
 
-fn foo() -> Result<(), WirdigenError> {
-    // Load JSON file
-    let file_path = "./example/example_dissector.json";
-    let file = File::open(file_path)?;
-    let rdr = BufReader::new(file);
-
-    // Create Generator object
-    let gen = Generator::default();
-    // let gen = Generator::new();   <-- Alternative
-
-    // Generate from a reader source
-    let generated_file_path: String = gen.from_reader(rdr)?;
-    println!("Generated: {}", generated_file_path);
-
-    Ok(())
-}
+```yaml
+name: demo
+registration:
+  ports:
+    udp: [5000]
+info: "{msg_type} id={id}"
+fields:
+  - { name: msg_type, type: uint8, values: { 1: Request, 2: Response } }
+  - { name: id, type: uint16, display: hex }
+  - { name: sender, type: ipv4 }
 ```
 
-**Note:**
-The `Generator` does not perform any pre-validation on the user input. This is the role of the `Validator`. In case of invalid file, method from `Generator` will return appropriate `Err(WirdigenError)`. To avoid these kinds of problem, it's best to first perform a validation and, then, generate the LUA dissector.
+Generate `demo.lua` next to it, and load it into tshark or Wireshark for a capture:
 
-`Generator` object also have a `from_value` method in order to reuse the serde-json `Value` from the validation task for the generation.
-
-```rust
-fn foo() -> Result<(), WirdigenError> {
-    // Open the JSON file
-    let file_path = "./example/example_dissector.json";
-    let file = File::open(file_path)?;
-    let rdr = BufReader::new(file);
-
-    // Create serde JSON value from the file
-    let value: Value = serde_json::from_reader(rdr)?;
-
-    // Create Validator object
-    let val = Validator::new()?;
-
-    // Call to validation method
-    if val.validate(&value) {
-        // Create Generator object
-        let gen = Generator::default();
-
-        // Generate plugin from validated data
-        let generated_file_path: String = gen.from_value(value)?;
-        println!("{}", generated_file_path);
-    }
-    else {
-        println!("Invalid user input: {}", file_path);
-    }
-    
-    Ok(())
-}
+```sh
+wirdigen generate demo.wirdigen.yaml
+tshark -X lua_script:demo.lua -r capture.pcapng -Y "demo.msg_type == 1"
 ```
 
-By default, the plugin is generated in the temporary folder defined in environment variable. The user can modify the output directory through `set_output_directory()` method and retrieve the current one through `get_output_directory()`.
+UDP port 5000 now decodes as `demo`, with an Info column such as `Request id=0x002a`. To load
+the Dissector every time, copy it into Wireshark's personal Lua plugins folder.
 
-```rust
-fn foo {
-    let mut gen = Generator::default();
+## Documentation
 
-    println!("{}", gen.get_output_directory());
+- [The Wirdigen book](https://cerclique.github.io/wirdigen/): a tutorial, installing a
+  Dissector, and the reference of the Protocol Description format with every Diagnostic.
+- [`wirdigen` on docs.rs](https://docs.rs/wirdigen): the Rust library behind the command, to
+  validate descriptions and generate Dissectors from your own program.
+- [`examples/`](https://github.com/Cerclique/wirdigen/tree/main/examples): complete
+  descriptions with sample packets.
 
-    let new_output = "/Documents/MyDissectors";
-    gen.set_output_directory(new_output);
+## License
 
-    println!("{}", gen.get_output_directory());
-}
-```
-
-**Note:**
-The method `set_output_directory` does not create non-existent directory from user input.
-If the output directory is not reachable, the error will be propagated from the generation method when trying to create the final LUA file.
-
-# **Dissector format**
-
-A JSON dissector description is composed of 4 elements:
-- `name`
-- `endianness`
-- `connection`
-- `data`
-
-## **Name** <a class="anchor" id="dissector_name"></a>
-
-`name` element is a string (max size: 32) representing the name of the protocol to dissect that  will be used inside Wireshark ("Protocol" column) to identify your packet.
-
-**Note:** This name is also used for the generated LUA file. For example, if the attribute is `MY_PROTO`, the generated plugin will be called `dissector_MY_PROTO.lua`.
-
-## **Endianness** <a class="anchor" id="dissector_endianness"></a>
-
-String defining which endianness is used by the protocol.
-Possible values are `little` and `big`.
-
-## **Connection** <a class="anchor" id="dissector_connection"></a>
-
-The `connection` object contains 2 fields :
-- `protocol`: String. Either `udp` or `tcp`.
-- `ports`: Array of port the dissector need to spy (between 1 and 65535).
-
-## **Data** <a class="anchor" id="dissector_data"></a>
-
-`data` is an array of object describing the packet. Each object define a chunk of the packet we want to identify.
-
-Each chunk contains the following attributes:
-- `name`: String (max size: 32).
-- `format`: String representing the data type of the chunk. Refer to format/base matrices below for available values.
-- `base`: String representing how the value should be displayed. Refer to format/base matrices below for available values. 
-- `offset`: Position offset, in byte, from the beginning of the packet.
-- `size`: Size, in byte, of the chunk inside the packet.
-- `valstr` (Optional) : Array of value/string object to identify specific values in the payload. See below for more information.
-
-**About `strval`:**
-
-This attribute can be used to identify and replace specific value by its string representation (max size: 32). For instance, when dealing with webpage status code, it can be useful to view status code `404` as `"NOT FOUND"` or `200` as `"OK"` inside wireshark capture view.
-This example can be described as follow inside the dissector JSON file :
-
-```json
-{
-    ..., // First part of data chunk description
-    "valstr" : [
-        { "value": 404, "string": "NOT FOUND" },
-        { "value": 200, "string": "OK"}
-    ]
-}
-```
-# **Format/Base compatibility matrices**
-
-These matrices show which format/base combination are supported by Wirdigen. 
-
-## **Numeric** <a class="anchor" id="matrix_numeric"></a>
-
-| Format \ Base | NONE | DEC | OCT | HEX | DEC_HEX | HEX_DEC |
-|:-------------:|:----:|:---:|:---:|:---:|:-------:|:-------:|
-|      bool     |   X  |     |     |     |         |         |
-|      char     |      |     |  X  |  X  |         |         |
-|     uint8     |      |  X  |  X  |  X  |    X    |    X    |
-|     uint16    |      |  X  |  X  |  X  |    X    |    X    |
-|     uint24    |      |  X  |  X  |  X  |    X    |    X    |
-|     uint32    |      |  X  |  X  |  X  |    X    |    X    |
-|     uint64    |      |  X  |  X  |  X  |    X    |    X    |
-|      int8     |      |  X  |     |     |         |         |
-|     int16     |      |  X  |     |     |         |         |
-|     int24     |      |  X  |     |     |         |         |
-|     int32     |      |  X  |     |     |         |         |
-|     int64     |      |  X  |     |     |         |         |
-|    float(*)   |   X  |  X  |  X  |  X  |    X    |    X    |
-|   double(*)   |   X  |  X  |  X  |  X  |    X    |    X    |
-
-_(*) = For the specified `format`, the `base` is ignored by Wireshark._ 
-
-## **Time** <a class="anchor" id="matrix_time"></a>
-
-|   Format \ Base  | LOCAL | UTC | DOY_UTC |
-|:----------------:|:-----:|:---:|:-------:|
-|   absolute_time  |   X   |  X  |    X    |
-| relative_time(*) |   X   |  X  |    X    |
-
-_(*) = For the specified `format`, the `base` is ignored by Wireshark._
-
-## **Raw** <a class="anchor" id="matrix_raw"></a>
-
-| Format \ Base | NONE | DOT | DASH | COLON | SPACE |
-|:-------------:|:----:|:---:|:----:|:-----:|:-----:|
-|      byte     |   X  |  X  |   X  |   X   |   X   |
-
-## **Specific** <a class="anchor" id="matrix_specific"></a>
-
-For these specific type of data, display is automatically handled by Wirehsark. Hence, `base` is ignored. I would recommend using `NONE` in these case.
-
-- none
-- ipv4
-- ipv6
-- ether
-- guid
-- oid
-
-# **Import dissector into Wireshark** <a class="anchor" id="import_dissector"></a>
-
-First, you need to check in which directory Wireshark is looking for LUA plugin.
-
-To do this, open Wireshark and go to `help -> About Wireshark -> Folder`.
-
-Find the path associated to `"Personal Lua plugins"`. This is where you need to copy your dissector. If the path does not exist on your machine, you can manually create missing directories.
-
-The dissector script will be active after Wireshark is refreshed. You can either restart Wireshark or press **Ctrl + Shift + L** to reload all Lua scripts.
-
-**Note:** You need to reload/restart everytime you make a change in a dissector. 
-
-# **Roadmap** <a class="anchor" id="roadmap"></a>
-
-- Missing data type:
-    - framenum
-    - string
-    - stringz
-    - ubytes
-    - protocol
-    - rel_oid
-    - systemid
-    - eui64
-
-- Support for child subtree to clearly describe more complex packet.
-
-# Related tools <a class="anchor" id="related_tools"></a>
-
-- [rust_dissector_generator](https://github.com/Cerclique/rust_dissector_generator): Simple executable using Wirdigen library
-- [rust_dissector_udp](https://github.com/Cerclique/rust_dissector_udp): Send custom packet over UDP to test generated plugin by the library inside wireshark.
+See [LICENSE](https://github.com/Cerclique/wirdigen/blob/main/LICENSE).

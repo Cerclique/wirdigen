@@ -366,6 +366,29 @@ cases! {
     info_default => "info-default",
     info_empty => "info-empty",
     info_framing => "info-framing",
+    telemetry => "telemetry",
+}
+
+/// The examples of `examples/` (spec §11), corpus cases decoded by Decode As above, are also
+/// claimed with no setup on the ports they declare, as the book's tutorial shows.
+mod examples {
+    use super::*;
+
+    /// The UDP port the `telemetry` example declares.
+    const TELEMETRY_PORT: u16 = 47100;
+
+    #[test]
+    fn telemetry_is_claimed_on_its_declared_port() {
+        if !enabled() {
+            return;
+        }
+        let dir = case_dir("telemetry");
+        let scratch = Scratch::new("telemetry-port");
+        let packets = dir.join("packets.txt");
+        let pcap = scratch.capture_over(Transport::Udp, TELEMETRY_PORT, &packets);
+        let layers = scratch.dissect_with(&dir.join("telemetry.lua"), "telemetry", &pcap, &[]).unwrap();
+        assert_eq!(layers.len(), packet_count(&fs::read_to_string(&packets).unwrap()));
+    }
 }
 
 /// Registration (spec §3.12): the declared ports follow their range preferences, and TCP ports

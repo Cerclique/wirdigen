@@ -15,6 +15,9 @@ fields:
 
 By convention the file is named `<protocol>.wirdigen.yaml`, here `demo.wirdigen.yaml`.
 
+New to Wirdigen? The [tutorial](tutorial.md) builds a complete description step by step and
+runs its Dissector in tshark; [Installing a Dissector](installing.md) then puts it in Wireshark.
+
 ## About this book
 
 This book is the user guide and the reference of the Protocol Description format. Every YAML
