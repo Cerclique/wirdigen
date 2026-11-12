@@ -2,7 +2,8 @@
 //! the same clap definitions the binary parses (spec §9.1). The release workflow packs them into
 //! the archives; there is no runtime subcommand for them.
 
-#[expect(dead_code, reason = "the binary reads the parsed fields; the build script only needs the command's shape")]
+// `allow`, not `expect`: older toolchains, down to the MSRV, do not report these fields as dead.
+#[allow(dead_code, reason = "the binary reads the parsed fields; the build script only needs the command's shape")]
 #[path = "src/cli.rs"]
 mod cli;
 
