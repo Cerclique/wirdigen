@@ -49,6 +49,8 @@ mod lower;
 mod lua_check;
 mod mapping;
 mod prelude;
+#[cfg(test)]
+mod random;
 mod registration;
 mod render;
 mod scalar;

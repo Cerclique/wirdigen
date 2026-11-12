@@ -113,8 +113,10 @@ fn goldens() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    use proptest::test_runner::TestCaseError;
+
     use super::*;
-    use crate::prelude;
+    use crate::{prelude, random};
 
     #[test]
     fn goldens_compile_under_every_lua() {
@@ -140,6 +142,24 @@ mod tests {
                 .collect();
             assert_all(&SUPPORTED_LUA, Mode::Run, &chunks);
         }
+    }
+
+    /// The Dissector of a random valid description (spec §10.7) compiles under every Lua,
+    /// as the goldens do.
+    #[test]
+    fn random_dissectors_compile_under_every_lua() {
+        if !enabled() {
+            return;
+        }
+        random::check(|text| {
+            let source = crate::Source::new("random.wirdigen.yaml", text);
+            let lua = crate::validate(&source).map_err(|d| TestCaseError::fail(d.to_string()))?.generate();
+            for interpreter in EVERY_LUA {
+                check(interpreter, Mode::Compile, "random.lua", &lua)
+                    .map_err(|e| TestCaseError::fail(format!("{}: {e}", interpreter.binary)))?;
+            }
+            Ok(())
+        });
     }
 
     #[test]
