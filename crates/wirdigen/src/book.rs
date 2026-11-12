@@ -238,3 +238,9 @@ fn the_tutorial_shows_the_telemetry_example_whole() {
 fn the_tcp_example_page_shows_the_kvstore_example_whole() {
     assert_shows_example_whole("tcp-example.md", "kvstore");
 }
+
+/// Spec §11: the tagged records example has a page of its own, which shows it whole.
+#[test]
+fn the_records_example_page_shows_the_tracker_example_whole() {
+    assert_shows_example_whole("records-example.md", "tracker");
+}
