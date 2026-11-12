@@ -21,6 +21,8 @@ make docker-test-lua             # make test-lua in tshark-stable
 make docker-test-tshark          # make test-tshark in tshark-4.4, then in tshark-stable
 make docker-test-tshark-4.4      # make test-tshark in tshark-4.4 only
 make docker-test-tshark-stable   # make test-tshark in tshark-stable only
+make docker-test-tshark-random-4.4     # random descriptions x packets (weekly), in tshark-4.4
+make docker-test-tshark-random-stable  # the same in tshark-stable
 make docker-bless-tshark         # rewrite dissected.json in tshark-4.4, then check tshark-stable
 make docker-refresh-protocols    # rewrite the built-in protocols snapshot in tshark-stable
 ```
@@ -38,6 +40,17 @@ image with `docker/build-push-action`, caching the layers across workflow runs, 
 `DOCKER_PREBUILT=1`, which skips the target's own `docker build` and uses the loaded
 `wirdigen-<image>` image: the layer cache lives in a buildx builder that a plain
 `docker build` would not use.
+
+The `Weekly` workflow (`.github/workflows/weekly.yml`) runs on Sunday and on demand, with one
+random seed for all its jobs. In both tshark images it runs the bad-input harness with large
+counts (`WIRDIGEN_BAD_SEED`, `WIRDIGEN_BAD_MUTATIONS`, `WIRDIGEN_BAD_RANDOM`) and
+`make docker-test-tshark-random-<version>`: `PROPTEST_CASES` random descriptions (seeded by
+`PROPTEST_RNG_SEED`), each with `WIRDIGEN_RANDOM_PACKETS` random packets and their truncations.
+It also runs the tests and clippy on the beta toolchain and `cargo deny check advisories`. When
+any job fails, a last job opens one issue titled `Weekly scheduled tests are failing`, or
+comments on it while it is open, with the seed, a replay command and the end of each failing
+log, which holds the smallest failing packet as text2pcap hex. The make targets pass those
+variables into the container when they are set.
 
 The `Refresh protocols` workflow (`.github/workflows/refresh-protocols.yml`) runs early each
 Monday UTC, just after the stable image's weekly cache scope rolls over, and on demand. It
