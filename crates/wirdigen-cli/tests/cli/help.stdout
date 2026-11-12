@@ -1,0 +1,41 @@
+Generate Wireshark Lua dissectors from YAML protocol descriptions
+
+Usage: wirdigen [OPTIONS] <COMMAND>
+
+Commands:
+  validate  Validate Protocol Descriptions; write nothing
+  generate  Validate Protocol Descriptions and write their Dissectors
+  schema    Print the JSON Schema of Protocol Descriptions, for editor completion
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --color <COLOR>
+          When to colour Diagnostics on stderr
+
+          Possible values:
+          - auto:   Colour when stderr is a terminal, unless `NO_COLOR` or `CLICOLOR_FORCE` says otherwise
+          - always: Always colour
+          - never:  Never colour
+          
+          [default: auto]
+
+  -q, --quiet
+          Hide warnings and the summary line; errors are still shown
+
+  -v, --verbose
+          List each Dissector as written or unchanged
+
+      --message-format <MESSAGE_FORMAT>
+          How to report Diagnostics and results: `human` on stderr, or `json` Lines on stdout
+
+          Possible values:
+          - human: Rendered Diagnostics and status lines on stderr
+          - json:  One JSON object per line on stdout: `diagnostic`, `file` and `summary` records
+          
+          [default: human]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

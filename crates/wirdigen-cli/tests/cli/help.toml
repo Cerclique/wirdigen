@@ -1,0 +1,5 @@
+# `help.stdout` is included by the book's CLI chapter (`docs/spec.md` §11), so a stale copy fails here.
+bin.name = "wirdigen"
+env.remove = ["NO_COLOR", "CLICOLOR_FORCE"]
+args = ["--help"]
+stderr = ""
