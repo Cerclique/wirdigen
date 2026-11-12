@@ -217,12 +217,23 @@ fn the_rendered_link_resolves_to_the_index_entry() {
     }
 }
 
+/// Panics unless `page` has a ` ```yaml ` block identical to `examples/<example>/<example>.wirdigen.yaml`.
+fn assert_shows_example_whole(page: &str, example: &str) {
+    let file = format!("examples/{example}/{example}.wirdigen.yaml");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(&file);
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let shown = snippets(page, &read_page(page)).iter().any(|s| s.text == text);
+    assert!(shown, "{page} has no ```yaml block identical to {file}");
+}
+
 /// Spec §11: the tutorial is built on the UDP telemetry example, and shows it whole.
 #[test]
 fn the_tutorial_shows_the_telemetry_example_whole() {
-    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/telemetry/telemetry.wirdigen.yaml");
-    let example = fs::read_to_string(&example).unwrap_or_else(|e| panic!("{}: {e}", example.display()));
-    let page = "tutorial.md";
-    let shown = snippets(page, &read_page(page)).iter().any(|s| s.text == example);
-    assert!(shown, "{page} has no ```yaml block identical to examples/telemetry/telemetry.wirdigen.yaml");
+    assert_shows_example_whole("tutorial.md", "telemetry");
+}
+
+/// Spec §11: the TCP request/response example has a page of its own, which shows it whole.
+#[test]
+fn the_tcp_example_page_shows_the_kvstore_example_whole() {
+    assert_shows_example_whole("tcp-example.md", "kvstore");
 }

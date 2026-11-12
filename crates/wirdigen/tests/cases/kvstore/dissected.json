@@ -1,0 +1,86 @@
+[
+  {
+    "kvstore.version": "1",
+    "kvstore.op": "0x01",
+    "kvstore.length": "5",
+    "kvstore.request_id": "1",
+    "kvstore.body": {
+      "kvstore.body.key": "temp"
+    }
+  },
+  [
+    {
+      "kvstore.version": "1",
+      "kvstore.op": "0x02",
+      "kvstore.length": "12",
+      "kvstore.request_id": "2",
+      "kvstore.body": {
+        "kvstore.body.key": "color",
+        "kvstore.body.value": "teal"
+      }
+    },
+    {
+      "kvstore.version": "1",
+      "kvstore.op": "0x03",
+      "kvstore.length": "5",
+      "kvstore.request_id": "3",
+      "kvstore.body": {
+        "kvstore.body.key": "temp"
+      }
+    }
+  ],
+  [
+    {
+      "kvstore.version": "1",
+      "kvstore.op": "0x81",
+      "kvstore.length": "7",
+      "kvstore.request_id": "1",
+      "kvstore.body": {
+        "kvstore.body.status": "0",
+        "kvstore.body.value": "21.5"
+      }
+    },
+    {
+      "kvstore.version": "1",
+      "kvstore.op": "0x82",
+      "kvstore.length": "1",
+      "kvstore.request_id": "2",
+      "kvstore.body": {
+        "kvstore.body.status": "0"
+      }
+    },
+    {
+      "kvstore.version": "1",
+      "kvstore.op": "0x82",
+      "kvstore.length": "1",
+      "kvstore.request_id": "3",
+      "kvstore.body": {
+        "kvstore.body.status": "1"
+      }
+    }
+  ],
+  {
+    "kvstore.version": "1",
+    "kvstore.op": "0x7f",
+    "kvstore.length": "3",
+    "kvstore.request_id": "4",
+    "kvstore.body": {
+      "kvstore.body.data": "de:ad:be"
+    }
+  },
+  {
+    "kvstore.version": "1",
+    "kvstore.op": "0x01",
+    "kvstore.length": "4",
+    "kvstore.request_id": "5",
+    "kvstore.body": {
+      "_ws.expert": {
+        "kvstore._malformed.truncated": "",
+        "_ws.expert.message": "Malformed: truncated: body.key",
+        "_ws.expert.severity": "8388608",
+        "_ws.expert.group": "117440512"
+      },
+      "_ws.malformed": "Malformed Packet"
+    }
+  }
+]

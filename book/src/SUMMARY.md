@@ -5,6 +5,7 @@
 # User guide
 
 - [Tutorial: UDP telemetry](tutorial.md)
+- [Example: TCP request/response](tcp-example.md)
 - [Installing a Dissector](installing.md)
 - [Command-line interface]()
 

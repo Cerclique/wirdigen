@@ -40,7 +40,7 @@ const BY_DECLARED_PORT: [&str; 1] = ["registration"];
 
 /// The cases whose packets are the segments of one TCP stream to [`PORT`], decoded as the
 /// protocol over TCP: the cases of `framing:` (spec §3.13).
-const OVER_TCP: [&str; 2] = ["framing", "info-framing"];
+const OVER_TCP: [&str; 3] = ["framing", "info-framing", "kvstore"];
 
 /// How the harness wraps each packet: text2pcap's flag for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,8 +104,13 @@ impl Scratch {
 
     /// Turns text2pcap hex into a capture of `transport` packets to `port`.
     fn capture_over(&self, transport: Transport, port: u16, packets: &Path) -> PathBuf {
+        self.capture_between(transport, SOURCE_PORT, port, packets)
+    }
+
+    /// Turns text2pcap hex into a capture of `transport` packets from `source` to `port`.
+    fn capture_between(&self, transport: Transport, source: u16, port: u16, packets: &Path) -> PathBuf {
         let pcap = self.path("packets.pcapng");
-        let ports = format!("{SOURCE_PORT},{port}");
+        let ports = format!("{source},{port}");
         let flag = transport.text2pcap_flag();
         let output = self.run("text2pcap", &["-q", flag, &ports, path_str(packets), path_str(&pcap)]);
         assert!(output.status.success(), "text2pcap failed: {}", String::from_utf8_lossy(&output.stderr));
@@ -367,6 +372,7 @@ cases! {
     info_empty => "info-empty",
     info_framing => "info-framing",
     telemetry => "telemetry",
+    kvstore => "kvstore",
 }
 
 /// The examples of `examples/` (spec §11), corpus cases decoded by Decode As above, are also
@@ -376,18 +382,34 @@ mod examples {
 
     /// The UDP port the `telemetry` example declares.
     const TELEMETRY_PORT: u16 = 47100;
+    /// The TCP port the `kvstore` example declares.
+    const KVSTORE_PORT: u16 = 47200;
+    /// The client port of the book's captures. Unlike [`SOURCE_PORT`], which Wireshark gives to
+    /// SAP NI over TCP, no built-in Dissector claims it, so the example's port decides.
+    const CLIENT_PORT: u16 = 52000;
 
-    #[test]
-    fn telemetry_is_claimed_on_its_declared_port() {
+    /// Captures the example's packets over `transport` to `port`, dissects them with no Decode
+    /// As, and checks every packet has the example's layer.
+    fn claimed_on(example: &str, transport: Transport, port: u16) {
         if !enabled() {
             return;
         }
-        let dir = case_dir("telemetry");
-        let scratch = Scratch::new("telemetry-port");
+        let dir = case_dir(example);
+        let scratch = Scratch::new(&format!("{example}-port"));
         let packets = dir.join("packets.txt");
-        let pcap = scratch.capture_over(Transport::Udp, TELEMETRY_PORT, &packets);
-        let layers = scratch.dissect_with(&dir.join("telemetry.lua"), "telemetry", &pcap, &[]).unwrap();
+        let pcap = scratch.capture_between(transport, CLIENT_PORT, port, &packets);
+        let layers = scratch.dissect_with(&dir.join(format!("{example}.lua")), example, &pcap, &[]).unwrap();
         assert_eq!(layers.len(), packet_count(&fs::read_to_string(&packets).unwrap()));
+    }
+
+    #[test]
+    fn telemetry_is_claimed_on_its_declared_port() {
+        claimed_on("telemetry", Transport::Udp, TELEMETRY_PORT);
+    }
+
+    #[test]
+    fn kvstore_is_claimed_on_its_declared_port() {
+        claimed_on("kvstore", Transport::Tcp, KVSTORE_PORT);
     }
 }
 

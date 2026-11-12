@@ -304,6 +304,8 @@ folder: see [Installing a Dissector](installing.md).
 
 ## Where next {#next}
 
-The [Format reference](reference/cheat-sheet.md) covers what this protocol did not need:
-strings and sizes, arrays, `if:` and `switch:`, Types, Framing over TCP and Expressions. Every
+[Example: TCP request/response](tcp-example.md) describes a protocol over TCP, with Framing,
+a `switch` over Types and strings carrying their length. The
+[Format reference](reference/cheat-sheet.md) covers every construct: strings and sizes, arrays,
+`if:` and `switch:`, Types, Framing over TCP and Expressions. Every
 mistake Wirdigen reports has an entry in the [Diagnostics index](diagnostics.md).
