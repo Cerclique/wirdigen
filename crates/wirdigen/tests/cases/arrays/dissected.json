@@ -105,8 +105,8 @@
     "arrays.chunks": {
       "arrays.chunks.data": "",
       "_ws.expert": {
-        "arrays._malformed.expression": "",
-        "_ws.expert.message": "Malformed: element 0 is empty: chunks",
+        "arrays._malformed.empty_element": "",
+        "_ws.expert.message": "Malformed: empty element 0: chunks",
         "_ws.expert.severity": "8388608",
         "_ws.expert.group": "117440512"
       },

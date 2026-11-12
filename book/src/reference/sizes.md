@@ -67,7 +67,8 @@ fields:
   - { name: payload, type: bytes, size: "_remaining" }
 ```
 
-A Field after it in the same structure can only be empty or truncated, which is the warning
+A Field after it, in the same structure or after the structure holding it, can only be empty
+or truncated, which is the warning
 [`unreachable-field`](../diagnostics.md#unreachable-field).
 
 ```yaml,diagnostic=unreachable-field

@@ -26,13 +26,15 @@ pub(crate) const BITWISE: &str = "bitwise";
 pub(crate) const LOGIC: &str = "logic";
 /// Reporting a size known only when the packet is read that has no value or is negative.
 pub(crate) const INVALID: &str = "invalid";
+/// Reporting an array Element that reads no bytes.
+pub(crate) const EMPTY: &str = "empty";
 /// Naming a `switch` subject's value from its Field's labels.
 pub(crate) const NAMES: &str = "names";
 /// Showing the bytes a `switch` with no matching case and no `default` leaves unread.
 pub(crate) const UNMATCHED: &str = "unmatched";
 /// Reporting a value outside a Field's `expect:`.
 pub(crate) const UNEXPECTED: &str = "unexpected";
-/// Handing a `bytes` Field's bytes to a Wireshark Dissector by name.
+/// Handing a `bytes` Field's bytes to a Wireshark dissector by name.
 pub(crate) const HANDOFF: &str = "handoff";
 /// Framing (spec §3.13): finding the Messages of a TCP segment and asking for more data.
 pub(crate) const FRAMING: &str = "framing";
@@ -42,7 +44,7 @@ pub(crate) const PORTS: &str = "ports";
 pub(crate) const INFO: &str = "info";
 /// Showing a Field in the Info column by the label of its value.
 pub(crate) const INFO_LABEL: &str = "info_label";
-/// Keeping the case names of `switch` Fields for the Info column.
+/// Keeping the subject value labels of `switch` Fields for the Info column.
 pub(crate) const INFO_CASES: &str = "info_cases";
 
 #[derive(Debug)]

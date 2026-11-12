@@ -77,15 +77,15 @@ fields:
       - { name: value, type: bytes, size: len }
 ```
 
-A Field after a `repeat: to_end` array in the same structure can only be empty or truncated,
-which is the warning [`unreachable-field`](../diagnostics.md#unreachable-field).
+A Field after a `repeat: to_end` array, in the same structure or after the structure holding
+it, can only be empty or truncated, which is the warning [`unreachable-field`](../diagnostics.md#unreachable-field).
 
 ## Elements that read nothing {#empty}
 
 An element that reads no bytes would repeat forever without moving through the packet, so the
-Dissector stops the array there as malformed ("element 3 is empty"), whatever the count. It
-happens only when every Field of the element can be empty, such as a `bytes` Field whose size
-is 0 in the packet.
+Dissector stops the array there with a "Malformed: empty element" expert info error, whatever
+the count, filtered as `<protocol>._malformed.empty_element`. It happens only when every Field of
+the element can be empty, such as a `bytes` Field whose size is 0 in the packet.
 
 ## Rules {#rules}
 

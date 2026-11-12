@@ -85,7 +85,7 @@ fields:
 
 ## Without `info:` {#default}
 
-Without `info:`, the Info column shows the case name of the outermost `switch` Field, the way a
+Without `info:`, the Info column shows the label of the outermost `switch` Field's subject value, the way a
 protocol with several kinds of message names each one: "Login", "Error". The outermost is the
 `switch` Field with the fewest structures and Types around it, the first one in the layout
 among equals; a `switch` inside an [array](arrays.md) is never picked. When that `switch` Field

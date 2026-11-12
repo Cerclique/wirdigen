@@ -107,6 +107,21 @@ local function wd_evaluate(compute)
     error(value, 0)
 end
 
+-- Reporting of an array Element that reads no bytes (spec §3.7): under `repeat: to_end` it
+-- would repeat forever, so it stops the array. Like a truncation, it is a "Malformed" error.
+local function wd_expert_empty(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._malformed.empty_element",
+        "Malformed: empty element",
+        expert.group.MALFORMED,
+        expert.severity.ERROR
+    )
+end
+
+local function wd_empty(tree, expert_info, index, path)
+    tree:add_proto_expert_info(expert_info, "Malformed: empty element " .. index .. ": " .. path)
+end
+
 -- Showing what a `switch` with no case for its subject's value, and no `default`, leaves
 -- unread (spec §3.9): the rest of the message, raw, with an expert info note. The `_` segment
 -- is reserved: no Field path can reach it (spec §3.4.2, §5.2).
@@ -128,7 +143,7 @@ local function wd_unmatched(tree, field, expert_info, tvb, offset, value, path)
     item:add_proto_expert_info(expert_info, "No case for " .. value .. ": " .. path)
 end
 
--- The case names of the `switch` Fields the Info column shows, by path, read in the packet
+-- The subject value labels of the `switch` Fields the Info column shows, by path, read in the packet
 -- being dissected (spec §3.14). The Dissector empties it before each packet.
 local wd_info_cases = {}
 
@@ -190,8 +205,9 @@ local site_body__Point = {
 
 local wd_ei_truncated = wd_expert_truncated("hidden")
 local wd_ei_invalid = wd_expert_invalid("hidden")
+local wd_ei_empty = wd_expert_empty("hidden")
 local wd_ei_unmatched = wd_expert_unmatched("hidden")
-wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_unmatched }
+wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty, wd_ei_unmatched }
 
 -- Type: Point
 local function dissect_Point(tvb, pinfo, tree, offset, site)
@@ -361,7 +377,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             offset = offset + 1
             tree:set_len(offset - start)
             if offset == start then
-                wd_invalid(tree, wd_ei_invalid, "element " .. i .. " is empty", "items")
+                wd_empty(tree, wd_ei_empty, i, "items")
                 return nil
             end
         end

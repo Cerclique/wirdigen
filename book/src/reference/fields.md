@@ -496,11 +496,11 @@ values the Field's type can hold, such as `256` on a `uint8`, never matches: it 
 [`unreachable-expect`](../diagnostics.md#unreachable-expect), and every packet gets the expert
 info.
 
-## Handing bytes to another Dissector {#dissector}
+## Handing bytes to another dissector {#dissector}
 
-`dissector:` on a `bytes` Field passes its bytes to a Dissector Wireshark already has, by the
+`dissector:` on a `bytes` Field passes its bytes to a dissector Wireshark already has, by the
 name Wireshark registers it under: `json`, `http`, `data`, and so on. The Field is shown as
-usual, then the other Dissector's layer right after it, in the same structure.
+usual, then the other dissector's layer right after it, in the same structure.
 
 ```yaml
 name: demo
@@ -512,11 +512,11 @@ fields:
 
 - The other layer is shown even when the Field is [hidden](#hidden): `hidden: true` with
   `dissector:` shows the decoded bytes but not the raw ones.
-- A Field with no bytes calls no Dissector. The Protocol column keeps this protocol's name.
-- Whether Wireshark has a Dissector by that name is known only when a packet is read. A name it
-  does not know adds an expert info **warning**, even when the Field is empty, "Unknown Dissector <name>: payload", filtered
+- A Field with no bytes calls no dissector. The Protocol column keeps this protocol's name.
+- Whether Wireshark has a dissector by that name is known only when a packet is read. A name it
+  does not know adds an expert info **warning**, even when the Field is empty, "Unknown dissector <name>: payload", filtered
   as `<protocol>._undecoded.dissector`, and the dissection goes on.
-- Bytes the other Dissector cannot read are its own malformed packet, shown in its layer; the
+- Bytes the other dissector cannot read are its own malformed packet, shown in its layer; the
   dissection of this protocol goes on.
 
 The name is one word: an empty name, one with a space, or a value that is not a string is

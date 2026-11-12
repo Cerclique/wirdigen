@@ -29,7 +29,7 @@
     "handoff.rest": "01:02",
     "_ws.expert": {
       "handoff._undecoded.dissector": "",
-      "_ws.expert.message": "Unknown Dissector no_such_dissector: rest",
+      "_ws.expert.message": "Unknown dissector no_such_dissector: rest",
       "_ws.expert.severity": "6291456",
       "_ws.expert.group": "83886080"
     }
@@ -55,7 +55,7 @@
     "handoff.rest": "",
     "_ws.expert": {
       "handoff._undecoded.dissector": "",
-      "_ws.expert.message": "Unknown Dissector no_such_dissector: rest",
+      "_ws.expert.message": "Unknown dissector no_such_dissector: rest",
       "_ws.expert.severity": "6291456",
       "_ws.expert.group": "83886080"
     }

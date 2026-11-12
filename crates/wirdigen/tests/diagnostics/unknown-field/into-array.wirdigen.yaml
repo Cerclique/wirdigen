@@ -8,7 +8,7 @@ fields:
   - name: header
     fields:
       - name: records
-        repeat: to_end
+        count: n
         type: Record
   - { name: rest, type: bytes, size: header.records.len }
 types:

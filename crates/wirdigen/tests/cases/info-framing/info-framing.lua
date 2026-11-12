@@ -170,7 +170,7 @@ local function wd_info_display(field, before)
     return info and info.display or ""
 end
 
--- The case names of the `switch` Fields the Info column shows, by path, read in the packet
+-- The subject value labels of the `switch` Fields the Info column shows, by path, read in the packet
 -- being dissected (spec §3.14). The Dissector empties it before each packet.
 local wd_info_cases = {}
 

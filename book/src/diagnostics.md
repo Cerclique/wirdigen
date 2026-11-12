@@ -579,8 +579,8 @@ fields:
 **Severity**: error
 
 A Field's [`dissector:`](reference/fields.md#dissector) is not the name of a Dissector: it is
-empty, has a space in it, or is not a string. A Dissector name is one word, as Wireshark
-registers it. Whether Wireshark has a Dissector by that name is only known when a packet is
+empty, has a space in it, or is not a string. A dissector name is one word, as Wireshark
+registers it. Whether Wireshark has a dissector by that name is only known when a packet is
 read, where an unknown one is a warning in the tree.
 
 ```yaml,diagnostic=invalid-dissector
@@ -589,7 +589,7 @@ fields:
   - { name: payload, type: bytes, size: 8, dissector: "" }
 ```
 
-**Fix**: write the name Wireshark registers the Dissector under, such as `json` or `data`.
+**Fix**: write the name Wireshark registers the dissector under, such as `json` or `data`.
 `tshark -G dissectors` lists them.
 
 ## `invalid-info` {#invalid-info}
@@ -1024,17 +1024,6 @@ fields:
       - { name: data, type: bytes, size: len }
 ```
 
-## `not-supported-yet` {#not-supported-yet}
-
-**Severity**: error
-
-The description uses part of the format that this version of Wirdigen does not read yet. A
-newer Wirdigen will accept it. Every part of the format is read in this version, so nothing
-triggers this error: the name is kept for the parts a later version adds to the format before
-it reads them.
-
-**Fix**: upgrade Wirdigen, or describe the layout with what this version supports.
-
 ## `unreachable-value` {#unreachable-value}
 
 **Severity**: warning
@@ -1067,9 +1056,11 @@ allow: [unreachable-value]
 
 **Severity**: warning
 
-A Field comes after a `size: "_remaining"` Field or a `repeat: to_end`
-[array](reference/arrays.md) in the same structure. That Field reads every byte left, so the
-one after it is always empty or truncated.
+A Field comes after a Field that reads every byte left in the message, so it is always empty
+or truncated. The earlier Field is a `size: "_remaining"` Field or a `repeat: to_end`
+[array](reference/arrays.md), or an inline structure, a Field of a Type or a `switch` that always
+reads one: a `switch` only when every case does. A Field under `if:` or an array with `count:`
+may read nothing, so it does not count.
 
 ```yaml,diagnostic=unreachable-field
 name: demo
@@ -1084,6 +1075,16 @@ fields:
   - name: records
     repeat: to_end
     fields: [ {name: tag, type: uint8} ]
+  - { name: checksum, type: uint16 }
+```
+
+```yaml,diagnostic=unreachable-field
+name: demo
+fields:
+  - name: body
+    fields:
+      - { name: kind, type: uint8 }
+      - { name: data, type: bytes, size: "_remaining" }
   - { name: checksum, type: uint16 }
 ```
 

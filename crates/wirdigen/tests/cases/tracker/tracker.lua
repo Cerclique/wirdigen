@@ -123,6 +123,21 @@ local function wd_evaluate(compute)
     error(value, 0)
 end
 
+-- Reporting of an array Element that reads no bytes (spec §3.7): under `repeat: to_end` it
+-- would repeat forever, so it stops the array. Like a truncation, it is a "Malformed" error.
+local function wd_expert_empty(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._malformed.empty_element",
+        "Malformed: empty element",
+        expert.group.MALFORMED,
+        expert.severity.ERROR
+    )
+end
+
+local function wd_empty(tree, expert_info, index, path)
+    tree:add_proto_expert_info(expert_info, "Malformed: empty element " .. index .. ": " .. path)
+end
+
 -- The name of a `switch` subject's value (spec §3.9): its label in `names`, a list of
 -- `{ low, high, label }`, or else the number.
 local function wd_case_name(names, value)
@@ -155,24 +170,24 @@ local function wd_expect(item, value, ranges, expected, expert_info, path)
     item:add_proto_expert_info(expert_info, "Unexpected value: " .. path .. " (expected " .. expected .. ")")
 end
 
--- Handing a `bytes` Field's bytes to a Wireshark Dissector by name (spec §3.10). The `_`
+-- Handing a `bytes` Field's bytes to a Wireshark dissector by name (spec §3.10). The `_`
 -- segment is reserved: no Field path can reach it (spec §3.4.2, §5.2).
 local function wd_expert_dissector(filter_name)
     return ProtoExpert.new(
         filter_name .. "._undecoded.dissector",
-        "Unknown Dissector",
+        "Unknown dissector",
         expert.group.UNDECODED,
         expert.severity.WARN
     )
 end
 
--- The Dissectors found by name, or false for a name Wireshark does not know. Each is looked up
+-- The dissectors found by name, or false for a name Wireshark does not know. Each is looked up
 -- when a packet first needs it, once every Dissector is registered.
 local wd_dissectors = {}
 
--- Passes the bytes of `range` to the Dissector named `name`, whose layer goes into `tree`. An
+-- Passes the bytes of `range` to the dissector named `name`, whose layer goes into `tree`. An
 -- unknown name adds a warning to `tree` instead, even when there are no bytes to pass. An error
--- in the Dissector is shown in its own layer by Wireshark, and never escapes as a Lua error. The
+-- in the dissector is shown in its own layer by Wireshark, and never escapes as a Lua error. The
 -- Protocol column keeps this Dissector's short name (spec §5.5).
 local function wd_handoff(name, range, pinfo, tree, expert_info, path)
     local dissector = wd_dissectors[name]
@@ -182,7 +197,7 @@ local function wd_handoff(name, range, pinfo, tree, expert_info, path)
         wd_dissectors[name] = dissector
     end
     if not dissector then
-        tree:add_proto_expert_info(expert_info, "Unknown Dissector " .. name .. ": " .. path)
+        tree:add_proto_expert_info(expert_info, "Unknown dissector " .. name .. ": " .. path)
         return
     end
     if range:len() > 0 then
@@ -317,9 +332,10 @@ local site_records = {
 
 local wd_ei_truncated = wd_expert_truncated("tracker")
 local wd_ei_invalid = wd_expert_invalid("tracker")
+local wd_ei_empty = wd_expert_empty("tracker")
 local wd_ei_unexpected = wd_expert_unexpected("tracker")
 local wd_ei_dissector = wd_expert_dissector("tracker")
-wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_unexpected, wd_ei_dissector }
+wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty, wd_ei_unexpected, wd_ei_dissector }
 
 -- Type: Record
 local function dissect_Record(tvb, pinfo, tree, offset, site)
@@ -513,7 +529,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             end
             tree:set_len(offset - start)
             if offset == start then
-                wd_invalid(tree, wd_ei_invalid, "element " .. i .. " is empty", "records")
+                wd_empty(tree, wd_ei_empty, i, "records")
                 return nil
             end
             i = i + 1

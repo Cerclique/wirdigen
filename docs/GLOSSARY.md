@@ -41,11 +41,11 @@ A Field of an unsigned integer type whose bits are split, most significant first
 _Avoid_: Flags, bitmask, packed field
 
 **Sub-Field**:
-A Field of a Bitfield, a few bits wide: a boolean when it is one bit, an unsigned integer otherwise.
+A Field of a Bitfield, a few bits wide: an unsigned integer, or a boolean when it is one bit wide and given no labels for values, unit or display.
 _Avoid_: Bit field, flag, bit
 
 **Array**:
-A Field whose layout is read several times in a row: as many times as a count gives, or until its enclosing Structure or the Message ends.
+A Field whose layout is read several times in a row: as many times as a count gives, or until the Message ends.
 _Avoid_: List, sequence, repeated field, vector
 
 **Element**:
@@ -97,15 +97,15 @@ How a Dissector finds where each Message starts and ends in a TCP stream, so one
 _Avoid_: Reassembly, segmentation, PDU splitting
 
 **Expression**:
-A formula in a Protocol Description that computes a size, a count, a condition or the Subject of a Switch from Fields read earlier.
+A formula in a Protocol Description that computes a size, a count, an amount of Padding, a condition, the Subject of a Switch or the length Framing gives a Message, from constants and Fields read earlier.
 _Avoid_: Formula, rule, script
 
 **Field Path**:
-The dotted chain of Field names by which an Expression reads an earlier Field, looked up from the nearest enclosing Structure outward.
+The dotted chain of Field names by which an Expression or an Info Template names a Field. In an Expression it names a Field read earlier, looked up from the nearest enclosing Structure outward; in an Info Template it is looked up from the top-level Structure.
 _Avoid_: Reference, variable, identifier
 
 **Info Template**:
-The text a Protocol Description gives for Wireshark's Info column, with Field Paths in braces that show the Fields of each Message; without one, the column names the case of the outermost Switch.
+The text a Protocol Description gives for Wireshark's Info column, with Field Paths in braces that show the Fields of each Message; without one, the column shows the label of the outermost Switch's Subject value.
 _Avoid_: Info format, summary line, info string
 
 **Diagnostic**:
@@ -113,11 +113,11 @@ An error or a warning that Wirdigen reports about a Protocol Description, identi
 _Avoid_: Lint, issue, validation message
 
 **Dissector**:
-The Wireshark Lua plugin generated from a Protocol Description.
+The Wireshark Lua plugin generated from a Protocol Description. The dissectors Wireshark already has, such as the one a Handoff passes bytes to, are written in lowercase: one of them can be a Dissector, but most are not.
 _Avoid_: Plugin, LUA file
 
 **Malformed**:
-What a Dissector reports when a Message cannot be read as its Protocol Description says, either because a Field does not fit (truncated) or because an Expression's value cannot be used; it shows what it read so far and stops, never failing with a Lua error.
+What a Dissector reports when a Message cannot be read as its Protocol Description says, because a Field does not fit (truncated), an Expression's value cannot be used, or an Element reads no bytes; it shows what it read so far and stops, never failing with a Lua error.
 _Avoid_: Invalid packet, corrupt, parse error
 
 **Filter Name**:

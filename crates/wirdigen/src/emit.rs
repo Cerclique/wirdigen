@@ -314,6 +314,10 @@ fn experts(w: &mut Writer, model: &Dissector, proto: &str) {
         w.line(&format!("local wd_ei_invalid = wd_expert_invalid({proto})"));
         experts.push("wd_ei_invalid");
     }
+    if model.chunks.contains(&prelude::EMPTY) {
+        w.line(&format!("local wd_ei_empty = wd_expert_empty({proto})"));
+        experts.push("wd_ei_empty");
+    }
     if model.chunks.contains(&prelude::UNMATCHED) {
         w.line(&format!("local wd_ei_unmatched = wd_expert_unmatched({proto})"));
         experts.push("wd_ei_unmatched");
@@ -573,7 +577,7 @@ fn switch(w: &mut Writer, model: &Dissector, path: &str, stmt: &SwitchStmt<'_>, 
                 |index| format!("wd_case_name({}, subject)", model.names[index].local),
             );
             if stmt.info {
-                // The case name is kept for the Info column, as text (spec §3.14).
+                // The label of the subject's value is kept for the Info column, as text (spec §3.14).
                 let name = if stmt.names.is_some() { name } else { format!("tostring({name})") };
                 w.line(&format!("local name = {name}"));
                 w.line("tree:append_text(\": \" .. name)");
@@ -696,7 +700,14 @@ fn array(w: &mut Writer, model: &Dissector, path: &str, repeat: &Repeat, element
     let invalid = |w: &mut Writer, reason: &str| malformed(w, &reported, reason);
     let read_element = |w: &mut Writer| {
         subtree(w, model, element, scope, Some("i"));
-        w.block("if offset == start then", |w| invalid(w, "\"element \" .. i .. \" is empty\""), "end");
+        w.block(
+            "if offset == start then",
+            |w| {
+                w.line(&format!("wd_empty(tree, wd_ei_empty, i, {reported})"));
+                w.line("return nil");
+            },
+            "end",
+        );
     };
     w.line(&format!("-- Field: {path}"));
     w.block(
@@ -790,7 +801,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
             };
             // Only a fixed-size read can be a bitfield, whose item `add_item` keeps.
             let add_line = |range: &str| format!("{}{}", add(range), hide(*hidden));
-            // The handed-off Dissector's layer follows the item, in the same structure, whether
+            // The handed-off dissector's layer follows the item, in the same structure, whether
             // the item is hidden or not (spec §3.10).
             let handoff_line = |w: &mut Writer, range: &str| {
                 if let Some(name) = handoff {

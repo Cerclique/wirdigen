@@ -388,7 +388,7 @@ mod examples {
     /// The UDP port the `tracker` example declares.
     const TRACKER_PORT: u16 = 47300;
     /// The client port of the book's captures. Unlike [`SOURCE_PORT`], which Wireshark gives to
-    /// SAP NI over TCP, no built-in Dissector claims it, so the example's port decides.
+    /// SAP NI over TCP, no built-in dissector claims it, so the example's port decides.
     const CLIENT_PORT: u16 = 52000;
 
     /// Captures the example's packets over `transport` to `port`, dissects them with no Decode

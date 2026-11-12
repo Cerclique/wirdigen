@@ -134,6 +134,21 @@ local function wd_evaluate(compute)
     error(value, 0)
 end
 
+-- Reporting of an array Element that reads no bytes (spec §3.7): under `repeat: to_end` it
+-- would repeat forever, so it stops the array. Like a truncation, it is a "Malformed" error.
+local function wd_expert_empty(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._malformed.empty_element",
+        "Malformed: empty element",
+        expert.group.MALFORMED,
+        expert.severity.ERROR
+    )
+end
+
+local function wd_empty(tree, expert_info, index, path)
+    tree:add_proto_expert_info(expert_info, "Malformed: empty element " .. index .. ": " .. path)
+end
+
 local wd_proto = Proto("conditionals", "CONDITIONALS")
 
 local f_flags = ProtoField.uint8("conditionals.flags", "Flags", base.DEC)
@@ -175,7 +190,8 @@ local site_point = {
 
 local wd_ei_truncated = wd_expert_truncated("conditionals")
 local wd_ei_invalid = wd_expert_invalid("conditionals")
-wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
+local wd_ei_empty = wd_expert_empty("conditionals")
+wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty }
 
 -- Type: Point
 local function dissect_Point(tvb, pinfo, tree, offset, site)
@@ -298,7 +314,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                     offset = offset + 1
                     tree:set_len(offset - start)
                     if offset == start then
-                        wd_invalid(tree, wd_ei_invalid, "element " .. i .. " is empty", "items")
+                        wd_empty(tree, wd_ei_empty, i, "items")
                         return nil
                     end
                 end
