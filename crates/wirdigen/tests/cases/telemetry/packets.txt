@@ -1,0 +1,10 @@
+# Node 0x00a1, seq 1: Temperature 21.5, calibrated, Normal priority, battery 87 %.
+0000  01 00 a1 00 00 00 01 01 50 41 ac 00 00 57
+# Node 0x00a1, seq 2: Humidity 48.25, calibrated, Normal priority, battery 86 %.
+0000  01 00 a1 00 00 00 02 02 50 42 41 00 00 56
+# Node 0x00b7, seq 7: Pressure 1013.25, low battery, not calibrated, Critical priority, battery 9 %.
+0000  01 00 b7 00 00 00 07 03 b0 44 7d 50 00 09
+# Node 0x00c3, seq 1: sensor 9 has no label.
+0000  01 00 c3 00 00 00 01 09 40 00 00 00 00 64
+# Node 0x00c3, seq 2: cut short after the sensor, so the packet is Malformed.
+0000  01 00 c3 00 00 00 02 01

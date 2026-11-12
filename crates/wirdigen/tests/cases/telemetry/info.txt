@@ -1,0 +1,5 @@
+Temperature 21.5 from node 0x00a1, seq 1
+Humidity 48.25 from node 0x00a1, seq 2
+Pressure 1013.25 from node 0x00b7, seq 7
+9 0 from node 0x00c3, seq 1
+Temperature  from node 0x00c3, seq 2

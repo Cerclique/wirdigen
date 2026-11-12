@@ -4,8 +4,8 @@
 
 # User guide
 
-- [Tutorial: UDP telemetry]()
-- [Installing a Dissector]()
+- [Tutorial: UDP telemetry](tutorial.md)
+- [Installing a Dissector](installing.md)
 - [Command-line interface]()
 
 # Format reference

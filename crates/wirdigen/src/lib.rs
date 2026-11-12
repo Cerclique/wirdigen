@@ -1,32 +1,74 @@
 //! Generate Wireshark Lua dissectors from YAML protocol descriptions.
 //!
-//! The library is opaque and I/O-free (ADR 0012): it takes text in a [`Source`]
-//! and returns either a [`ValidDescription`] or the [`Diagnostics`] explaining
-//! why the description is wrong.
+//! A **Protocol Description** is a YAML file naming a protocol and laying out the Fields of its
+//! payload. Wirdigen checks it and generates a Lua **Dissector** for Wireshark 4.4 and later.
+//! The format itself is documented in the [Wirdigen book](https://cerclique.github.io/wirdigen/),
+//! which also holds a tutorial and an index of every Diagnostic.
 //!
-//! ```
-//! use wirdigen::{validate, Source};
+//! This crate is the library behind the `wirdigen` command-line tool (crate `wirdigen-cli`).
 //!
-//! let source = Source::new(
-//!     "demo.wirdigen.yaml",
-//!     "name: demo\nfields:\n  - { name: id, type: uint8 }\n",
-//! );
-//! let lua = validate(&source)?.generate();
-//! # let _ = lua;
-//! # Ok::<(), wirdigen::Diagnostics>(())
-//! ```
+//! # Usage
 //!
-//! Diagnostics render as rustc-style snippets of the source. A description silences warnings
-//! by name with a top-level `allow: [...]`; errors cannot be silenced.
+//! Wrap the text in a [`Source`], [`validate`] it, and [`generate`](ValidDescription::generate)
+//! the Dissector. When the description is wrong, [`validate`] returns its [`Diagnostics`], which
+//! render as rustc-style snippets of the source:
 //!
 //! ```
 //! use wirdigen::{validate, RenderOptions, Source};
 //!
-//! let source = Source::new("demo.wirdigen.yaml", "name: Demo\nfields:\n  - { name: id, type: uint8 }\n");
-//! let diagnostics = validate(&source).unwrap_err();
-//! let text = diagnostics.render(&source, &RenderOptions::default());
+//! /// The Dissector of `source`, or `None` after printing why it has none.
+//! fn dissector(source: &Source) -> Option<String> {
+//!     let options = RenderOptions::default();
+//!     match validate(source) {
+//!         Ok(valid) => {
+//!             for warning in valid.warnings() {
+//!                 eprint!("{}", warning.render(source, &options));
+//!             }
+//!             Some(valid.generate())
+//!         }
+//!         Err(diagnostics) => {
+//!             eprint!("{}", diagnostics.render(source, &options));
+//!             None
+//!         }
+//!     }
+//! }
+//!
+//! let good = Source::new("demo.wirdigen.yaml", "name: demo\nfields:\n  - { name: id, type: uint8 }\n");
+//! let lua = dissector(&good).expect("the description is valid");
+//! assert!(lua.contains("Proto(\"demo\""));
+//!
+//! // A protocol name is lowercase: this one is an error, and no Dissector is generated.
+//! let bad = Source::new("demo.wirdigen.yaml", "name: Demo\nfields:\n  - { name: id, type: uint8 }\n");
+//! assert_eq!(dissector(&bad), None);
+//!
+//! let diagnostics = validate(&bad).unwrap_err();
+//! let text = diagnostics.render(&bad, &RenderOptions::default());
 //! assert!(text.starts_with("error[invalid-protocol-name]"));
 //! ```
+//!
+//! Warnings never stop generation, so `validate(&source)?.generate()` is enough when they can be
+//! ignored. A description silences warnings by name with a top-level `allow: [...]`; errors
+//! cannot be silenced.
+//!
+//! # No I/O
+//!
+//! The library never touches files, the network or a terminal (ADR 0012): it takes text and
+//! returns text. A [`Source`]'s name is only a label for Diagnostics and the Dissector's header,
+//! never opened. Reading descriptions, writing Dissectors and colouring output are left to the
+//! caller, as the `wirdigen` command does.
+//!
+//! # Stability
+//!
+//! From 1.0.0, semver covers this crate's Rust API, the Protocol Description format (what is
+//! valid and what it means, Diagnostic names and severities) and the Dissector's behaviour in
+//! Wireshark: its filter names and protocol tree. It does not cover the generated Lua text, the
+//! layout and wording of rendered Diagnostics, or the exact text of [`json_schema`]: two
+//! releases may generate different Lua for a description as long as the Dissector behaves the
+//! same.
+//!
+//! A minor release can add a warning. A build that treats warnings as errors, such as
+//! `wirdigen --deny-warnings`, can then fail after an upgrade with no change to its
+//! descriptions.
 
 #![deny(missing_docs)]
 

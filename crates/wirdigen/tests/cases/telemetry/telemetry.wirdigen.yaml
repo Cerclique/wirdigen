@@ -1,0 +1,33 @@
+# Sensor Telemetry, an invented protocol: the example of the book's tutorial.
+#
+# A sensor node sends each reading in a UDP datagram of its own to port 47100. A datagram is
+# 14 bytes, big-endian:
+#
+#   version  node  seq  sensor  status  reading  battery
+#   1        2     4    1       1       4        1
+name: telemetry
+title: Sensor Telemetry
+registration:
+  ports:
+    udp: [47100]
+info: "{sensor} {reading} from node {node}, seq {seq}"
+fields:
+  - { name: version, type: uint8 }
+  - { name: node, type: uint16, display: hex, description: "Identifier of the sending node" }
+  - { name: seq, type: uint32, description: "Counts the node's datagrams from 1" }
+  - { name: sensor, type: uint8, values: Sensor }
+  - name: status
+    type: uint8
+    display: hex
+    bits:
+      - { name: low_battery, width: 1 }
+      - { name: calibrated, width: 1 }
+      - { name: priority, width: 2, values: { 0: Low, 1: Normal, 2: High, 3: Critical } }
+      - { padding: 4 }
+  - { name: reading, type: float32 }
+  - { name: battery, type: uint8, unit: "%" }
+enums:
+  Sensor:
+    1: Temperature
+    2: Humidity
+    3: Pressure
