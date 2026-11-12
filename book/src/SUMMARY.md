@@ -6,6 +6,7 @@
 
 - [Tutorial: UDP telemetry](tutorial.md)
 - [Example: TCP request/response](tcp-example.md)
+- [Example: tagged records](records-example.md)
 - [Installing a Dissector](installing.md)
 - [Command-line interface]()
 

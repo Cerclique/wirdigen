@@ -1,0 +1,15 @@
+# Asset 7 on trip 42, with four records: Position 48.8584, 2.2945 with two padding bytes,
+# Heading 90, Note "door open" with one padding byte, Manifest {"pallets":3} with one.
+0000  41 54 01 80 00 07 00 00 00 2a 01 08 02 e9 85 20
+0010  00 23 02 e4 00 00 02 02 00 5a 03 09 64 6f 6f 72
+0020  20 6f 70 65 6e 00 04 0d 7b 22 70 61 6c 6c 65 74
+0030  73 22 3a 33 7d 00
+# Asset 7, no trip: tag 0x7f, which the description does not know, shown as data with three
+# padding bytes, then Heading 400, outside its expected 0-359: a warning.
+0000  41 54 01 00 00 07 7f 03 de ad be 00 00 00 02 02
+0010  01 90
+# Asset 9, magic 0x4155 and version 2, both unexpected: two warnings, and the dissection goes
+# on to Heading 180.
+0000  41 55 02 00 00 09 02 02 00 b4
+# Asset 9: a Note whose length claims 8 bytes when 2 are left, so it is truncated.
+0000  41 54 01 00 00 09 03 08 68 69

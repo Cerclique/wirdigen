@@ -305,7 +305,9 @@ folder: see [Installing a Dissector](installing.md).
 ## Where next {#next}
 
 [Example: TCP request/response](tcp-example.md) describes a protocol over TCP, with Framing,
-a `switch` over Types and strings carrying their length. The
+a `switch` over Types and strings carrying their length.
+[Example: tagged records](records-example.md) reads a list of records to the end of a datagram,
+with `if:`, padding, hidden Fields, `expect:` and a handoff to Wireshark's JSON Dissector. The
 [Format reference](reference/cheat-sheet.md) covers every construct: strings and sizes, arrays,
 `if:` and `switch:`, Types, Framing over TCP and Expressions. Every
 mistake Wirdigen reports has an entry in the [Diagnostics index](diagnostics.md).

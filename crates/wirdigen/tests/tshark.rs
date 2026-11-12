@@ -373,6 +373,7 @@ cases! {
     info_framing => "info-framing",
     telemetry => "telemetry",
     kvstore => "kvstore",
+    tracker => "tracker",
 }
 
 /// The examples of `examples/` (spec §11), corpus cases decoded by Decode As above, are also
@@ -384,6 +385,8 @@ mod examples {
     const TELEMETRY_PORT: u16 = 47100;
     /// The TCP port the `kvstore` example declares.
     const KVSTORE_PORT: u16 = 47200;
+    /// The UDP port the `tracker` example declares.
+    const TRACKER_PORT: u16 = 47300;
     /// The client port of the book's captures. Unlike [`SOURCE_PORT`], which Wireshark gives to
     /// SAP NI over TCP, no built-in Dissector claims it, so the example's port decides.
     const CLIENT_PORT: u16 = 52000;
@@ -412,6 +415,11 @@ mod examples {
     #[test]
     fn kvstore_is_claimed_on_its_declared_port() {
         claimed_on("kvstore", Transport::Tcp, KVSTORE_PORT);
+    }
+
+    #[test]
+    fn tracker_is_claimed_on_its_declared_port() {
+        claimed_on("tracker", Transport::Udp, TRACKER_PORT);
     }
 }
 

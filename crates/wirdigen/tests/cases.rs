@@ -81,6 +81,7 @@ cases! {
     info_framing => "info-framing",
     telemetry => "telemetry",
     kvstore => "kvstore",
+    tracker => "tracker",
 }
 
 /// Spec §11: every example is a corpus case, so its description and packets are checked.

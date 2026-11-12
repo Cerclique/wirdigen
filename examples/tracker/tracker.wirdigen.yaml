@@ -1,0 +1,52 @@
+# Asset Tracker, an invented protocol: the book's tagged records example.
+#
+# A tracker fixed to a shipping container sends UDP datagrams to port 47300. Each one starts
+# with a 6-byte header, big-endian, then a 4-byte trip number when the top bit of `flags` is set:
+#
+#   magic  version  flags  asset  [trip]
+#   2      1        1      2      4
+#
+# Records follow up to the end of the datagram. Each is a tag, the length of its value, the
+# value, then zero bytes up to a multiple of 4. A manifest record is JSON, handed to Wireshark's
+# own JSON Dissector.
+name: tracker
+title: Asset Tracker
+registration:
+  ports:
+    udp: [47300]
+info: "Asset {asset}"
+fields:
+  - { name: magic, type: uint16, display: hex, hidden: true, expect: 0x4154 }
+  - { name: version, type: uint8, expect: 1 }
+  - name: flags
+    type: uint8
+    display: hex
+    bits:
+      - { name: on_trip, width: 1 }
+      - { padding: 7 }
+  - { name: asset, type: uint16, description: "Identifier of the tracked container" }
+  - { name: trip, type: uint32, if: flags.on_trip, description: "Present while on a trip" }
+  - { name: records, type: Record, repeat: to_end }
+types:
+  Record:
+    fields:
+      - { name: tag, type: uint8, values: Tag }
+      - { name: length, type: uint8, hidden: true }
+      - name: value
+        switch: tag
+        cases:
+          1:
+            - { name: latitude, type: int32, description: "Millionths of a degree" }
+            - { name: longitude, type: int32, description: "Millionths of a degree" }
+          2: [ { name: heading, type: uint16, unit: [degree, degrees], expect: "0-359" } ]
+          3: [ { name: note, type: string, size: length } ]
+          4: [ { name: manifest, type: bytes, size: length, dissector: json } ]
+        default:
+          - { name: data, type: bytes, size: length }
+      - { padding: "(4 - (length + 2) % 4) % 4" }
+enums:
+  Tag:
+    1: Position
+    2: Heading
+    3: Note
+    4: Manifest

@@ -1,0 +1,150 @@
+[
+  {
+    "tracker.magic": "0x4154",
+    "tracker.version": "1",
+    "tracker.flags": "0x80",
+    "tracker.flags_tree": {
+      "tracker.flags.on_trip": "1"
+    },
+    "tracker.asset": "7",
+    "tracker.trip": "42",
+    "tracker.records": [
+      {
+        "tracker.records.tag": "1",
+        "tracker.records.length": "8",
+        "tracker.records.value": {
+          "tracker.records.value.latitude": "48858400",
+          "tracker.records.value.longitude": "2294500"
+        },
+        "_ws.lua.text": ""
+      },
+      {
+        "tracker.records.tag": "2",
+        "tracker.records.length": "2",
+        "tracker.records.value": {
+          "tracker.records.value.heading": "90"
+        },
+        "_ws.lua.text": ""
+      },
+      {
+        "tracker.records.tag": "3",
+        "tracker.records.length": "9",
+        "tracker.records.value": {
+          "tracker.records.value.note": "door open"
+        },
+        "_ws.lua.text": ""
+      },
+      {
+        "tracker.records.tag": "4",
+        "tracker.records.length": "13",
+        "tracker.records.value": {
+          "tracker.records.value.manifest": "7b:22:70:61:6c:6c:65:74:73:22:3a:33:7d",
+          "json": {
+            "json.object": "{\"pallets\":3}",
+            "json.object_tree": {
+              "json.member": "pallets",
+              "json.member_tree": {
+                "json.path_with_value": "/pallets:3",
+                "json.member_with_value": "pallets:3",
+                "json.value.number": "3",
+                "json.key": "pallets",
+                "json.path": "/pallets"
+              }
+            }
+          }
+        },
+        "_ws.lua.text": ""
+      }
+    ]
+  },
+  {
+    "tracker.magic": "0x4154",
+    "tracker.version": "1",
+    "tracker.flags": "0x00",
+    "tracker.flags_tree": {
+      "tracker.flags.on_trip": "0"
+    },
+    "tracker.asset": "7",
+    "tracker.records": [
+      {
+        "tracker.records.tag": "127",
+        "tracker.records.length": "3",
+        "tracker.records.value": {
+          "tracker.records.value.data": "de:ad:be"
+        },
+        "_ws.lua.text": ""
+      },
+      {
+        "tracker.records.tag": "2",
+        "tracker.records.length": "2",
+        "tracker.records.value": {
+          "tracker.records.value.heading": "400",
+          "tracker.records.value.heading_tree": {
+            "_ws.expert": {
+              "tracker._protocol.unexpected": "",
+              "_ws.expert.message": "Unexpected value: records.value.heading (expected 0-359)",
+              "_ws.expert.severity": "6291456",
+              "_ws.expert.group": "150994944"
+            }
+          }
+        },
+        "_ws.lua.text": ""
+      }
+    ]
+  },
+  {
+    "tracker.magic": "0x4155",
+    "tracker.magic_tree": {
+      "_ws.expert": {
+        "tracker._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: magic (expected 0x4154)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "tracker.version": "2",
+    "tracker.version_tree": {
+      "_ws.expert": {
+        "tracker._protocol.unexpected": "",
+        "_ws.expert.message": "Unexpected value: version (expected 1)",
+        "_ws.expert.severity": "6291456",
+        "_ws.expert.group": "150994944"
+      }
+    },
+    "tracker.flags": "0x00",
+    "tracker.flags_tree": {
+      "tracker.flags.on_trip": "0"
+    },
+    "tracker.asset": "9",
+    "tracker.records": {
+      "tracker.records.tag": "2",
+      "tracker.records.length": "2",
+      "tracker.records.value": {
+        "tracker.records.value.heading": "180"
+      },
+      "_ws.lua.text": ""
+    }
+  },
+  {
+    "tracker.magic": "0x4154",
+    "tracker.version": "1",
+    "tracker.flags": "0x00",
+    "tracker.flags_tree": {
+      "tracker.flags.on_trip": "0"
+    },
+    "tracker.asset": "9",
+    "tracker.records": {
+      "tracker.records.tag": "3",
+      "tracker.records.length": "8",
+      "tracker.records.value": {
+        "_ws.expert": {
+          "tracker._malformed.truncated": "",
+          "_ws.expert.message": "Malformed: truncated: records.value.note",
+          "_ws.expert.severity": "8388608",
+          "_ws.expert.group": "117440512"
+        },
+        "_ws.malformed": "Malformed Packet"
+      }
+    }
+  }
+]
