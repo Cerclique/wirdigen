@@ -1,4 +1,4 @@
-# len=7 payload={"a":1} raw=aa:bb wrapped.body=[] rest=01:02, handed to no Dissector
+# len=7 payload={"a":1} raw=aa:bb wrapped.body=[] rest=01:02, handed to no dissector
 0000  07 7b 22 61 22 3a 31 7d aa bb 02 5b 5d 01 02
-# len=0: an empty payload is handed to no Dissector; wrapped.body=[1]; rest is empty
+# len=0: an empty payload is handed to no dissector; wrapped.body=[1]; rest is empty
 0000  00 cc dd 03 5b 31 5d

@@ -98,7 +98,7 @@ pub(crate) struct Extractor {
 pub(crate) enum Info {
     /// An `info:` template: its parts, one after another; a Field not read shows nothing.
     Template(Vec<InfoPart>),
-    /// Without `info:`, the case name of the outermost `switch` Field, at this path. When it was
+    /// Without `info:`, the subject value label of the outermost `switch` Field, at this path. When it was
     /// not read, the column keeps what the transport wrote.
     Case(String),
 }
@@ -115,7 +115,7 @@ pub(crate) enum InfoPart {
     /// [`Dissector::names`], or else the number; with no table, when no label fits the Field's
     /// type, always the number.
     Label { extractor: usize, names: Option<usize> },
-    /// The case name of the `switch` Field at this path.
+    /// The subject value label of the `switch` Field at this path.
     Case(String),
 }
 
@@ -361,7 +361,7 @@ pub(crate) enum Stmt {
         check_read: Option<ValueRead>,
         /// The check of the Field's own `expect:`.
         expect: Option<ExpectCheck>,
-        /// The name of the Dissector the bytes are handed to, after the item (spec §3.10).
+        /// The name of the dissector the bytes are handed to, after the item (spec §3.10).
         handoff: Option<String>,
     },
     /// An inline structure: a subtree item holding the statements of its Fields, as long as
@@ -423,7 +423,7 @@ pub(crate) enum Stmt {
         /// The table the subtree item names the subject's value from, an index into
         /// [`Dissector::names`]; without one it shows the number.
         names: Option<usize>,
-        /// Whether the case name is kept, under the Field's path, for the Info column.
+        /// Whether the subject value label is kept, under the Field's path, for the Info column.
         info: bool,
         /// Each case, by the values it matches, as signed 64-bit ranges.
         cases: Vec<(Vec<(i64, i64)>, Branch)>,
@@ -875,7 +875,7 @@ struct Lowering<'p> {
     chunks: Vec<&'static str>,
     /// The Type whose dissect function is being lowered, `None` for the top-level layout.
     current_type: Option<&'p str>,
-    /// The `switch` Fields whose case name the Info column shows.
+    /// The `switch` Fields whose subject value label the Info column shows.
     info_cases: BTreeSet<SwitchSite<'p>>,
     /// The field extractors of the Fields the Info column shows, each once.
     extractors: Vec<Extractor>,
@@ -883,7 +883,7 @@ struct Lowering<'p> {
 
 /// Where a `switch` Field the Info column shows is lowered: the Type whose dissect function
 /// reads it, `None` for the top-level layout, and its path from that Type's body or the top
-/// level. The emitter keeps its case name under its whole path (spec §3.14).
+/// level. The emitter keeps its subject value label under its whole path (spec §3.14).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct SwitchSite<'p> {
     ty: Option<&'p str>,
@@ -891,8 +891,8 @@ struct SwitchSite<'p> {
 }
 
 impl<'p> Lowering<'p> {
-    /// What the Info column shows: the `info:` template, or else the case name of the outermost
-    /// `switch` Field, if any. Marks the `switch` Fields whose case name is kept for it.
+    /// What the Info column shows: the `info:` template, or else the subject value label of the outermost
+    /// `switch` Field, if any. Marks the `switch` Fields whose subject value label is kept for it.
     fn info(&mut self, protocol: &'p Protocol) -> Option<Info> {
         let Some(Template { parts }) = &protocol.info else {
             let (site, path) = outermost_switch(&protocol.fields, &protocol.types)?;
@@ -910,7 +910,7 @@ impl<'p> Lowering<'p> {
     }
 
     /// How the Info column shows the Field at `path` from the top level, which validation
-    /// resolved: a `switch` Field by its case name, a Field with `values:` by the label of its
+    /// resolved: a `switch` Field by its subject value label, a Field with `values:` by the label of its
     /// value or the number, any other by Wireshark's display of its value.
     fn info_field(&mut self, protocol: &'p Protocol, path: &[String]) -> InfoPart {
         let target = info::find(&protocol.fields, &protocol.types, path).expect("validation resolved the path");
@@ -933,7 +933,7 @@ impl<'p> Lowering<'p> {
         }
     }
 
-    /// Keeps the case name of the `switch` Field at `site` for the Info column.
+    /// Keeps the subject value label of the `switch` Field at `site` for the Info column.
     fn keep_case(&mut self, site: SwitchSite<'p>) {
         self.info_cases.insert(site);
         self.use_chunk(prelude::INFO_CASES);
@@ -1152,7 +1152,7 @@ impl<'p> Lowering<'p> {
     fn array(&mut self, field: &Field, segments: &[&str], stmt: Stmt) -> Stmt {
         let Some(array) = &field.array else { return stmt };
         // An element that reads no bytes is reported as malformed.
-        self.use_chunk(prelude::INVALID);
+        self.use_chunk(prelude::EMPTY);
         let repeat = match array {
             Array::ToEnd => Repeat::ToEnd,
             Array::Count(Amount::Constant(count)) => {
@@ -2216,7 +2216,7 @@ mod tests {
             "x",
         );
         assert_eq!(d.info, Some(Info::Case("t.s".to_owned())));
-        // The Type's switch keeps its case name under the path of each use: only `t.s` is shown.
+        // The Type's switch keeps its subject value label under the path of each use: only `t.s` is shown.
         let Stmt::Switch { info, .. } = &d.types[0].body[0] else { panic!("a switch") };
         assert!(info);
         assert!(d.chunks.contains(&prelude::INFO_CASES));
@@ -2474,7 +2474,7 @@ mod tests {
         assert_eq!(repeat, &Repeat::Count(Computed { value: local("v_n", &[]), checked: true, faults: false }));
         assert!(matches!(element, Stmt::Structure { path, .. } if path == "items"));
         assert_eq!(size(&d.layout, "items.data"), &local("v_items__len", &[]));
-        assert!(d.chunks.contains(&prelude::INVALID), "an empty element is reported as malformed");
+        assert!(d.chunks.contains(&prelude::EMPTY), "an empty element is reported as malformed");
     }
 
     /// A constant count needs no runtime check; `repeat: to_end` has no count, and a Type repeats

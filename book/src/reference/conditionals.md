@@ -147,8 +147,8 @@ The subtree item is named after the subject's value: "Body: Login". When
 the subject is a bare Field path (`msg_type`, `hdr.kind`, `flags.op`) to a Field read in the
 same layout or Type, the name is that Field's `values:` label, else the number; any other
 Expression (`"kind & 0x0f"`), or a path a [Type](fields.md#types) reads from where it is used,
-shows the number: "Body: 7". Without [`info:`](info.md#default), the outermost `switch` Field's
-case name is also what the Info column shows.
+shows the number: "Body: 7". Without [`info:`](info.md#default), the label of the outermost
+`switch` Field's subject value is also what the Info column shows.
 
 Two cases reaching one filter name share its ProtoField when the two Fields have the same type,
 `display:`, value mappings, `label:` and `description:`, so `demo.body.user_id` filters both a

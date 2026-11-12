@@ -838,7 +838,7 @@ pub(crate) struct RawField {
     mappings: mapping::RawMappings,
     /// `expect:`, the values the Field should hold (spec §3.10).
     expect: Option<RawExpect>,
-    /// `dissector:`, the Dissector the bytes are handed to (spec §3.10), at its key.
+    /// `dissector:`, the dissector the bytes are handed to (spec §3.10), at its key.
     dissector: Option<RawDissector>,
     /// The sub-Fields, when the Field is a bitfield (spec §3.8).
     bits: Option<RawBits>,
@@ -926,15 +926,31 @@ impl RawField {
         self.array.is_some()
     }
 
-    /// Why the Field reads up to the end of its structure or the message, if it does:
-    /// `size: "_remaining"` (spec §3.6) or `repeat: to_end` (§3.7). A Field under `if:` may not be
-    /// read, which leaves the bytes to the Fields after it.
-    fn reads_to_end(&self) -> Option<&'static str> {
+    /// Why the Field reads up to the end of the message, if it surely does (spec §6.3
+    /// `unreachable-field`): `size: "_remaining"` (§3.6) or `repeat: to_end` (§3.7), on the
+    /// Field itself or on a Field it always reads, through inline structures, Types and
+    /// `switch` Fields whose every case reads to the end. A Field under `if:` may not be read,
+    /// and an array with a `count:` may have no element, which leaves the bytes to the Fields
+    /// after it.
+    fn reads_to_end(&self, types: &Types<'_>) -> Option<String> {
+        self.reads_to_end_in(types, &mut Vec::new()).map(|(path, why)| match path.as_slice() {
+            [] => why.to_owned(),
+            _ => format!("`{}` inside it: {why}", path.join(".")),
+        })
+    }
+
+    /// The path below this Field to the one that reads to the end, and why it does. `seen` holds
+    /// the Types being walked, so a recursive Type, already an error, stops the walk.
+    fn reads_to_end_in<'t>(&self, types: &Types<'t>, seen: &mut Vec<&'t str>) -> Option<(Vec<String>, &'static str)> {
         if self.condition.is_some() {
             return None;
         }
-        if matches!(self.array.as_ref().map(|a| &a.value), Some(RawArray::ToEnd)) {
-            return Some("`repeat: to_end` leaves no bytes for the Fields after it");
+        match self.array.as_ref().map(|a| &a.value) {
+            Some(RawArray::ToEnd) => {
+                return Some((Vec::new(), "`repeat: to_end` leaves no bytes for the Fields after it"));
+            }
+            Some(_) => return None,
+            None => {}
         }
         let remaining = self.lengths.iter().any(|l| match &l.value.value {
             RawLength::Size(amount) => {
@@ -942,8 +958,54 @@ impl RawField {
             }
             RawLength::Prefix(_) | RawLength::Terminator(_) => false,
         });
-        remaining.then_some("`size: \"_remaining\"` leaves no bytes for the Fields after it")
+        if remaining {
+            return Some((Vec::new(), "`size: \"_remaining\"` leaves no bytes for the Fields after it"));
+        }
+        match &self.kind {
+            RawKind::Structure { fields, .. } => entries_read_to_end(fields, types, seen),
+            RawKind::Type { name, .. } => type_reads_to_end(&name.value, types, seen),
+            RawKind::Switch(switch) => {
+                let mut bodies = switch.bodies().map(|(_, body)| match body {
+                    RawBody::Fields(fields) => entries_read_to_end(fields, types, seen),
+                    RawBody::Type(name) => type_reads_to_end(&name.value, types, seen),
+                });
+                let some = !switch.cases.is_empty();
+                (some && bodies.all(|reads| reads.is_some()))
+                    .then(|| (Vec::new(), "every case reads to the end of the message"))
+            }
+        }
     }
+}
+
+/// The first Field among `entries` that reads to the end (see [`RawField::reads_to_end`]), with
+/// its path below the structure, and why.
+fn entries_read_to_end<'t>(
+    entries: &[RawEntry],
+    types: &Types<'t>,
+    seen: &mut Vec<&'t str>,
+) -> Option<(Vec<String>, &'static str)> {
+    fields(entries).find_map(|field| {
+        let (mut path, why) = field.reads_to_end_in(types, seen)?;
+        path.insert(0, field.name.value.clone());
+        Some((path, why))
+    })
+}
+
+/// Whether the body of the Type named `name` reads to the end. A built-in or unknown type does
+/// not; a Type already being walked is recursive, an error reported elsewhere.
+fn type_reads_to_end<'t>(
+    name: &str,
+    types: &Types<'t>,
+    seen: &mut Vec<&'t str>,
+) -> Option<(Vec<String>, &'static str)> {
+    let (name, body) = types.named_body(name)?;
+    if seen.contains(&name) {
+        return None;
+    }
+    seen.push(name);
+    let reads = entries_read_to_end(body, types, seen);
+    seen.pop();
+    reads
 }
 
 /// A validated entry of a structure: a Field, or bytes to skip (spec §3.10).
@@ -1043,7 +1105,7 @@ pub(crate) struct BuiltinField {
     pub(crate) mapping: Option<Mapping>,
     /// The values the Field should hold, when it has `expect:` (spec §3.10).
     pub(crate) expect: Option<Expect>,
-    /// The name of the Dissector a `bytes` Field's bytes are handed to, when it has
+    /// The name of the dissector a `bytes` Field's bytes are handed to, when it has
     /// `dissector:` (spec §3.10).
     pub(crate) dissector: Option<String>,
     /// The sub-Fields of a bitfield, most significant first; empty for any other Field.
@@ -1133,12 +1195,12 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
 }
 
 /// `dissector:` names a Dissector: a string of one word, else `invalid-dissector`. Whether
-/// Wireshark has a Dissector by that name is only known when the packet is read (spec §3.10).
+/// Wireshark has a dissector by that name is only known when the packet is read (spec §3.10).
 fn read_dissector(node: &Node) -> Result<String, Diagnostic> {
     let name = expect_string(node, "dissector", Name::InvalidDissector)?;
     if name.value.is_empty() || name.value.contains(char::is_whitespace) {
         return Err(Diagnostic::new(Name::InvalidDissector, name.span, "`dissector` must name a Dissector")
-            .with_note("a Dissector name is one word, such as `json`", None));
+            .with_note("a dissector name is one word, such as `json`", None));
     }
     Ok(name.value)
 }
@@ -1285,7 +1347,7 @@ pub(crate) fn check<'a>(
             scope.levels.iter().copied().chain([Level { fields: entries, at: index }]).collect();
         let scope = Scope { ty: scope.ty, levels: &levels };
         let previous = index.checked_sub(1).and_then(|i| entries[i].field());
-        if let Some((previous, why)) = previous.and_then(|f| Some((f, f.reads_to_end()?))) {
+        if let Some((previous, why)) = previous.and_then(|f| Some((f, f.reads_to_end(types)?))) {
             let (span, what) = match entry {
                 RawEntry::Field(field) => (field.name.span.clone(), format!("`{}`", field.name.value)),
                 RawEntry::Padding(padding) => (padding.key.clone(), "this padding".to_owned()),

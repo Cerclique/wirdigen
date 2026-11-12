@@ -155,11 +155,6 @@ fn entries(markdown: &str) -> Vec<Entry> {
 /// The page the renderer links to, under `book/src`.
 const INDEX_PAGE: &str = "diagnostics.md";
 
-/// The Diagnostics no description triggers in this version, so their entries have no snippet:
-/// a name kept for a later need, such as `not-supported-yet` for a part of the format a
-/// version does not read yet.
-const UNTRIGGERED: [Name; 1] = [Name::NotSupportedYet];
-
 /// Spec §11: the Diagnostics index has one entry per Diagnostic name and vice versa, each with
 /// its severity, a snippet that triggers it and how to fix it (or `allow:` it, for a warning).
 #[test]
@@ -187,7 +182,7 @@ fn the_index_has_one_entry_per_diagnostic_name() {
             assert!(entry.body.contains("allow:"), "warning `{token}` must say how to `allow:` it");
         }
         let triggering = snippets(token, &entry.body).iter().any(|s| s.expected.contains(token));
-        assert!(triggering || UNTRIGGERED.contains(&name), "`{token}` has no ```yaml,diagnostic={token} snippet");
+        assert!(triggering, "`{token}` has no ```yaml,diagnostic={token} snippet");
     }
 }
 

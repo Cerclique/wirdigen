@@ -1,0 +1,19 @@
+# Fields after a structure that may stop early stay reachable: an `if:`, a `count:` array, or
+# a `switch` with a case that does not read to the end.
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: maybe
+    if: kind
+    fields: [ { name: rest, type: bytes, size: "_remaining" } ]
+  - { name: a, type: uint8 }
+  - name: counted
+    count: kind
+    fields: [ { name: rest, type: bytes, size: "_remaining" } ]
+  - { name: b, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: [ { name: x, type: bytes, size: "_remaining" } ]
+    default: [ { name: y, type: uint8 } ]
+  - { name: c, type: uint8 }

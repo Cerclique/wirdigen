@@ -243,7 +243,7 @@ struct Field {
     unit: Option<Unit>,
     /// The values the Field should hold; another value gets a warning in Wireshark.
     expect: Option<Expect>,
-    /// The name of a Wireshark Dissector the bytes of a `bytes` Field are handed to.
+    /// The name of a Wireshark dissector the bytes of a `bytes` Field are handed to.
     #[schemars(regex(pattern = r"^\S+$"))]
     dissector: Option<String>,
     /// The text shown in the tree; defaults to the name with `_` as spaces, first letter

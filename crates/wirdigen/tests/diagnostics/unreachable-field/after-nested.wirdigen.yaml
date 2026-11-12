@@ -1,0 +1,22 @@
+# A Field after a structure, a Field of a Type or a `switch` that always reads to the end of the
+# message is unreachable too (spec §6.3). A conditional or counted array is not.
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - name: records
+    fields:
+      - { name: items, repeat: to_end, fields: [ { name: v, type: uint8 } ] }
+  - { name: a, type: uint8 }
+  - { name: tail, type: Tail }
+  - { name: b, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: [ { name: x, type: bytes, size: "_remaining" } ]
+      2: Tail
+  - { name: c, type: uint8 }
+types:
+  Tail:
+    fields:
+      - name: inner
+        fields: [ { name: rest, type: bytes, size: "_remaining" } ]

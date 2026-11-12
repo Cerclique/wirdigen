@@ -1,7 +1,0 @@
-# `expect:` on a sub-Field was `not-supported-yet` before this version reads it (spec §3.10).
-# Nothing triggers the error now; the name is kept for parts of the format read later.
-name: demo
-fields:
-  - name: flags
-    type: uint8
-    bits: [ { name: version, width: 8, expect: 1 } ]

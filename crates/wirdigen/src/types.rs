@@ -105,6 +105,12 @@ impl<'a> Types<'a> {
         self.position(name).map(|i| self.raw[i].fields.as_slice())
     }
 
+    /// The Type named `name`, by its name as declared, and its Fields as written.
+    pub(crate) fn named_body(&self, name: &str) -> Option<(&'a str, &'a [RawEntry])> {
+        let raw: &'a [RawType] = self.raw;
+        raw.iter().find(|t| t.name.value == name).map(|t| (t.name.value.as_str(), t.fields.as_slice()))
+    }
+
     fn position(&self, name: &str) -> Option<usize> {
         self.raw.iter().position(|t| t.name.value == name)
     }

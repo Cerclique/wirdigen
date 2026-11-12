@@ -123,7 +123,7 @@ local function wd_unmatched(tree, field, expert_info, tvb, offset, value, path)
     item:add_proto_expert_info(expert_info, "No case for " .. value .. ": " .. path)
 end
 
--- The case names of the `switch` Fields the Info column shows, by path, read in the packet
+-- The subject value labels of the `switch` Fields the Info column shows, by path, read in the packet
 -- being dissected (spec §3.14). The Dissector empties it before each packet.
 local wd_info_cases = {}
 

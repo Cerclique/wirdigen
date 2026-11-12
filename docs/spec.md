@@ -53,7 +53,7 @@ The flow is: **Source** (description text plus a name) → `validate` → **Vali
 
 *ADR 0004, ADR 0005.*
 
-- The format is Wirdigen's own. It borrows concepts from Kaitai Struct, PDL and wsgd (sequential layout, size and count references, repetition, `if`/`switch`, enums, bitfields, constraints), but not their keywords or document shape.
+- The format is Wirdigen's own. It borrows concepts from Kaitai Struct, PDL and wsgd (sequential layout, size and count references, repetition, `if`/`switch`, enums, bitfields, expected values), but not their keywords or document shape.
 - There is one syntax: a **strict subset of YAML 1.2**, read by a YAML 1.2 parser that reports positions (so `no` and `on` stay strings):
   - one Protocol Description per file, no multi-document streams;
   - no custom tags, no merge keys (`<<:`), no anchors or aliases;
@@ -236,7 +236,7 @@ enums:
 
 #### 3.4.9 Sharing a ProtoField
 
-Two Fields reaching one filter path (§5.2) share a ProtoField only when type, `display:`, value mappings, `label:` and `description:` all match; two references to the same Enum count as matching. Otherwise it is the error `conflicting-filter-name`.
+Two Fields reaching one filter name (§5.2) share a ProtoField only when type, `display:`, value mappings, `label:` and `description:` all match; two references to the same Enum count as matching. Otherwise it is the error `conflicting-filter-name`.
 
 ### 3.5 Types
 
@@ -265,7 +265,7 @@ A variable-length Field (string, bytes, …) states its length with exactly one 
 
 None of them on `string`/`bytes` is `missing-length`, more than one is `conflicting-length`; a negative constant `size:` is `invalid-size`, and so is a constant Expression that is negative, divides by zero or shifts by a count outside 0..63 (#60: rejected when building rather than reported at runtime as in §4.4), any other `prefix:` is `invalid-prefix`, and a `terminator:` outside 0–255, or other than 0 on `utf16`/`ucs2`, is `invalid-terminator`.
 
-A Field placed after a `size: "_remaining"` Field in the same structure is the warning `unreachable-field`.
+A Field placed after a Field that reads to the end of the message is the warning `unreachable-field` (§6.3).
 
 ### 3.7 Arrays
 
@@ -274,7 +274,7 @@ A Field placed after a `size: "_remaining"` Field in the same structure is the w
 | `count: <expr>` | Fixed or computed number of elements. |
 | `repeat: to_end` | Repeat until the enclosing structure or message ends (TLV lists). |
 
-The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for `repeat: { until: <expr> }` after v1, and any value but `to_end` is `invalid-repeat` in v1. The element is an inline structure or a Type: `count:` or `repeat:` on a built-in type is `invalid-array`. A constant `count:` follows the rules of a constant `size:` (§3.6) under `invalid-count`. Each element is its own subtree item, its label followed by its index (`Items [0]`, `Items [1]`, …); there is no item for the array as a whole. Elements share filter names (§5.2). A Field after a `repeat: to_end` array in the same structure is the warning `unreachable-field`. An element that consumes zero bytes stops the array as malformed. `count:` is evaluated once, before the first element; `repeat: to_end` reads elements while bytes are left in the message (§4.5's `_remaining`).
+The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for `repeat: { until: <expr> }` after v1, and any value but `to_end` is `invalid-repeat` in v1. The element is an inline structure or a Type: `count:` or `repeat:` on a built-in type is `invalid-array`. A constant `count:` follows the rules of a constant `size:` (§3.6) under `invalid-count`. Each element is its own subtree item, its label followed by its index (`Items [0]`, `Items [1]`, …); there is no item for the array as a whole. Elements share filter names (§5.2). A Field after a Field that reads to the end of the message is the warning `unreachable-field` (§6.3). An element that consumes zero bytes stops the array as malformed, with a "Malformed: empty element" expert info error on the array, filtered `<protocol>._malformed.empty_element` (§5.2). `count:` is evaluated once, before the first element; `repeat: to_end` reads elements while bytes are left in the message (§4.5's `_remaining`).
 
 ### 3.8 Bitfields
 
@@ -307,19 +307,19 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
   - overlapping cases (values or ranges) are the error `overlapping-cases`, comparing values as the subject has them (§4.4), so `-1` and `18446744073709551615` overlap;
   - with no matching case and no `default:`, the rest of the message is shown raw as a bytes item filtered `<protocol>._unmatched`, with an expert info note (group Undecoded) filtered `<protocol>._undecoded.unmatched`, and the dissection stops: nothing says where the unknown layout ends.
 - A case adds no tree level either: its Fields go straight into the `switch` Field's subtree item.
-- A protocol with several kinds of message is a `switch` whose cases use Types. The `switch` Field's item shows the name of the subject's value after its label ("Body: Login"). When the `switch:` subject is a bare Field path to a Field read by the same dissect function (§7.3), the name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number, and so does a path a Type resolves at its use site (§4.3), which can name a different Field at each use.
+- A protocol with several kinds of message is a `switch` whose cases use Types. The `switch` Field's item shows the label of the Subject's value after its own label ("Body: Login"). When the `switch:` subject is a bare Field path to a Field read by the same dissect function (§7.3), the name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number, and so does a path a Type resolves at its use site (§4.3), which can name a different Field at each use.
 - A `switch` Field accepts only `name`, `label`, `description`, `if`, `hidden`, `switch`, `cases` and `default`, never `values:`. Another key is reported under the name it has elsewhere: a length key `unexpected-length`, `endian` `invalid-endian`, `bits` `invalid-bits`, `count`/`repeat` `invalid-array`, a value key `incompatible-display`. `cases` or `default` without `switch` is `missing-field-kind`, or `conflicting-field-kind` beside `type` or `fields`.
 - Fields under `if:` or inside a case can be referenced only from inside the same conditional scope (§4.3). The way out is an inline structure carrying the `if:`.
 - `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField under the rule of §3.4.9; otherwise it is the error `conflicting-filter-name`. For a Field of a Type, its "type" is the Type: two Fields of different Types at one path conflict.
 
-### 3.10 Padding, hidden Fields, constraints and handoff
+### 3.10 Padding, hidden Fields, expected values and handoff
 
 | Key | Meaning |
 |---|---|
 | `{ padding: <n \| expr> }` | A standalone structure entry, shown as one "Padding" item, with no filter name. |
 | `hidden: true` | Reads the Field (usable in Expressions, filters and `info:`) without adding it to the tree. |
 | `expect: <value \| "low-high" \| list>` | A mismatch adds an expert info **warning** and dissection goes on. A list may mix values and ranges. An `expect:` that can never match is a validation warning (`unreachable-expect`). |
-| `dissector: <name>` | On a bytes Field: passes the bytes to an existing Wireshark Dissector by name (static handoff). |
+| `dissector: <name>` | On a bytes Field: passes the bytes to an existing Wireshark dissector by name (static handoff). |
 
 - `{ padding: … }` takes no other key. Its amount follows the rules of a `size:` (§3.6): a negative constant, or a constant Expression that is negative or has no value, is `invalid-padding`; at runtime, a negative or faulting Expression is malformed (§4.4).
 - A padding after a Field that reads to the end is the warning `unreachable-field`, as a Field would be.
@@ -327,8 +327,8 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
 - An `expect:` is `unreachable-expect` when none of its values is in the range of the Field's type or the sub-Field's width; it is kept, so every packet gets the warning.
 - A mismatch is an expert info warning (group Protocol) on the Field's item, hidden or not: "Unexpected value: <path> (expected <values as written>)", filtered `<protocol>._protocol.unexpected`.
 - `dissector:` goes on `bytes` Fields only; elsewhere it is `incompatible-display`, like a value-mapping key. Its value is a one-word string: an empty one, one with whitespace, or a scalar that is not a string is `invalid-dissector`.
-- The handed-off Dissector's layer goes into the Field's structure, right after the Field's item, hidden or not, and the dissection goes on after it. A Field with no bytes calls no Dissector. The Protocol column keeps the short name (§5.5).
-- The Dissector is looked up by name the first time a packet reads the Field, empty or not. An unknown name is an expert info warning (group Undecoded) on the structure: "Unknown Dissector <name>: <path>", filtered `<protocol>._undecoded.dissector`. An error in the handed-off Dissector is shown in its own layer and never raises a Lua error.
+- The handed-off dissector's layer goes into the Field's structure, right after the Field's item, hidden or not, and the dissection goes on after it. A Field with no bytes calls no dissector. The Protocol column keeps the short name (§5.5).
+- The dissector is looked up by name the first time a packet reads the Field, empty or not. An unknown name is an expert info warning (group Undecoded) on the structure: "Unknown dissector <name>: <path>", filtered `<protocol>._undecoded.dissector`. An error in the handed-off dissector is shown in its own layer and never raises a Lua error.
 
 There is no `align:` in v1.
 
@@ -362,7 +362,7 @@ registration:          # optional; leaving it out means Decode As only
 ```yaml
 framing:
   header: 4              # constant
-  length: "length + 4"   # total PDU length, an Expression
+  length: "length + 4"   # total Message length, an Expression
 ```
 
 - Applies under TCP Registration and TCP Decode As.
@@ -376,9 +376,9 @@ framing:
 - References only: no Expressions or format specifiers. `{{` and `}}` escape braces.
 - A reference renders the Field's `values:` (or `true:`/`false:`) label if it has one (the number if unmatched), otherwise the Field's display form. Any Field type is allowed.
 - Conditional Fields may be referenced; an absent one renders as an empty string. Unresolvable paths, array internals and forward references are errors. Paths resolve from the top-level layout once the Message is read, so no reference is forward; one that resolves to no Field or goes into an array is `unknown-field`.
-- A reference names a Field of a built-in type, a bitfield sub-Field, or a `switch` Field, which renders its case name as in §3.9. A template that does not parse (a lone brace, an Expression, a format specifier, more than one line) or a reference to an inline structure, a Field of a Type or an array is `invalid-info`.
+- A reference names a Field of a built-in type, a bitfield sub-Field, or a `switch` Field, which renders the label of its Subject's value as in §3.9. A template that does not parse (a lone brace, an Expression, a format specifier, more than one line) or a reference to an inline structure, a Field of a Type or an array is `invalid-info`.
 - The Dissector sets the column once the Message is read, however far it got. With several Messages in a packet (Framing, §3.13), the column shows the last one's, from the values that Message read: a Field another Message of the packet read but it did not shows nothing. Setting the column first clears its fence, so the text also replaces what TCP reassembly fenced off from an earlier Message, and the last Message's text stands alone. Built-in Fields and sub-Fields are rendered from Wireshark's field extractors (`Field.new`), so their display form is Wireshark's own.
-- Without `info:`, the Info column shows the label of the outermost `switch` Field, as in §3.9: the one fewest structures and Fields of Types from the top level, first in layout order among them, never inside an array. When it is not read, the column keeps the transport's text.
+- Without `info:`, the Info column shows the label of the outermost `switch` Field's Subject value, as in §3.9: the one fewest structures and Fields of Types from the top level, first in layout order among them, never inside an array. When it is not read, the column keeps the transport's text.
 - The Protocol column always shows the short name (§3.3).
 
 ## 4. Expressions
@@ -435,7 +435,7 @@ Literals: decimal, `0x` hex (case-insensitive), `0b` binary, with `_` separators
 
 | Built-in | Value |
 |---|---|
-| `_offset` | Bytes from the start of the message: the packet, or the PDU under Framing. |
+| `_offset` | Bytes from the start of the message: the packet, or the Message under Framing. |
 | `_remaining` | Bytes left in the innermost enclosing structure with a known size, or else in the message. |
 
 New built-ins can only be added under the `_` prefix, which is why user names may not start with `_`.
@@ -446,7 +446,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 
 ### 5.1 Tree
 
-- The tree root shows the full name (§3.3). Each structure Field is a subtree, and each array element is its own subtree item (`items[0]`).
+- The tree root shows the full name (§3.3). Each structure Field is a subtree, and each array element is its own subtree item (`Items [0]`).
 - Padding is one "Padding" item. Hidden Fields are not shown, but the layer a `dissector:` hands their bytes to is (§3.10). Unmatched `switch` bytes are shown raw with an expert info note (§3.9).
 
 ### 5.2 Filter names
@@ -459,7 +459,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`, a `dissector:` naming no Dissector (§3.10) `<protocol>._undecoded.dissector`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
+- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, an array element that reads no bytes (§3.7) `<protocol>._malformed.empty_element`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`, a `dissector:` naming no dissector (§3.10) `<protocol>._undecoded.dissector`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 
@@ -508,7 +508,7 @@ Each stage reports **all** its errors, and the next stage runs only if the curre
 Errors:
 
 - `invalid-field-name`, `invalid-type-name` (§3.4.2);
-- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `invalid-bits`: `bits:` on anything but a fixed-size unsigned integer;
+- `missing-field-kind`, `conflicting-field-kind` (§3.4.3); `unexpected-length`: length keys on a fixed-size type; `missing-length`: none on `string`/`bytes`; `size:` on a timestamp; `invalid-bits`: `bits:` on anything but a fixed-size unsigned integer; `invalid-endian`: an `endian:` other than `big` or `little`, or on a Field of a Type or a `switch` Field (§3.5, §3.9, §3.11);
 - `incompatible-display`: a `display:` or `encoding:` value outside the matrices of §3.4.5–§3.4.6, or a value-mapping key, `expect:` or `dissector:` on a type that does not take it (§3.10);
 - `invalid-label`, `invalid-description` (§3.4.8); `invalid-unit` (§3.4.7);
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
@@ -522,7 +522,7 @@ Errors:
 - a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
 - `invalid-port`, `overlapping-ports`: invalid ports and port ranges (§3.12);
 - `invalid-protocol-name`, `invalid-protocol-title`;
-- `conflicting-filter-name`: two Fields reaching one filter path whose ProtoFields do not match (§3.4.9, §3.9);
+- `conflicting-filter-name`: two Fields reaching one filter name whose ProtoFields do not match (§3.4.9, §3.9);
 - unknown or duplicate keys, and the YAML subset violations of §3.1.
 
 Warnings:
@@ -530,7 +530,7 @@ Warnings:
 - `tcp-without-framing`;
 - `unused-type`, `unused-enum`;
 - `unreachable-value`: a `values:` key outside the Field type's range;
-- `unreachable-field`: a Field after a `repeat: to_end` array or a `size: "_remaining"` Field in the same structure;
+- `unreachable-field`: a Field or padding after a Field that always reads to the end of the message: a `repeat: to_end` array, a `size: "_remaining"` Field, or an inline structure, a Field of a Type or a `switch` Field whose every case always reads one of those. A Field under `if:` or an array with `count:` does not count, as it may read nothing;
 - `unreachable-expect`: an `expect:` that can never match (§3.10);
 - `protocol-name-taken`;
 - `unknown-allow`: an `allow:` entry that names no warning, either an unknown name or an error's (a warning so that a description allowing a warning from a newer minor still works).
@@ -811,7 +811,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 - **Examples**: three invented protocols in `examples/`, each also a corpus case. None clashes with a built-in protocol.
   1. *UDP telemetry*: fixed Fields, an enum, a bitfield, `info:`, port Registration. This is the book's tutorial.
   2. *TCP request/response*: length-based Framing, `switch` on a header Field, named Types, a length-prefixed string.
-  3. *Tagged records*: arrays until end, `if` Fields, padding and hidden Fields, `expect:` warnings, handoff to a built-in Dissector.
+  3. *Tagged records*: arrays until end, `if` Fields, padding and hidden Fields, `expect:` warnings, handoff to a built-in dissector.
 
   The old `example/example_dissector.json` is deleted.
 - **Installing a Dissector**: Wireshark's *Help → About → Folders → Personal Lua Plugins* and `tshark -G folders` are the authority; typical per-OS paths are shown only as examples. The chapter covers:
@@ -909,7 +909,7 @@ Not part of v1. Each item can come later as an additive (minor) change unless no
 - **Kaitai `.ksy` importer**.
 - **A JSON form of the description** for tools, or a second grammar front-end.
 - **Registration**: heuristic dissectors (which need recognition constraints first) and arbitrary dissector tables (ethertype, `sctp.ppi`, `ip.proto`, …), under `registration:`.
-- **Language**: repeat-until-condition (`repeat: { until: … }`), `align:`, delimiter-based Framing, runtime endianness, telling snaplen truncation apart from malformed packets, value-driven / dissector-table handoff, checksum verification, computed Fields, per-Type `info:`, Expression function calls, strings, `?:` and array indexing.
+- **Language**: repeat-until-condition (`repeat: { until: … }`), `align:`, delimiter-based Framing, runtime byte order, telling snaplen truncation apart from malformed packets, value-driven / dissector-table handoff, checksum verification, computed Fields, per-Type `info:`, Expression function calls, strings, `?:` and array indexing.
 - **Format keys**: `short_name:`, `description:`.
 - **Built-in types**: `char`, `framenum`, `protocol`, `none`, `ipx`, `oid`, `rel_oid`, `systemid`; signed bitfield sub-Fields.
 - **CLI**: `--diff` for `--check`, a `github` message format, per-name `--deny`, finer exit codes behind an opt-in flag, `generate_into` in the library, and package-manager distribution.

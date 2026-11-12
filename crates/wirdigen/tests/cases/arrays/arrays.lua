@@ -63,6 +63,21 @@ local function wd_evaluate(compute)
     error(value, 0)
 end
 
+-- Reporting of an array Element that reads no bytes (spec §3.7): under `repeat: to_end` it
+-- would repeat forever, so it stops the array. Like a truncation, it is a "Malformed" error.
+local function wd_expert_empty(filter_name)
+    return ProtoExpert.new(
+        filter_name .. "._malformed.empty_element",
+        "Malformed: empty element",
+        expert.group.MALFORMED,
+        expert.severity.ERROR
+    )
+end
+
+local function wd_empty(tree, expert_info, index, path)
+    tree:add_proto_expert_info(expert_info, "Malformed: empty element " .. index .. ": " .. path)
+end
+
 local wd_proto = Proto("arrays", "ARRAYS")
 
 local f_n = ProtoField.uint8("arrays.n", "N", base.DEC)
@@ -103,7 +118,8 @@ local site_points = {
 
 local wd_ei_truncated = wd_expert_truncated("arrays")
 local wd_ei_invalid = wd_expert_invalid("arrays")
-wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
+local wd_ei_empty = wd_expert_empty("arrays")
+wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty }
 
 -- Type: Point
 local function dissect_Point(tvb, pinfo, tree, offset, site)
@@ -136,7 +152,7 @@ local function dissect_Point(tvb, pinfo, tree, offset, site)
             offset = offset + 1
             tree:set_len(offset - start)
             if offset == start then
-                wd_invalid(tree, wd_ei_invalid, "element " .. i .. " is empty", site.path .. ".coords")
+                wd_empty(tree, wd_ei_empty, i, site.path .. ".coords")
                 return nil
             end
         end
@@ -197,7 +213,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             end
             tree:set_len(offset - start)
             if offset == start then
-                wd_invalid(tree, wd_ei_invalid, "element " .. i .. " is empty", "items")
+                wd_empty(tree, wd_ei_empty, i, "items")
                 return nil
             end
         end
@@ -215,7 +231,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             end
             tree:set_len(offset - start)
             if offset == start then
-                wd_invalid(tree, wd_ei_invalid, "element " .. i .. " is empty", "points")
+                wd_empty(tree, wd_ei_empty, i, "points")
                 return nil
             end
         end
@@ -251,7 +267,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             end
             tree:set_len(offset - start)
             if offset == start then
-                wd_invalid(tree, wd_ei_invalid, "element " .. i .. " is empty", "chunks")
+                wd_empty(tree, wd_ei_empty, i, "chunks")
                 return nil
             end
             i = i + 1

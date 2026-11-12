@@ -1,5 +1,5 @@
 # Static handoff (spec §3.10): `dissector:` passes the bytes of a `bytes` Field to a Wireshark
-# Dissector by name. Its layer follows the Field's item, in the same structure, even when the
+# dissector by name. Its layer follows the Field's item, in the same structure, even when the
 # Field is hidden. A name Wireshark does not know is an expert info warning, never a Lua error.
 name: handoff
 fields:

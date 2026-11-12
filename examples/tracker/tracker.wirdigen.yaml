@@ -8,7 +8,7 @@
 #
 # Records follow up to the end of the datagram. Each is a tag, the length of its value, the
 # value, then zero bytes up to a multiple of 4. A manifest record is JSON, handed to Wireshark's
-# own JSON Dissector.
+# own JSON dissector.
 name: tracker
 title: Asset Tracker
 registration:

@@ -8,7 +8,7 @@ says it is there with [`if:`](reference/conditionals.md#if), skips filler bytes 
 [Padding](reference/fields.md#padding), keeps bookkeeping Fields out of the tree with
 [`hidden:`](reference/fields.md#hidden), warns about values the protocol never sends with
 [`expect:`](reference/fields.md#expect), and makes a Handoff of JSON to Wireshark's own
-Dissector with [`dissector:`](reference/fields.md#dissector).
+dissector with [`dissector:`](reference/fields.md#dissector).
 
 The finished description and its sample packets are in the repository under
 [`examples/tracker/`](https://github.com/Cerclique/wirdigen/tree/main/examples/tracker). To run
@@ -170,10 +170,10 @@ fields:
 so `magic` is hidden and still checked. Every warning is filtered as
 `tracker._protocol.unexpected`. See [Expected values](reference/fields.md#expect).
 
-## Handoff to Wireshark's JSON Dissector {#handoff}
+## Handoff to Wireshark's JSON dissector {#handoff}
 
 A Manifest is JSON, which Wireshark already knows how to show. `dissector:` on a `bytes` Field
-makes a Handoff: it passes the Field's bytes to a Dissector by name, here `json`, whose tree
+makes a Handoff: it passes the Field's bytes to a dissector by name, here `json`, whose tree
 goes right after the Field's item:
 
 ```yaml
@@ -183,9 +183,9 @@ fields:
   - { name: manifest, type: bytes, size: length, dissector: json }
 ```
 
-The name is the one Wireshark registers the Dissector under. A name Wireshark does not know is
+The name is the one Wireshark registers the dissector under. A name Wireshark does not know is
 a warning on the packet, not an error, and the dissection goes on. See
-[Handing bytes to another Dissector](reference/fields.md#dissector).
+[Handing bytes to another dissector](reference/fields.md#dissector).
 
 ## The complete description {#complete}
 
@@ -202,7 +202,7 @@ Put together, with the Info column showing the asset, the port and a few `descri
 #
 # Records follow up to the end of the datagram. Each is a tag, the length of its value, the
 # value, then zero bytes up to a multiple of 4. A manifest record is JSON, handed to Wireshark's
-# own JSON Dissector.
+# own JSON dissector.
 name: tracker
 title: Asset Tracker
 registration:
@@ -278,7 +278,7 @@ $ tshark -X lua_script:tracker.lua -r tracker.pcapng
 
 The first datagram has every kind of record. `Trip` is there because `On trip` is set, `Magic`
 and the lengths are hidden, each record ends with its padding, and the Manifest's bytes are
-followed by the JSON Dissector's own tree:
+followed by the JSON dissector's own tree:
 
 ```text
 $ tshark -X lua_script:tracker.lua -r tracker.pcapng -O tracker,json
