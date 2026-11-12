@@ -4,3 +4,7 @@
 0000  01 04 07 09 02 03 05
 # kind=2 other=5, then kind=1 code=8 note=10
 0000  02 03 05 01 04 08 0a
+# kind=2 other=5, then the first 3 of the 4 bytes of kind=1 code=11 note=12
+0000  02 03 05 01 04 0b
+# the last byte of kind=1 code=11 note=12, then kind=2 other=6
+0000  0c 02 03 06

@@ -363,6 +363,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     local before = wd_info_counts({ x_kind, x_seq, x_flags__urgent, x_flags__prio, x_body__user, x_note, x_hdr__len, x_addr, x_big, x_ok, x_secret })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO")
     dissect_top(tvb, pinfo, root, 0)
+    pinfo.cols.info:clear_fence()
     pinfo.cols.info = wd_info_label(x_kind, before, names_kind) .. " #" .. wd_info_display(x_seq, before) .. " [" .. wd_info_display(x_flags__urgent, before) .. " " .. wd_info_label(x_flags__prio, before, names_flags__prio) .. "] {" .. (wd_info_cases["body"] or "") .. "} user=" .. wd_info_display(x_body__user, before) .. " note=" .. wd_info_display(x_note, before) .. " " .. wd_info_display(x_hdr__len, before) .. " from " .. wd_info_display(x_addr, before) .. " " .. wd_info_label(x_big, before, names_big) .. " ok=" .. wd_info_display(x_ok, before) .. " " .. wd_info_display(x_secret, before)
     return tvb:len()
 end

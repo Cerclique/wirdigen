@@ -221,6 +221,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     local before = wd_info_counts({ x_sensor, x_reading, x_node, x_seq })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "Sensor Telemetry")
     dissect_top(tvb, pinfo, root, 0)
+    pinfo.cols.info:clear_fence()
     pinfo.cols.info = wd_info_label(x_sensor, before, names_sensor) .. " " .. wd_info_display(x_reading, before) .. " from node " .. wd_info_display(x_node, before) .. ", seq " .. wd_info_display(x_seq, before)
     return tvb:len()
 end

@@ -1,5 +1,5 @@
 Get #1: temp
-Put #2: colorDelete #3: temp
+Delete #3: temp
 Done #3: Not found
 127 #4: 
 Get #5: 

@@ -527,6 +527,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     local before = wd_info_counts({ x_asset })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "Asset Tracker")
     dissect_top(tvb, pinfo, root, 0)
+    pinfo.cols.info:clear_fence()
     pinfo.cols.info = "Asset " .. wd_info_display(x_asset, before)
     return tvb:len()
 end
