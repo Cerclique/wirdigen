@@ -14,6 +14,10 @@ keywords = ["wireshark", "dissector", "lua"]
 
 [workspace.dependencies]
 wirdigen = { version = "=1.0.0-alpha.0", path = "crates/wirdigen" }
+# The CLI's build script and tests use these too, so one pin each keeps them in step.
+clap = { version = "4.6.7", features = ["derive"] }
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

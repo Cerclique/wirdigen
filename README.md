@@ -21,7 +21,15 @@ cargo install --locked wirdigen-cli
 ```
 
 Wirdigen 1.0 is in pre-release: name one to install it, as in
-`--version 1.0.0-alpha.0`. To use the generated Dissectors you need
+`--version 1.0.0-alpha.0`.
+
+Each [GitHub Release](https://github.com/Cerclique/wirdigen/releases) also has
+prebuilt binaries for Linux (x86_64, aarch64), macOS (Apple silicon, Intel) and
+Windows (x86_64). Each archive includes shell completions and man pages, and
+`cargo binstall wirdigen-cli` installs from them. The JSON Schema for
+`*.wirdigen.yaml` is attached as `wirdigen.schema.json`.
+
+To use the generated Dissectors you need
 [Wireshark](https://www.wireshark.org/) 4.4 or later.
 
 ## Quickstart

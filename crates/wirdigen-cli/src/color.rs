@@ -2,17 +2,7 @@
 
 use std::ffi::OsStr;
 
-/// The `--color` flag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-pub enum ColorChoice {
-    /// Colour when stderr is a terminal, unless `NO_COLOR` or `CLICOLOR_FORCE` says otherwise.
-    #[default]
-    Auto,
-    /// Always colour.
-    Always,
-    /// Never colour.
-    Never,
-}
+use crate::cli::ColorChoice;
 
 /// Decides colour from the flag, then `NO_COLOR`, then `CLICOLOR_FORCE`, then the terminal.
 pub fn use_color(
