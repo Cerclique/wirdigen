@@ -1,0 +1,16 @@
+# The segments of one TCP connection to port 47200: requests, then the server's replies.
+#
+# Segment 1: Get #1 key "temp", then the first 10 of the 20 bytes of Put #2.
+0000  01 01 00 05 00 00 00 01 04 74 65 6d 70 01 02 00
+0010  0c 00 00 00 02 05 63
+# Segment 2: the rest of Put #2 key "color" value "teal", then Delete #3 key "temp".
+0000  6f 6c 6f 72 00 04 74 65 61 6c 01 03 00 05 00 00
+0010  00 03 04 74 65 6d 70
+# Segment 3: three replies, Value #1 Ok "21.5", Done #2 Ok and Done #3 Not found.
+0000  01 81 00 07 00 00 00 01 00 00 04 32 31 2e 35 01
+0010  82 00 01 00 00 00 02 00 01 82 00 01 00 00 00 03
+0020  01
+# Segment 4: op 0x7f, which the description does not know: its body is shown as data.
+0000  01 7f 00 03 00 00 00 04 de ad be
+# Segment 5: Get #5 whose key claims 9 bytes in a 4-byte body, so the Message is Malformed.
+0000  01 01 00 04 00 00 00 05 09 6b 65 79

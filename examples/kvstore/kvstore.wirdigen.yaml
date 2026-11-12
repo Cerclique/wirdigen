@@ -1,0 +1,63 @@
+# Key-Value Store, an invented protocol: the book's TCP request/response example.
+#
+# A client sends requests to a server on TCP port 47200, which answers each one. Every Message,
+# request or reply, starts with the same 8-byte header, big-endian:
+#
+#   version  op  length  request_id
+#   1        1   2       4
+#
+# then `length` bytes of body, whose layout depends on `op`. Strings carry their length before
+# them: a uint8 for a key, a uint16 for a value.
+name: kvstore
+title: Key-Value Store
+registration:
+  ports:
+    tcp: [47200]
+framing:
+  header: 4
+  length: "length + 8"
+info: "{op} #{request_id}: {body.key}{body.status}"
+fields:
+  - { name: version, type: uint8 }
+  - { name: op, type: uint8, display: hex, values: Op }
+  - { name: length, type: uint16, description: "Size of the body, after the header" }
+  - { name: request_id, type: uint32, description: "Pairs a reply with its request" }
+  - name: body
+    switch: op
+    cases:
+      0x01: Get
+      0x02: Put
+      0x03: Delete
+      0x81: Value
+      0x82: Done
+    default:
+      - { name: data, type: bytes, size: "_remaining" }
+types:
+  Get:
+    fields:
+      - { name: key, type: string, prefix: uint8 }
+  Put:
+    fields:
+      - { name: key, type: string, prefix: uint8 }
+      - { name: value, type: string, prefix: uint16 }
+  Delete:
+    fields:
+      - { name: key, type: string, prefix: uint8 }
+  Value:
+    fields:
+      - { name: status, type: uint8, values: Status }
+      - { name: value, type: string, prefix: uint16 }
+  Done:
+    fields:
+      - { name: status, type: uint8, values: Status }
+enums:
+  Op:
+    0x01: Get
+    0x02: Put
+    0x03: Delete
+    0x81: Value
+    0x82: Done
+  Status:
+    0: Ok
+    1: Not found
+    2: Error
