@@ -19,7 +19,7 @@ use crate::placement::{Input, Output, Placement};
 
 /// Generate Wireshark Lua dissectors from YAML protocol descriptions.
 #[derive(Parser)]
-#[command(name = "wirdigen", version)]
+#[command(name = "wirdigen", bin_name = "wirdigen", version)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

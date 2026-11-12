@@ -6,7 +6,7 @@ stdout = ""
 stderr = """
 error: the argument '--quiet' cannot be used with '--verbose'
 
-Usage: wirdigen[EXE] validate --quiet <INPUTS>...
+Usage: wirdigen validate --quiet <INPUTS>...
 
 For more information, try '--help'.
 """
