@@ -113,7 +113,7 @@ fn goldens() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
+    use proptest::test_runner::TestCaseError;
 
     use super::*;
     use crate::{prelude, random};
@@ -144,22 +144,22 @@ mod tests {
         }
     }
 
-    proptest! {
-        #![proptest_config(random::config())]
-
-        /// The Dissector of a random valid description (spec §10.7) compiles under every Lua,
-        /// as the goldens do.
-        #[test]
-        fn random_dissectors_compile_under_every_lua(description in random::description()) {
-            if enabled() {
-                let source = crate::Source::new("random.wirdigen.yaml", description.0.as_str());
-                let lua = crate::validate(&source).map_err(|d| TestCaseError::fail(d.to_string()))?.generate();
-                for interpreter in EVERY_LUA {
-                    check(interpreter, Mode::Compile, "random.lua", &lua)
-                        .map_err(|e| TestCaseError::fail(format!("{}: {e}", interpreter.binary)))?;
-                }
-            }
+    /// The Dissector of a random valid description (spec §10.7) compiles under every Lua,
+    /// as the goldens do.
+    #[test]
+    fn random_dissectors_compile_under_every_lua() {
+        if !enabled() {
+            return;
         }
+        random::check(|text| {
+            let source = crate::Source::new("random.wirdigen.yaml", text);
+            let lua = crate::validate(&source).map_err(|d| TestCaseError::fail(d.to_string()))?.generate();
+            for interpreter in EVERY_LUA {
+                check(interpreter, Mode::Compile, "random.lua", &lua)
+                    .map_err(|e| TestCaseError::fail(format!("{}: {e}", interpreter.binary)))?;
+            }
+            Ok(())
+        });
     }
 
     #[test]

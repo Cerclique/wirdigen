@@ -16,13 +16,13 @@ use std::fmt;
 
 use proptest::prelude::*;
 use proptest::sample::Index;
-use proptest::test_runner::Config;
+use proptest::test_runner::{Config, TestRunner};
 
 use crate::expr::{self, BinaryOp, Expr, ExprKind, Spanned, UnaryOp};
 
 /// A rendered description. Its `Debug` is the YAML itself, so a failing case reads as a file.
 #[derive(Clone)]
-pub(crate) struct DescriptionText(pub(crate) String);
+struct DescriptionText(String);
 
 impl fmt::Debug for DescriptionText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -32,12 +32,31 @@ impl fmt::Debug for DescriptionText {
 
 /// No regression files: shrunk failures become corpus cases (see the module docs). The case count
 /// stays the default, which `PROPTEST_CASES` overrides.
-pub(crate) fn config() -> Config {
+fn config() -> Config {
     Config { failure_persistence: None, ..Config::default() }
 }
 
+/// The stack of the thread drawing descriptions: their nested shapes go deeper than a test
+/// thread's default stack holds on every OS (Windows' debug frames are the largest).
+const STACK: usize = 64 * 1024 * 1024;
+
+/// Runs `property` on random valid descriptions, by their YAML text, and panics with the
+/// smallest failing description it finds.
+pub(crate) fn check(property: impl Fn(&str) -> Result<(), TestCaseError> + Send + 'static) {
+    let outcome = deep_stack(move || TestRunner::new(config()).run(&description(), |text| property(&text.0)));
+    if let Err(error) = outcome {
+        panic!("{error}");
+    }
+}
+
+/// Runs `f` on a thread with a stack deep enough for the strategy, passing on its panic.
+fn deep_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let thread = std::thread::Builder::new().stack_size(STACK).spawn(f).expect("a thread can be spawned");
+    thread.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
 /// A random valid Protocol Description.
-pub(crate) fn description() -> impl Strategy<Value = DescriptionText> {
+fn description() -> impl Strategy<Value = DescriptionText> {
     shape().prop_map(|shape| DescriptionText(render(&shape)))
 }
 
@@ -1198,47 +1217,48 @@ fn binary(op: BinaryOp, left: Expr, right: Expr) -> Expr {
 #[cfg(test)]
 mod tests {
     use proptest::strategy::ValueTree;
-    use proptest::test_runner::TestRunner;
 
     use super::*;
     use crate::source::Source;
     use crate::{RenderOptions, yaml};
 
-    proptest! {
-        #![proptest_config(config())]
-
-        /// `validate` accepts every description, and generation gives the same bytes from
-        /// either of two validations.
-        #[test]
-        fn validate_accepts_them_and_generation_is_deterministic(description in description()) {
-            let source = Source::new("random.wirdigen.yaml", description.0.as_str());
+    /// `validate` accepts every description, and generation gives the same bytes twice.
+    #[test]
+    fn validate_accepts_them_and_generation_is_deterministic() {
+        check(|text| {
+            let source = Source::new("random.wirdigen.yaml", text);
             let generate = || match crate::validate(&source) {
                 Ok(valid) => Ok(valid.generate()),
                 Err(diagnostics) => Err(TestCaseError::fail(diagnostics.render(&source, &RenderOptions::default()))),
             };
             let lua = generate()?;
             prop_assert!(lua == generate()?, "two generations differ");
-        }
+            Ok(())
+        });
+    }
 
-        /// The JSON Schema accepts every description (spec §6.5).
-        #[test]
-        fn the_schema_accepts_them(description in description()) {
+    /// The JSON Schema accepts every description (spec §6.5).
+    #[test]
+    fn the_schema_accepts_them() {
+        check(|text| {
             let validator = crate::schema::testing::validator();
-            let root = yaml::parse(&description.0).expect("valid YAML").expect("not empty");
+            let root = yaml::parse(text).expect("valid YAML").expect("not empty");
             let instance = crate::schema::testing::to_json(&root);
             let errors: Vec<String> =
                 validator.iter_errors(&instance).map(|e| format!("{e} at {}", e.instance_path())).collect();
             prop_assert!(errors.is_empty(), "{}", errors.join("\n"));
-        }
+            Ok(())
+        });
     }
 
     /// Every construct of the v1 language turns up among a few hundred descriptions.
     #[test]
     fn the_strategy_covers_the_language() {
-        let mut runner = TestRunner::deterministic();
-        let strategy = description();
-        let texts: Vec<String> =
-            (0..300).map(|_| strategy.new_tree(&mut runner).expect("a description").current().0).collect();
+        let texts: Vec<String> = deep_stack(|| {
+            let mut runner = TestRunner::deterministic();
+            let strategy = description();
+            (0..300).map(|_| strategy.new_tree(&mut runner).expect("a description").current().0).collect()
+        });
         let missing: Vec<&str> = [
             "title:",
             "registration:",
