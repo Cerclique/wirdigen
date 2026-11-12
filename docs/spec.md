@@ -4,7 +4,7 @@
 
 This document describes Wirdigen v1: the Protocol Description format, the Dissectors it produces, the architecture, the library API, the CLI, the test strategy, the documentation and the release process. It is the destination of the [Wirdigen v1 spec](https://github.com/Cerclique/wirdigen/issues/8) map and the input for breaking v1 into implementation tickets.
 
-It decides nothing new. Every rule here comes from a closed ticket of that map or from an ADR in [`docs/adr/`](adr/), which holds the reasoning and the rejected options. Where the two seem to disagree, the ADR is right and this document has a bug. Terms in **bold capitals** (Protocol Description, Field, Type, …) are defined in [`GLOSSARY.md`](../GLOSSARY.md).
+It decides nothing new. Every rule here comes from a closed ticket of that map or from an ADR in [`docs/adr/`](adr/), which holds the reasoning and the rejected options. Where the two seem to disagree, the ADR is right and this document has a bug. Terms in **bold capitals** (Protocol Description, Field, Type, …) are defined in [`GLOSSARY.md`](GLOSSARY.md).
 
 ## Contents
 
@@ -41,7 +41,7 @@ A WASM/npm surface comes after v1, as a third crate on top of the library (§14)
 
 ## 2. Domain model
 
-The domain terms (Protocol Description, Field, Structure, Type, Switch, Case, Message, Framing and the rest) are defined in [`GLOSSARY.md`](../GLOSSARY.md), the single source for their meaning; this spec uses them as defined there.
+The domain terms (Protocol Description, Field, Structure, Type, Switch, Case, Message, Framing and the rest) are defined in [`GLOSSARY.md`](GLOSSARY.md), the single source for their meaning; this spec uses them as defined there.
 
 There is no `messages:` key: a protocol with several kinds of Message is a `switch` whose Cases use Types (§3.9).
 
@@ -827,7 +827,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 - **Diagnostics index**: one page with an anchor per Diagnostic name: its severity, meaning, a CI-checked triggering snippet, and how to fix or `allow:` it. A test fails if a Diagnostic lacks an entry or vice versa.
 - **docs.rs**: crate docs with a runnable doctest (`Source` → `validate` → `generate`, plus rendering Diagnostics), short notes on semver scope and the I/O-free design, and a link to the book for the format.
 - **Changelog**: git-cliff after a hand-written first v1 entry ("rewrite, no compatibility with 0.3"). PRs that add a warning use the commit scope `diagnostics`, grouped under **"New warnings"**.
-- **`CONTRIBUTING.md`** at the repo root, short: test layers and their setup, adding a corpus case and re-blessing goldens, the PR title convention including the `diagnostics` scope, and pointers to `GLOSSARY.md` and `docs/adr/`. It is not part of the book.
+- **`docs/CONTRIBUTING.md`**, short: test layers and their setup, adding a corpus case and re-blessing goldens, the PR title convention including the `diagnostics` scope, and pointers to `GLOSSARY.md` and `docs/adr/`. It is not part of the book.
 - **Repository docs**: `docs/SECURITY.md` (private vulnerability reporting on) and `docs/CODE_OF_CONDUCT.md`.
 - **Issue forms**: the bug report asks for the Wirdigen, Wireshark and OS versions and the Protocol Description.
 
