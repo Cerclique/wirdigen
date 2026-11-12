@@ -461,21 +461,19 @@ fn unique<'a>(names: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
     seen
 }
 
+/// What the tests checking that the schema accepts every valid description (spec §6.5) share:
+/// the JSON an editor sees for a description, and a validator of the schema.
 #[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
+pub(crate) mod testing {
     use serde_json::Value as Json;
 
     use super::json_schema;
     use crate::scalar::{Kind, parse_int, resolve_plain};
-    use crate::source::Source;
-    use crate::yaml::{self, Node, Value};
+    use crate::yaml::{Node, Value};
 
     /// The JSON an editor sees for a YAML node, resolving plain scalars as YAML 1.2's core schema
     /// does. Mapping keys are always strings in JSON.
-    fn to_json(node: &Node) -> Json {
+    pub(crate) fn to_json(node: &Node) -> Json {
         match &node.value {
             Value::Scalar { text, plain: false, .. } => Json::String(text.clone()),
             Value::Scalar { text, plain: true, .. } => match resolve_plain(text) {
@@ -508,6 +506,25 @@ mod tests {
         }
     }
 
+    /// A draft-07 validator of the schema.
+    pub(crate) fn validator() -> jsonschema::Validator {
+        let schema: Json = serde_json::from_str(&json_schema()).expect("the schema is JSON");
+        jsonschema::draft7::new(&schema).expect("the schema is a valid draft-07 schema")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use serde_json::Value as Json;
+
+    use super::json_schema;
+    use super::testing::{to_json, validator};
+    use crate::source::Source;
+    use crate::yaml;
+
     fn descriptions(dir: &Path, found: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
             let path = entry.expect("a directory entry").path();
@@ -525,7 +542,7 @@ mod tests {
 
     #[test]
     fn every_valid_description_passes_the_schema() {
-        let validator = jsonschema::draft7::new(&schema()).expect("the schema is a valid draft-07 schema");
+        let validator = validator();
         let mut files = Vec::new();
         descriptions(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"), &mut files);
         let mut checked = 0;
@@ -580,7 +597,7 @@ mod tests {
 
     #[test]
     fn framing_needs_a_header_and_a_length_and_nothing_else() {
-        let validator = jsonschema::draft7::new(&schema()).expect("a draft-07 schema");
+        let validator = validator();
         let passes = |framing: &str| {
             let text = format!("name: demo\nframing: {framing}\nfields:\n  - {{ name: len, type: uint32 }}\n");
             validator.is_valid(&to_json(&yaml::parse(&text).expect("valid YAML").expect("not empty")))

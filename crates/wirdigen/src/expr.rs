@@ -58,7 +58,7 @@ pub(crate) enum Builtin {
 
 impl Builtin {
     /// Every built-in, for the note of an unknown one and for tests.
-    const ALL: [Self; 2] = [Self::Offset, Self::Remaining];
+    pub(crate) const ALL: [Self; 2] = [Self::Offset, Self::Remaining];
 
     /// The name as written, `_` included.
     pub(crate) const fn as_str(self) -> &'static str {
@@ -115,8 +115,8 @@ pub(crate) enum BinaryOp {
 }
 
 impl BinaryOp {
-    /// Every binary operator, for the lexer.
-    const ALL: [Self; 18] = [
+    /// Every binary operator, for the lexer and for tests.
+    pub(crate) const ALL: [Self; 18] = [
         Self::Mul,
         Self::Div,
         Self::Rem,
