@@ -19,7 +19,7 @@ A PR that adds a warning must use the `diagnostics` scope in its title, for exam
 2. Generate the entry: `git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`. Check the diff: the new section must be dated and sit under the file header.
 3. Open a PR titled `chore: release vX.Y.Z`.
 4. Once merged, tag the merge commit `vX.Y.Z` and push the tag.
-5. `release.yml` verifies that the tag matches the manifest version and that `CHANGELOG.md` has a dated section, publishes to crates.io, drafts the GitHub Release (`--prerelease` for `-alpha`/`-beta`/`-rc`), attaches binaries, completions, man pages and the JSON Schema, then publishes the Release.
+5. `release.yml` verifies that the tag matches the manifest version and that `CHANGELOG.md` has a dated section, publishes to crates.io, drafts the GitHub Release (`--prerelease` for `-alpha`/`-beta`/`-rc`), attaches binaries (with completions and man pages, SHA-256 checksums and build provenance) and the JSON Schema, then publishes the Release. A failed binary job leaves the Release as a draft: rerun the failed jobs, which reuse the draft and overwrite its assets.
 
 ## First v1 entry
 

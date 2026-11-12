@@ -63,7 +63,8 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-  release:
+  # A draft until every asset is attached, so a failed build never leaves a partial Release public.
+  draft:
     needs: [verify, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -90,7 +91,103 @@ jobs:
           fi
           gh release create "$TAG" --draft --verify-tag --title "$TAG" \
             --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
-      # Binaries, completions, man pages and the JSON Schema are attached here
-      # once their jobs exist (spec §12.4 step 4).
+
+  # The completions and man pages that build.rs writes into OUT_DIR, and the JSON Schema. They do
+  # not depend on the target, so one host build serves every archive.
+  cli-assets:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No Swatinem/rust-cache, as for the published crates: release assets build from a clean tree.
+      - name: Build the CLI and collect its assets
+        run: |
+          out_dir="$(cargo build -p wirdigen-cli --locked --message-format=json \
+            | jq -r 'select(.reason == "build-script-executed" and (.package_id | test("wirdigen-cli"))) | .out_dir')"
+          mkdir dist
+          cp -r "$out_dir/completions" "$out_dir/man" dist/
+          target/debug/wirdigen schema -o dist/wirdigen.schema.json
+          find dist -type f | sort
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-assets
+          path: dist
+          if-no-files-found: error
+
+  binaries:
+    needs: [draft, cli-assets]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write # upload the archives to the draft Release
+      id-token: write # build provenance
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Workspace-relative, as `include` below is copied by the action's bash on every runner.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-assets
+          path: cli-assets
+      # The action builds the Linux musl targets with cross; installing it here skips a `cargo install`.
+      - if: runner.os == 'Linux'
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cross
+      # No Swatinem/rust-cache: release binaries build from a clean tree, like the published crates.
+      # The archive name is the one `[package.metadata.binstall]` in crates/wirdigen-cli/Cargo.toml expects.
+      - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        id: upload
+        with:
+          bin: wirdigen
+          package: wirdigen-cli
+          target: ${{ matrix.target }}
+          archive: wirdigen-$target
+          include: LICENSE,README.md,cli-assets/completions,cli-assets/man
+          checksum: sha256
+          locked: true
+          token: ${{ github.token }}
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.upload.outputs.tar || steps.upload.outputs.zip }}
+
+  release:
+    needs: [draft, binaries, cli-assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-assets
+          path: ${{ runner.temp }}/cli-assets
+      - name: Attach the JSON Schema
+        run: gh release upload "$TAG" "$RUNNER_TEMP/cli-assets/wirdigen.schema.json" --clobber
       - name: Publish the GitHub Release
         run: gh release edit "$TAG" --draft=false
