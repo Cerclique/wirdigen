@@ -1,12 +1,12 @@
 # Contributing to Wirdigen
 
 Thanks for helping. This page covers what you need to change the code: the test layers, the
-corpus, and how pull requests are titled. The user guide is the [book](book/src/introduction.md);
-the full design is in [`docs/spec.md`](docs/spec.md).
+corpus, and how pull requests are titled. The user guide is the [book](../book/src/introduction.md);
+the full design is in [`docs/spec.md`](spec.md).
 
 Before you start, read [`GLOSSARY.md`](GLOSSARY.md) for the project's terms (Protocol
 Description, Field, Dissector, Diagnostic, …) and use them as written. The decisions behind the
-design are recorded as ADRs in [`docs/adr/`](docs/adr/). A change that goes against one needs a
+design are recorded as ADRs in [`docs/adr/`](adr/). A change that goes against one needs a
 new ADR, not just a code change.
 
 ## Setup
@@ -26,14 +26,14 @@ new ADR, not just a code change.
 | Dissectors in real tshark (spec §10.5, §10.6) | `make test-tshark` | `tshark` and `text2pcap` from Wireshark ≥ 4.4, as a non-root user |
 
 `make test` is plain `cargo test` and needs no tools beyond Rust. Dissector behaviour is tested only in
-real tshark ([ADR 0011](docs/adr/0011-dissectors-tested-in-real-tshark.md)); there is no mock of
+real tshark ([ADR 0011](adr/0011-dissectors-tested-in-real-tshark.md)); there is no mock of
 Wireshark's Lua API.
 
 The Lua and tshark tests are gated by `WIRDIGEN_LUA=1` and `WIRDIGEN_TSHARK=1`, which the make
 targets set. With the variable set, a missing tool fails the tests rather than skipping them.
 tshark ignores `-X lua_script` as root, so don't run the tshark layer as root.
 
-Without the tools, run both layers in Docker; [`docker/README.md`](docker/README.md) has the
+Without the tools, run both layers in Docker; [`docker/README.md`](../docker/README.md) has the
 details:
 
 ```sh
@@ -68,7 +68,7 @@ next to a hand-written `<case>.expected` that holds one `severity name line:col-
 line and no message text. A new Diagnostic also needs:
 
 - a directory of its own, with an `allowed` case for a warning;
-- an entry in the book's [Diagnostics index](book/src/diagnostics.md).
+- an entry in the book's [Diagnostics index](../book/src/diagnostics.md).
 
 Tests check both.
 
@@ -90,7 +90,7 @@ Both versions must produce the same `dissected.json`. When they can't, a
 request.
 
 The CLI's `help` case is also the copy of `wirdigen --help` in the book's
-[CLI chapter](book/src/cli.md), so re-bless it when you change a flag.
+[CLI chapter](../book/src/cli.md), so re-bless it when you change a flag.
 
 ## Pull request titles
 
@@ -106,7 +106,7 @@ docs: CLI chapter and JSON Lines contract (#87)
 
 - `feat`, `fix`, `perf`, `docs` and `refactor` appear in the changelog. `build`, `ci`, `test`,
   `style` and `chore` don't.
-- Use `!` for a breaking change, such as `feat!: …`. [ADR 0001](docs/adr/0001-semver-scope.md)
+- Use `!` for a breaking change, such as `feat!: …`. [ADR 0001](adr/0001-semver-scope.md)
   defines what counts as breaking.
 - **A pull request that adds a warning must use the `diagnostics` scope**, such as
   `feat(diagnostics): warn on shadowed fields`. These go under **New warnings** in the
@@ -114,10 +114,10 @@ docs: CLI chapter and JSON Lines contract (#87)
   passes `--deny-warnings`.
 - Reference the issue the pull request resolves, as in `(#151)`.
 
-[`docs/releasing.md`](docs/releasing.md) has the full mapping from commits to changelog groups.
+[`docs/releasing.md`](releasing.md) has the full mapping from commits to changelog groups.
 
 ## Reporting
 
 - Bugs and feature requests: [open an issue](https://github.com/Cerclique/wirdigen/issues/new/choose).
-- Security issues: report them privately, as described in [`docs/SECURITY.md`](docs/SECURITY.md).
-- Everyone taking part follows the [Code of Conduct](docs/CODE_OF_CONDUCT.md).
+- Security issues: report them privately, as described in [`docs/SECURITY.md`](SECURITY.md).
+- Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).

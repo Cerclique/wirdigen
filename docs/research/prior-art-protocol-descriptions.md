@@ -2,7 +2,7 @@
 
 Research for issue #9. Question: which declarative formats and tools describe binary protocols or generate Wireshark dissectors, what can they express, how healthy are they, and what should Wirdigen adopt, extend or borrow?
 
-Maintenance facts are as of 2026-11-07, taken from the GitHub/GitLab APIs and project pages unless stated otherwise. Terms (Protocol Description, Field, Dissector) follow `GLOSSARY.md`.
+Maintenance facts are as of 2026-11-07, taken from the GitHub/GitLab APIs and project pages unless stated otherwise. Terms (Protocol Description, Field, Dissector) follow `docs/GLOSSARY.md`.
 
 ## Baseline: where Wirdigen is today
 

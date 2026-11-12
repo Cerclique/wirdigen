@@ -1,6 +1,6 @@
 # Wirdigen defines its own Protocol Description format
 
-The Protocol Description format is Wirdigen's own; it does not adopt or extend Kaitai Struct, PDL or wsgd. It borrows their *concepts* (sequential layout, size and count references, repetition, conditionals and switches, enums, bitfields, message switching on a header value, value constraints, inheritance with constraints) but not their keywords or document shape: constructs are named in Wirdigen's own vocabulary, aligned with `GLOSSARY.md` and Wireshark's terms. ADR 0001 promises that the format is stable across a major version, which Wirdigen can only promise for a format it owns, and none of the existing formats has a place for Wireshark concerns such as registration, display bases, value strings or Decode As.
+The Protocol Description format is Wirdigen's own; it does not adopt or extend Kaitai Struct, PDL or wsgd. It borrows their *concepts* (sequential layout, size and count references, repetition, conditionals and switches, enums, bitfields, message switching on a header value, value constraints, inheritance with constraints) but not their keywords or document shape: constructs are named in Wirdigen's own vocabulary, aligned with `docs/GLOSSARY.md` and Wireshark's terms. ADR 0001 promises that the format is stable across a major version, which Wirdigen can only promise for a format it owns, and none of the existing formats has a place for Wireshark concerns such as registration, display bases, value strings or Decode As.
 
 ## Consequences
 
