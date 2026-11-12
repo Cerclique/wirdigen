@@ -274,11 +274,7 @@ fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
             set_info(w, &text);
         }
         Info::Case(path) => {
-            w.block(
-                &format!("if {} then", case(path)),
-                |w| set_info(w, &case(path)),
-                "end",
-            );
+            w.block(&format!("if {} then", case(path)), |w| set_info(w, &case(path)), "end");
         }
     }
 }
