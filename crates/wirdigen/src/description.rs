@@ -14,6 +14,9 @@ use crate::registration::{self, Ports, RawRegistration};
 use crate::types::{self, NamedType, RawType};
 use crate::yaml::{Node, Value};
 
+/// The shortest protocol name Wireshark registers: it refuses one-character filter names
+/// (spec §3.3, ADR 0014).
+pub(crate) const MIN_NAME_LEN: usize = 2;
 /// The longest protocol name Wireshark filters accept here (spec §3.3, ADR 0014).
 pub(crate) const MAX_NAME_LEN: usize = 32;
 
@@ -158,7 +161,10 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
                 format!("`{}` is not a valid protocol name", name.value),
             )
             .with_note(
-                format!("a name is a lowercase letter then lowercase letters, digits, `_` or `-`, at most {MAX_NAME_LEN} characters"),
+                format!(
+                    "a name is a lowercase letter then lowercase letters, digits, `_` or `-`, \
+                     {MIN_NAME_LEN} to {MAX_NAME_LEN} characters"
+                ),
                 None,
             ),
         );
@@ -215,7 +221,7 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
 
 fn is_protocol_name(name: &str) -> bool {
     let mut chars = name.chars();
-    name.len() <= MAX_NAME_LEN
+    (MIN_NAME_LEN..=MAX_NAME_LEN).contains(&name.len())
         && chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }

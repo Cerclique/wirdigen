@@ -12,7 +12,7 @@ stderr = """
 \u001B[1m\u001B[94m1\u001B[0m \u001B[1m\u001B[94m|\u001B[0m name: Demo
   \u001B[1m\u001B[94m|\u001B[0m       \u001B[1m\u001B[91m^^^^\u001B[0m
   \u001B[1m\u001B[94m|\u001B[0m
-  \u001B[1m\u001B[94m= \u001B[0m\u001B[1mnote\u001B[0m: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, at most 32 characters
+  \u001B[1m\u001B[94m= \u001B[0m\u001B[1mnote\u001B[0m: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, 2 to 32 characters
   \u001B[1m\u001B[94m= \u001B[0m\u001B[1mnote\u001B[0m: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-name
 
 \u001B[1m\u001B[91merror[invalid-protocol-title]\u001B[0m\u001B[1m: a title must be a non-empty single line\u001B[0m

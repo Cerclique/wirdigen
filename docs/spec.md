@@ -94,7 +94,7 @@ Wireshark needs three names per protocol. Wirdigen asks for one and derives the 
 
 | Wireshark name | Comes from | Rules |
 |---|---|---|
-| Filter name (`dns`) | `name:` | `[a-z][a-z0-9_-]*`, at most 32 characters. Uppercase is an error, never lowercased silently. No `.`, which would blur where the Field path starts. Error `invalid-protocol-name`. |
+| Filter name (`dns`) | `name:` | `[a-z][a-z0-9_-]+`, 2 to 32 characters: Wireshark refuses one-character filter names. Uppercase is an error, never lowercased silently. No `.`, which would blur where the Field path starts. Error `invalid-protocol-name`. |
 | Short name (`DNS`, Protocol column) | uppercase of `name:` | Always derived. A `short_name:` override can come later as a minor release. |
 | Full name (tree root) | `title:` | Optional, non-empty, single line, defaults to the short name. Error `invalid-protocol-title`. |
 

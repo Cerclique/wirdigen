@@ -10,7 +10,7 @@ error[invalid-protocol-name]: `Demo` is not a valid protocol name
 1 | name: Demo
   |       ^^^^
   |
-  = note: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, at most 32 characters
+  = note: a name is a lowercase letter then lowercase letters, digits, `_` or `-`, 2 to 32 characters
   = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-protocol-name
 
 error[invalid-protocol-title]: a title must be a non-empty single line
