@@ -84,4 +84,5 @@ datagram is one message, as without `framing:`.
   outside 0 to 63) is a "Malformed" expert info error: the rest of the segment is shown as one
   malformed message.
 - With several messages in a packet, the Info column shows the last one's, with only the
-  Fields that message read.
+  Fields that message read. It replaces any text TCP reassembly fenced off, so the last
+  message's text stands alone even after a reassembled one.

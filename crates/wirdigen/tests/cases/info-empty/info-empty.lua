@@ -155,6 +155,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     local before = wd_info_counts({ x_opt, x_tiny })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO-EMPTY")
     dissect_top(tvb, pinfo, root, 0)
+    pinfo.cols.info:clear_fence()
     pinfo.cols.info = wd_info_display(x_opt, before) .. wd_info_label(x_tiny, before, {})
     return tvb:len()
 end

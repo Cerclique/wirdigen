@@ -284,6 +284,7 @@ local function wd_dissect_message(tvb, pinfo, tree, malformed)
     local before = wd_info_counts({ x_kind, x_body__code, x_note })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO-FRAMING")
     dissect_top(tvb, pinfo, root, 0)
+    pinfo.cols.info:clear_fence()
     pinfo.cols.info = wd_info_display(x_kind, before) .. " " .. (wd_info_cases["body"] or "") .. " code=" .. wd_info_display(x_body__code, before) .. " note=" .. wd_info_display(x_note, before)
 end
 

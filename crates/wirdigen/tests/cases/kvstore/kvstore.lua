@@ -498,6 +498,7 @@ local function wd_dissect_message(tvb, pinfo, tree, malformed)
     local before = wd_info_counts({ x_op, x_request_id, x_body__key, x_body__status })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "Key-Value Store")
     dissect_top(tvb, pinfo, root, 0)
+    pinfo.cols.info:clear_fence()
     pinfo.cols.info = wd_info_label(x_op, before, names_op) .. " #" .. wd_info_display(x_request_id, before) .. ": " .. wd_info_display(x_body__key, before) .. wd_info_label(x_body__status, before, names_body__status)
 end
 

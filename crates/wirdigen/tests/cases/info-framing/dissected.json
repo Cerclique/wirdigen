@@ -40,5 +40,29 @@
       },
       "info-framing.note": "10"
     }
+  ],
+  {
+    "info-framing.kind": "2",
+    "info-framing.len": "3",
+    "info-framing.body": {
+      "info-framing.body.other": "5"
+    }
+  },
+  [
+    {
+      "info-framing.kind": "1",
+      "info-framing.len": "4",
+      "info-framing.body": {
+        "info-framing.body.code": "11"
+      },
+      "info-framing.note": "12"
+    },
+    {
+      "info-framing.kind": "2",
+      "info-framing.len": "3",
+      "info-framing.body": {
+        "info-framing.body.other": "6"
+      }
+    }
   ]
 ]

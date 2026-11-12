@@ -266,15 +266,15 @@ text2pcap -T 52000,47200 packets.txt kvstore.pcapng
 ```text
 $ tshark -X lua_script:kvstore.lua -r kvstore.pcapng
     1 0.000000000     10.1.1.1 → 10.2.2.2     KVSTORE 77 Get #1: temp
-    2 0.000001000     10.1.1.1 → 10.2.2.2     KVSTORE 77 Put #2: colorDelete #3: temp
+    2 0.000001000     10.1.1.1 → 10.2.2.2     KVSTORE 77 Delete #3: temp
     3 0.000002000     10.1.1.1 → 10.2.2.2     KVSTORE 87 Done #3: Not found
     4 0.000003000     10.1.1.1 → 10.2.2.2     KVSTORE 65 127 #4:
     5 0.000004000     10.1.1.1 → 10.2.2.2     KVSTORE 66 Get #5:
 ```
 
 Put #2 began in the first segment, but Wireshark shows it in the second, where its last byte
-arrives, together with Delete #3. In packet 2's Info column, the Put's text comes from the
-message reassembled across both segments and the Delete's is added after it. The tree of
+arrives, together with Delete #3. Packet 2's Info column shows only the Delete, the last
+message of the packet, though TCP fenced off the Put's text after reassembling it. The tree of
 packet 2 holds one *Key-Value Store* root per message:
 
 ```text
@@ -327,5 +327,5 @@ A filter on a Field of a Type matches every message that has it, here the two th
 ```text
 $ tshark -X lua_script:kvstore.lua -r kvstore.pcapng -Y 'kvstore.body.key == "temp"'
     1 0.000000000     10.1.1.1 → 10.2.2.2     KVSTORE 77 Get #1: temp
-    2 0.000001000     10.1.1.1 → 10.2.2.2     KVSTORE 77 Put #2: colorDelete #3: temp
+    2 0.000001000     10.1.1.1 → 10.2.2.2     KVSTORE 77 Delete #3: temp
 ```

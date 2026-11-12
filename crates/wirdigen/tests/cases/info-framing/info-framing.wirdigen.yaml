@@ -1,6 +1,7 @@
 # `info:` under Framing (spec §3.13, §3.14): with several Messages in one TCP segment, the Info
 # column shows the last one's, and a Field under `if:` or in a case it did not read shows nothing,
-# even when an earlier Message of the segment read it.
+# even when an earlier Message of the segment read it. When a segment completes a Message
+# reassembled from the one before and then holds another, the column shows only the last one's.
 name: info-framing
 framing:
   header: 2

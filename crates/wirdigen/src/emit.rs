@@ -250,7 +250,8 @@ fn message(w: &mut Writer, model: &Dissector) {
 }
 
 /// Sets the Info column once the Message is read, however far it was read (spec §3.14), from
-/// the values it read: `before` holds the extractors' counts from before it.
+/// the values it read: `before` holds the extractors' counts from before it. The fence is cleared
+/// first, so the text replaces what TCP reassembly fenced off from an earlier Message.
 fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
     let case = |path: &str| format!("wd_info_cases[{}]", lua_string(path));
     match info {
@@ -270,16 +271,19 @@ fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
                 })
                 .collect();
             let text = if parts.is_empty() { "\"\"".to_owned() } else { parts.join(" .. ") };
-            w.line(&format!("pinfo.cols.info = {text}"));
+            set_info(w, &text);
         }
         Info::Case(path) => {
-            w.block(
-                &format!("if {} then", case(path)),
-                |w| w.line(&format!("pinfo.cols.info = {}", case(path))),
-                "end",
-            );
+            w.block(&format!("if {} then", case(path)), |w| set_info(w, &case(path)), "end");
         }
     }
+}
+
+/// Sets the Info column to the Lua expression `text`, clearing its fence first so the text
+/// replaces the whole column (spec §3.14).
+fn set_info(w: &mut Writer, text: &str) {
+    w.line("pinfo.cols.info:clear_fence()");
+    w.line(&format!("pinfo.cols.info = {text}"));
 }
 
 /// Declares the range preferences and registers on the ports they hold (spec §3.12, §5.5).

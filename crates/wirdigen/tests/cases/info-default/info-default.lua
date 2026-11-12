@@ -297,6 +297,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO-DEFAULT")
     dissect_top(tvb, pinfo, root, 0)
     if wd_info_cases["msg.op"] then
+        pinfo.cols.info:clear_fence()
         pinfo.cols.info = wd_info_cases["msg.op"]
     end
     return tvb:len()
