@@ -175,9 +175,10 @@ fields: []
 
 **Severity**: error
 
-`name:` is not a valid filter name. A name is a lowercase letter, then lowercase letters,
-digits, `_` or `-`, at most 32 characters. Uppercase is never lowercased silently, and a `.`
-is refused because it would blur where the Field path starts in filters such as `demo.id`.
+`name:` is not a valid filter name. A name is a lowercase letter, then at least one lowercase
+letter, digit, `_` or `-`, 2 to 32 characters in all: Wireshark refuses one-character filter
+names. Uppercase is never lowercased silently, and a `.` is refused because it would blur
+where the Field path starts in filters such as `demo.id`.
 
 ```yaml,diagnostic=invalid-protocol-name
 name: Demo

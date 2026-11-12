@@ -5,7 +5,7 @@ in the order the book and the examples use.
 
 | Key | Required | Meaning |
 |---|---|---|
-| `name` | yes | Filter name of the protocol: a lowercase letter, then lowercase letters, digits, `_` or `-`, at most 32 characters. |
+| `name` | yes | Filter name of the protocol: a lowercase letter, then lowercase letters, digits, `_` or `-`, 2 to 32 characters. |
 | `title` | no | Full name shown at the root of the protocol tree. Defaults to the uppercase `name`. |
 | `registration` | no | Ports claimed by default, and Decode As ([Registration](registration.md)). Leaving it out means Decode As only. |
 | `framing` | no | How messages are found in a TCP stream: a constant `header` size and a `length` Expression ([Framing](framing.md)). |

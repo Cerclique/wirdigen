@@ -272,7 +272,7 @@ const KEYWORD_NAMES: &[&str] = &[
     "end", "type", "local", "function", "and", "or", "not", "nil", "repeat", "until", "return", "then", "while", "do",
     "else", "elseif", "for", "goto", "if", "in", "break", "self", "string", "tree", "buffer",
 ];
-const PROTOCOLS: &[&str] = &["wdrand", "wd-rand", "p", "p_2-x", "abcdefghijklmnopqrstuvwxyz012345"];
+const PROTOCOLS: &[&str] = &["wdrand", "wd-rand", "pq", "p_2-x", "abcdefghijklmnopqrstuvwxyz012345"];
 /// Single-line texts for titles, labels, descriptions, units and Info text, quoted in YAML.
 const TEXTS: &[&str] = &[
     "Length",
@@ -1312,5 +1312,16 @@ mod tests {
         .filter(|construct| !texts.iter().any(|text| text.contains(construct)))
         .collect();
         assert!(missing.is_empty(), "never drawn: {missing:?}");
+    }
+
+    /// Wireshark refuses one-character filter names, so the shortest drawn has two.
+    #[test]
+    fn the_shortest_protocol_name_drawn_has_two_characters() {
+        let lengths: Vec<usize> = deep_stack(|| {
+            let mut runner = TestRunner::deterministic();
+            let strategy = shape();
+            (0..300).map(|_| strategy.new_tree(&mut runner).expect("a shape").current().name.len()).collect()
+        });
+        assert_eq!(lengths.into_iter().min(), Some(2));
     }
 }

@@ -16,7 +16,7 @@ use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde_json::Value as Json;
 
-use crate::description::MAX_NAME_LEN;
+use crate::description::{MAX_NAME_LEN, MIN_NAME_LEN};
 use crate::diagnostic::{Name, Severity};
 use crate::field::Builtin;
 
@@ -89,9 +89,9 @@ fn range_pattern() -> String {
 #[schemars(title = "Wirdigen Protocol Description", deny_unknown_fields)]
 struct Description {
     /// Filter name of the protocol, such as `dns`: lowercase letters, digits, `_` and `-`, starting
-    /// with a letter, at most 32 characters. Its uppercase is the short name shown in the Protocol
+    /// with a letter, 2 to 32 characters. Its uppercase is the short name shown in the Protocol
     /// column.
-    #[schemars(regex(pattern = r"^[a-z][a-z0-9_-]*$"), length(max = MAX_NAME_LEN))]
+    #[schemars(regex(pattern = r"^[a-z][a-z0-9_-]+$"), length(min = MIN_NAME_LEN, max = MAX_NAME_LEN))]
     name: String,
     /// Full name of the protocol at the tree root; defaults to the short name. One line.
     #[schemars(length(min = 1))]
@@ -592,6 +592,20 @@ mod tests {
             (Some("Framing"), &crate::framing::KEYS[..]),
         ] {
             assert_eq!(keys(&schema, definition), expected, "{definition:?}");
+        }
+    }
+
+    #[test]
+    fn a_protocol_name_has_two_to_32_characters() {
+        let validator = validator();
+        let passes = |name: &str| {
+            let text = format!("name: {name}\nfields:\n  - {{ name: a, type: uint8 }}\n");
+            validator.is_valid(&to_json(&yaml::parse(&text).expect("valid YAML").expect("not empty")))
+        };
+        assert!(passes("pq"));
+        assert!(passes("abcdefghijklmnopqrstuvwxyz012345"));
+        for rejected in ["p", "abcdefghijklmnopqrstuvwxyz0123456"] {
+            assert!(!passes(rejected), "{rejected}");
         }
     }
 
