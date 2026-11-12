@@ -46,7 +46,7 @@ A Get of the key `temp`, with request id 1, looks like this on the wire:
 
 ## The header {#header}
 
-The header is four plain Fields. `op` takes its labels from an [Enum](reference/fields.md#value-mappings),
+The header is four plain Fields. `op` takes its labels from an [Enum](reference/fields.md#enums),
 since the `switch` below will name its cases after the same operations:
 
 ```yaml

@@ -217,7 +217,8 @@ fn the_rendered_link_resolves_to_the_index_entry() {
     }
 }
 
-/// Panics unless `page` has a ` ```yaml ` block identical to `examples/<example>/<example>.wirdigen.yaml`.
+/// Panics unless `page` has a ` ```yaml ` block identical to
+/// `examples/<example>/<example>.wirdigen.yaml`.
 fn assert_shows_example_whole(page: &str, example: &str) {
     let file = format!("examples/{example}/{example}.wirdigen.yaml");
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(&file);

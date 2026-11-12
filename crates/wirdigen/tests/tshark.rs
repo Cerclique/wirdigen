@@ -398,8 +398,10 @@ mod examples {
         let scratch = Scratch::new(&format!("{example}-port"));
         let packets = dir.join("packets.txt");
         let pcap = scratch.capture_between(transport, CLIENT_PORT, port, &packets);
-        let layers = scratch.dissect_with(&dir.join(format!("{example}.lua")), example, &pcap, &[]).unwrap();
-        assert_eq!(layers.len(), packet_count(&fs::read_to_string(&packets).unwrap()));
+        let lua = dir.join(format!("{example}.lua"));
+        let layers = scratch.dissect_with(&lua, example, &pcap, &[]).unwrap_or_else(|e| panic!("{example}: {e}"));
+        let expected = packet_count(&fs::read_to_string(&packets).unwrap());
+        assert_eq!(layers.len(), expected, "{example}: not every packet was dissected on port {port}");
     }
 
     #[test]
