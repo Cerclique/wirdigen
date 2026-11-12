@@ -8,7 +8,7 @@
 - [Example: TCP request/response](tcp-example.md)
 - [Example: tagged records](records-example.md)
 - [Installing a Dissector](installing.md)
-- [Command-line interface]()
+- [Command-line interface](cli.md)
 
 # Format reference
 

@@ -16,3 +16,7 @@ indent_style = tab
 
 [*.md]
 trim_trailing_whitespace = false
+
+# trycmd goldens hold the command's output byte for byte, trailing spaces included.
+[crates/wirdigen-cli/tests/cli/*.{stdout,stderr}]
+trim_trailing_whitespace = false
