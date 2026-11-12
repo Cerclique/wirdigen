@@ -146,6 +146,8 @@ Each line is one JSON object, whose `type` says what it records:
 - one `file` record per input, after that input's Diagnostics;
 - one `summary` record, last.
 
+For example, with the `rendered` text abridged:
+
 ```text
 $ wirdigen generate --message-format json --deny-warnings unused.wirdigen.yaml ok.wirdigen.yaml
 {"type":"diagnostic","file":"unused.wirdigen.yaml","name":"unused-type","severity":"warning","message":"the Type `Header` is never used","span":{"start":58,"end":64,"line":5,"column":3,"end_line":5,"end_column":9},"notes":[{"message":"use it as `type: Header`, or remove it"}],"rendered":"error[unused-type]: …","denied":true}
@@ -217,7 +219,8 @@ The Dissector of standard input normally goes to standard output, which the reco
 
 ### Stability {#json-stability}
 
-The JSON Lines output is part of the CLI's compatibility promise:
+The JSON Lines output is part of the CLI's compatibility promise, and its shape belongs to the CLI
+alone: the library has no JSON form of its own.
 
 - Adding a field to a record, or a new record `type`, is a minor change. Consumers must ignore
   fields and record types they do not know.
