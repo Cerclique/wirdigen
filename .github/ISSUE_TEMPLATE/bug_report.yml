@@ -1,5 +1,5 @@
 name: Bug report
-description: Wirdigen rejects a valid description, generates a wrong Dissector, or misbehaves.
+description: Wirdigen rejects a valid Protocol Description, generates a wrong Dissector, or misbehaves.
 labels: [bug, needs-triage]
 body:
   - type: markdown
@@ -44,8 +44,10 @@ body:
     id: wireshark-version
     attributes:
       label: Wireshark version
-      description: The first line of `tshark --version`, or Help → About Wireshark.
-      placeholder: TShark (Wireshark) 4.4.9
+      description: >
+        The first line of `tshark --version`, or Help → About Wireshark. Write "none" if
+        the bug does not involve Wireshark.
+      placeholder: TShark (Wireshark) 4.6.9
     validations:
       required: true
   - type: input

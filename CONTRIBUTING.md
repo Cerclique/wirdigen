@@ -25,7 +25,7 @@ new ADR, not just a code change.
 | Lua checks (spec §10.4) | `make test-lua` | `lua5.2`, `lua5.3` and `lua5.4` on `PATH` |
 | Dissectors in real tshark (spec §10.5, §10.6) | `make test-tshark` | `tshark` and `text2pcap` from Wireshark ≥ 4.4, as a non-root user |
 
-`make test` is plain `cargo test` and runs on every OS. Dissector behaviour is tested only in
+`make test` is plain `cargo test` and needs no tools beyond Rust. Dissector behaviour is tested only in
 real tshark ([ADR 0011](docs/adr/0011-dissectors-tested-in-real-tshark.md)); there is no mock of
 Wireshark's Lua API.
 
@@ -42,8 +42,8 @@ make docker-test-tshark   # Wireshark 4.4, then the latest stable
 ```
 
 CI runs these three layers on every pull request, plus a weekly run with random seeds and
-larger counts. A weekly failure opens an issue with the seed. Turn the smallest failing input
-into a corpus case or a `packets.txt` regression.
+larger counts. A weekly failure opens an issue with the seed. Add the smallest failing packet
+to the case's `packets.txt`, or make the failing description a new corpus case.
 
 ## Adding a corpus case
 
