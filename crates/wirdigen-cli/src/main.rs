@@ -69,22 +69,10 @@ fn main() -> ExitCode {
     let inputs = placement::inputs(paths).unwrap_or_else(|err| usage_error(subcommand, &err));
     let actions = match &placement {
         None => vec![Action::Validate; inputs.len()],
-        Some(placement) => actions(&inputs, placement, check).unwrap_or_else(|err| usage_error(subcommand, &err)),
-    };
-    if cli.message_format == MessageFormat::Json {
-        if let Some(input) = inputs
-            .iter()
-            .zip(&actions)
-            .find_map(|(input, action)| matches!(action, Action::Write(Output::Stdout)).then_some(input))
-        {
-            let err = if matches!(placement, Some(Placement::Single(_))) {
-                UsageError::JsonWithDashOutput
-            } else {
-                UsageError::JsonAndDissectorToStdout { input: input.name().into_owned() }
-            };
-            usage_error(subcommand, &err);
+        Some(placement) => {
+            actions(&inputs, placement, check, cli.message_format).unwrap_or_else(|err| usage_error(subcommand, &err))
         }
-    }
+    };
 
     let mut run = Run {
         options,
@@ -138,14 +126,21 @@ impl Action {
 }
 
 /// The `generate` action of each input, in order, from where its Dissector goes.
-fn actions(inputs: &[Input], placement: &Placement, check: bool) -> Result<Vec<Action>, UsageError> {
+fn actions(
+    inputs: &[Input],
+    placement: &Placement,
+    check: bool,
+    format: MessageFormat,
+) -> Result<Vec<Action>, UsageError> {
     let cwd = std::env::current_dir().unwrap_or_default();
     let outputs = placement::outputs(inputs, placement, &cwd)?;
-    Ok(if check {
-        placement::output_files(inputs, placement, outputs)?.into_iter().map(Action::Check).collect()
-    } else {
-        outputs.into_iter().map(Action::Write).collect()
-    })
+    if check {
+        return Ok(placement::output_files(inputs, placement, outputs)?.into_iter().map(Action::Check).collect());
+    }
+    if format == MessageFormat::Json {
+        placement::reject_stdout_under_json(inputs, placement, &outputs)?;
+    }
+    Ok(outputs.into_iter().map(Action::Write).collect())
 }
 
 /// Exits with clap's usage error (code 2) for a mistake clap cannot see on its own.
@@ -290,10 +285,7 @@ impl Run {
             WriteOutcome::Written => "written",
             WriteOutcome::Unchanged => "unchanged",
         };
-        match output {
-            Output::Stdout => self.report_verbose(&format!("{status} to standard output")),
-            Output::File(path) => self.report_verbose(&format!("{status} `{}`", path.display())),
-        }
+        self.report_verbose(&format!("{status} {}", output.target()));
     }
 
     /// Prints `line` to stderr under `-v` only, in the human format.
@@ -339,7 +331,7 @@ enum InputError {
         source: io::Error,
     },
     /// Writing its Dissector.
-    #[error("cannot write {}: {source}", output_target(.output))]
+    #[error("cannot write {}: {source}", .output.target())]
     Write {
         output: Output,
         #[source]
@@ -352,14 +344,6 @@ enum InputError {
         #[source]
         source: io::Error,
     },
-}
-
-/// How a write error names its output: `to standard output`, or the path in backticks.
-fn output_target(output: &Output) -> String {
-    match output {
-        Output::Stdout => "to standard output".to_owned(),
-        Output::File(path) => format!("`{}`", path.display()),
-    }
 }
 
 /// Prints why an input failed to stderr, in either message format.

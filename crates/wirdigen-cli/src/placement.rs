@@ -37,6 +37,15 @@ impl Output {
     pub fn from_arg(arg: PathBuf) -> Self {
         if is_dash(&arg) { Output::Stdout } else { Output::File(arg) }
     }
+
+    /// How a message names this output after a verb: `to standard output`, or the path in
+    /// backticks.
+    pub fn target(&self) -> String {
+        match self {
+            Output::Stdout => "to standard output".to_owned(),
+            Output::File(path) => format!("`{}`", path.display()),
+        }
+    }
 }
 
 /// How `generate` places its outputs, from `-o` and `--out-dir`.
@@ -146,6 +155,19 @@ pub fn output_files(inputs: &[Input], placement: &Placement, outputs: Vec<Output
         .collect()
 }
 
+/// Rejects any Dissector bound for standard output, which `--message-format json` writes its
+/// records to.
+pub fn reject_stdout_under_json(inputs: &[Input], placement: &Placement, outputs: &[Output]) -> Result<(), UsageError> {
+    let Some((input, _)) = inputs.iter().zip(outputs).find(|(_, output)| **output == Output::Stdout) else {
+        return Ok(());
+    };
+    Err(if matches!(placement, Placement::Single(_)) {
+        UsageError::JsonWithDashOutput
+    } else {
+        UsageError::JsonAndDissectorToStdout { input: input.name().into_owned() }
+    })
+}
+
 /// Whether an argument is `-`, standing for standard input or output.
 fn is_dash(arg: &Path) -> bool {
     arg.as_os_str() == "-"
@@ -239,5 +261,35 @@ mod tests {
         let result = output_files(&inputs, &Placement::NextToInput, vec![Output::Stdout]);
         let Err(UsageError::CheckToStdout { input }) = result else { panic!("{result:?}") };
         assert_eq!(input, "<stdin>");
+    }
+
+    #[test]
+    fn json_rejects_dash_output() {
+        let inputs = files(&["a.yaml"]);
+        let placement = Placement::Single(Output::Stdout);
+        let result = reject_stdout_under_json(&inputs, &placement, &[Output::Stdout]);
+        assert!(matches!(result, Err(UsageError::JsonWithDashOutput)));
+    }
+
+    #[test]
+    fn json_rejects_stdin_going_to_standard_output() {
+        let inputs = vec![Input::File(PathBuf::from("a.yaml")), Input::Stdin];
+        let outputs = [Output::File(PathBuf::from("a.lua")), Output::Stdout];
+        let result = reject_stdout_under_json(&inputs, &Placement::NextToInput, &outputs);
+        let Err(UsageError::JsonAndDissectorToStdout { input }) = result else { panic!("{result:?}") };
+        assert_eq!(input, "<stdin>");
+    }
+
+    #[test]
+    fn json_accepts_file_outputs() {
+        let inputs = files(&["a.yaml"]);
+        let result = reject_stdout_under_json(&inputs, &Placement::NextToInput, &[Output::File("a.lua".into())]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn an_output_names_itself_as_a_target() {
+        assert_eq!(Output::Stdout.target(), "to standard output");
+        assert_eq!(Output::File(PathBuf::from("out/a.lua")).target(), "`out/a.lua`");
     }
 }
