@@ -11,14 +11,14 @@ const STDIN_NAME: &str = "<stdin>";
 
 /// One input argument: a path, or `-` for standard input.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Input {
+pub(crate) enum Input {
     Stdin,
     File(PathBuf),
 }
 
 impl Input {
     /// The `Source` name: the path as typed, or `<stdin>`.
-    pub fn name(&self) -> Cow<'_, str> {
+    pub(crate) fn name(&self) -> Cow<'_, str> {
         match self {
             Input::Stdin => Cow::Borrowed(STDIN_NAME),
             Input::File(path) => path.to_string_lossy(),
@@ -28,19 +28,19 @@ impl Input {
 
 /// Where one Dissector is written: a file, or `-` for standard output.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Output {
+pub(crate) enum Output {
     Stdout,
     File(PathBuf),
 }
 
 impl Output {
-    pub fn from_arg(arg: PathBuf) -> Self {
+    pub(crate) fn from_arg(arg: PathBuf) -> Self {
         if is_dash(&arg) { Output::Stdout } else { Output::File(arg) }
     }
 
     /// How a message names this output after a verb: `to standard output`, or the path in
     /// backticks.
-    pub fn target(&self) -> String {
+    pub(crate) fn target(&self) -> String {
         match self {
             Output::Stdout => "to standard output".to_owned(),
             Output::File(path) => format!("`{}`", path.display()),
@@ -50,7 +50,7 @@ impl Output {
 
 /// How `generate` places its outputs, from `-o` and `--out-dir`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Placement {
+pub(crate) enum Placement {
     /// Next to each input; standard input goes to standard output.
     NextToInput,
     /// `-o <file|->`, for exactly one input.
@@ -61,7 +61,7 @@ pub enum Placement {
 
 impl Placement {
     /// The placement for `-o` and `--out-dir`, which clap keeps from being given together.
-    pub fn from_args(output: Option<PathBuf>, out_dir: Option<PathBuf>) -> Self {
+    pub(crate) fn from_args(output: Option<PathBuf>, out_dir: Option<PathBuf>) -> Self {
         match (output, out_dir) {
             (Some(output), _) => Placement::Single(Output::from_arg(output)),
             (None, Some(dir)) => Placement::Dir(dir),
@@ -73,7 +73,7 @@ impl Placement {
 /// A mistake in how `generate` or `validate` was called, found before any input is read. Each one
 /// exits with clap's usage error, code 2.
 #[derive(Debug, thiserror::Error)]
-pub enum UsageError {
+pub(crate) enum UsageError {
     #[error("`-` (standard input) can be given at most once")]
     StdinTwice,
     #[error("`-o` requires exactly one input, but {count} were given")]
@@ -95,7 +95,7 @@ pub enum UsageError {
 }
 
 /// Turns input arguments into inputs, rejecting `-` given more than once.
-pub fn inputs(args: Vec<PathBuf>) -> Result<Vec<Input>, UsageError> {
+pub(crate) fn inputs(args: Vec<PathBuf>) -> Result<Vec<Input>, UsageError> {
     let inputs: Vec<Input> =
         args.into_iter().map(|arg| if is_dash(&arg) { Input::Stdin } else { Input::File(arg) }).collect();
     if inputs.iter().filter(|input| **input == Input::Stdin).count() > 1 {
@@ -107,7 +107,7 @@ pub fn inputs(args: Vec<PathBuf>) -> Result<Vec<Input>, UsageError> {
 /// The output of each input, in order, rejecting `-o` with other than one input, two inputs
 /// written to one file, and an output that is an input. Paths are compared after joining them
 /// to `cwd` and folding `.` and `..`, without touching the file system.
-pub fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Vec<Output>, UsageError> {
+pub(crate) fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Vec<Output>, UsageError> {
     if matches!(placement, Placement::Single(_)) && inputs.len() != 1 {
         return Err(UsageError::OutputNeedsOneInput { count: inputs.len() });
     }
@@ -143,7 +143,11 @@ pub fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Ve
 
 /// The file of each output under `generate --check`, which compares files, rejecting any Dissector
 /// bound for standard output.
-pub fn output_files(inputs: &[Input], placement: &Placement, outputs: Vec<Output>) -> Result<Vec<PathBuf>, UsageError> {
+pub(crate) fn output_files(
+    inputs: &[Input],
+    placement: &Placement,
+    outputs: Vec<Output>,
+) -> Result<Vec<PathBuf>, UsageError> {
     inputs
         .iter()
         .zip(outputs)
@@ -157,7 +161,11 @@ pub fn output_files(inputs: &[Input], placement: &Placement, outputs: Vec<Output
 
 /// Rejects any Dissector bound for standard output, which `--message-format json` writes its
 /// records to.
-pub fn reject_stdout_under_json(inputs: &[Input], placement: &Placement, outputs: &[Output]) -> Result<(), UsageError> {
+pub(crate) fn reject_stdout_under_json(
+    inputs: &[Input],
+    placement: &Placement,
+    outputs: &[Output],
+) -> Result<(), UsageError> {
     let Some((input, _)) = inputs.iter().zip(outputs).find(|(_, output)| **output == Output::Stdout) else {
         return Ok(());
     };

@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use crate::cli::ColorChoice;
 
 /// Decides colour from the flag, then `NO_COLOR`, then `CLICOLOR_FORCE`, then the terminal.
-pub fn use_color(
+pub(crate) fn use_color(
     choice: ColorChoice,
     no_color: Option<&OsStr>,
     clicolor_force: Option<&OsStr>,
