@@ -442,16 +442,14 @@ impl Encoding {
         if let Some(encoding) = allowed.iter().copied().find(|e| e.as_str() == value.value) {
             return Ok(encoding);
         }
-        if allowed.is_empty() {
-            return Err(Self::takes_none(value, ty));
-        }
-        let names: Vec<&str> = allowed.iter().map(|e| e.as_str()).collect();
-        Err(Diagnostic::new(
-            Name::IncompatibleDisplay,
-            value.span.clone(),
-            format!("`{}` is not an encoding of `{}`", value.value, ty.value),
-        )
-        .with_note(format!("`encoding` is one of: {}", names.join(", ")), None))
+        let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
+        Err(if allowed.is_empty() {
+            Self::takes_none(value, ty)
+        } else {
+            let names: Vec<&str> = allowed.iter().map(|e| e.as_str()).collect();
+            error(format!("`{}` is not an encoding of `{}`", value.value, ty.value))
+                .with_note(format!("`encoding` is one of: {}", names.join(", ")), None)
+        })
     }
 
     /// The `incompatible-display` error for the `encoding:` value `value` of a Field of a type,
@@ -2113,13 +2111,14 @@ mod tests {
     use super::*;
     use crate::{description, yaml};
 
-    /// A Diagnostic as the tests compare it: its name, the text at its span and its notes.
-    type Shown = (String, String, Vec<String>);
+    /// A Diagnostic as the tests compare it: its name, the text at its span, its message and
+    /// its notes.
+    type Shown = (String, String, String, Vec<String>);
 
-    /// What the `no_*` check of `key` reports for the Field `key: value` of type `uint8`, checked
-    /// as the type `ty` whatever that type's own tables say it takes.
-    fn reported(key: &str, value: &str, ty: &str) -> (Option<()>, Vec<Shown>) {
-        let text = format!("name: p\nfields:\n  - name: a\n    type: uint8\n    {key}: {value}\n");
+    /// What the `no_*` check of `key` reports for the Field `key: value` of type `ty`. The
+    /// types the tests pick take `key`, so a report shows the check does not ask their tables.
+    fn reported(ty: &str, key: &str, value: &str) -> (Option<()>, Vec<Shown>) {
+        let text = format!("name: p\nfields:\n  - name: a\n    type: {ty}\n    {key}: {value}\n");
         let root = yaml::parse(&text).unwrap();
         let description = description::deserialize(root.as_ref()).unwrap().parsed().unwrap();
         let [RawEntry::Field(field)] = description.fields.as_slice() else { panic!("one Field") };
@@ -2138,30 +2137,34 @@ mod tests {
             .iter()
             .map(|d| {
                 let notes = d.notes().iter().map(|n| n.message().to_owned()).collect();
-                (d.name().to_owned(), text[d.span()].to_owned(), notes)
+                (d.name().to_owned(), text[d.span()].to_owned(), d.message().to_owned(), notes)
             })
             .collect();
         (result, shown)
     }
 
-    fn shown(span: &str, note: &str) -> Vec<Shown> {
-        vec![("incompatible-display".to_owned(), span.to_owned(), vec![note.to_owned()])]
+    /// The one `incompatible-display` error at `span` with `message` and the note `note`.
+    fn incompatible(span: &str, message: &str, note: &str) -> Vec<Shown> {
+        vec![("incompatible-display".to_owned(), span.to_owned(), message.to_owned(), vec![note.to_owned()])]
     }
 
     #[test]
     fn a_display_on_a_type_that_takes_none_is_reported_whatever_the_table_says() {
-        assert_eq!(reported("display", "hex", "uint8"), (None, shown("hex", "remove `display`")));
+        let expected = incompatible("hex", "`uint8` takes no `display`", "remove `display`");
+        assert_eq!(reported("uint8", "display", "hex"), (None, expected));
     }
 
     #[test]
     fn an_encoding_on_a_type_that_takes_none_is_reported_whatever_the_table_says() {
         let note = "only `string`, `abs_time`, `rel_time` take `encoding`";
-        assert_eq!(reported("encoding", "utf8", "string"), (None, shown("utf8", note)));
+        let expected = incompatible("utf8", "`string` takes no `encoding`", note);
+        assert_eq!(reported("string", "encoding", "utf8"), (None, expected));
     }
 
     #[test]
     fn an_expect_on_a_type_that_takes_none_is_reported_whatever_the_rule_says() {
         let note = "only integer types, `bool` and sub-Fields take `expect`";
-        assert_eq!(reported("expect", "1", "uint8"), (None, shown("expect", note)));
+        let expected = incompatible("expect", "`uint8` takes no `expect`", note);
+        assert_eq!(reported("uint8", "expect", "1"), (None, expected));
     }
 }
