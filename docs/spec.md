@@ -637,7 +637,7 @@ pub struct RenderOptions { pub color: bool, pub deny_warnings: bool }
 - The renderer is built on `annotate-snippets`. Its layout is not stable.
 - **No `Serialize`**: no `serde_json` or `schemars` type appears in the API. Each consumer (CLI, WASM) defines its own JSON.
 - Every public type is owned, has no lifetime parameters and is `Send + Sync + 'static`, checked by a compile-time test. All public structs have private fields; only `RenderOptions` is `#[non_exhaustive]`.
-- `#![deny(missing_docs)]`. A writer-based `generate_into` can come later if streaming matters.
+- Every public item is documented: `missing_docs` comes from the workspace lints table (section 12.1), and CI denies warnings. A writer-based `generate_into` can come later if streaming matters.
 
 ## 9. CLI
 
