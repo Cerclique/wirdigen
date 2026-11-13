@@ -32,6 +32,13 @@ fn generate_minimal(work: &TempDir) {
     wirdigen().args(["generate", "minimal.wirdigen.yaml"]).current_dir(work.path()).assert().success();
 }
 
+/// The Dissector `generate -o -` prints for `minimal.wirdigen.yaml`.
+fn minimal_dissector(work: &TempDir) -> Vec<u8> {
+    let printed =
+        wirdigen().args(["generate", "minimal.wirdigen.yaml", "-o", "-"]).current_dir(work.path()).assert().success();
+    printed.get_output().stdout.clone()
+}
+
 fn mtime(path: &Path) -> SystemTime {
     fs::metadata(path).and_then(|m| m.modified()).expect("the file exists and the platform records mtimes")
 }
@@ -55,9 +62,7 @@ fn a_different_dissector_is_replaced() {
 
     generate_minimal(&work);
 
-    let printed =
-        wirdigen().args(["generate", "minimal.wirdigen.yaml", "-o", "-"]).current_dir(work.path()).assert().success();
-    assert_eq!(fs::read(&output).unwrap(), printed.get_output().stdout);
+    assert_eq!(fs::read(&output).unwrap(), minimal_dissector(&work));
     let mut left: Vec<_> = fs::read_dir(work.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
     left.sort();
     assert_eq!(left, ["minimal.lua", "minimal.wirdigen.yaml"], "no temporary file is left behind");
@@ -100,14 +105,6 @@ fn a_symlinked_dissector_is_replaced_through_its_link() {
 
     assert!(output.is_symlink(), "the link stays in place");
     assert_ne!(fs::read(&target).unwrap(), b"-- stale\n");
-}
-
-/// The Dissector `generate -o -` prints for `minimal.wirdigen.yaml`.
-#[cfg(unix)]
-fn minimal_dissector(work: &TempDir) -> Vec<u8> {
-    let printed =
-        wirdigen().args(["generate", "minimal.wirdigen.yaml", "-o", "-"]).current_dir(work.path()).assert().success();
-    printed.get_output().stdout.clone()
 }
 
 #[cfg(unix)]

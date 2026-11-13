@@ -437,11 +437,23 @@ fn write_file(path: &Path, bytes: &[u8]) -> io::Result<WriteOutcome> {
 /// `MAXSYMLINKS`.
 const MAX_SYMLINK_HOPS: usize = 40;
 
-/// The first path that is not a symlink along the chain of links starting at `path`. Unlike
-/// [`fs::canonicalize`], the last path need not exist; a relative link target resolves against the
-/// link's own directory.
+/// Where a write to `path` lands: `path` itself, or the end of the chain of symlinks starting at
+/// it. Unlike [`fs::canonicalize`] alone, the end of the chain need not exist yet.
 fn follow_symlinks(path: &Path) -> io::Result<PathBuf> {
+    if !path.is_symlink() {
+        return Ok(path.to_path_buf());
+    }
+    match fs::canonicalize(path) {
+        Err(err) if err.kind() == io::ErrorKind::NotFound => follow_dangling_symlinks(path),
+        resolved => resolved,
+    }
+}
+
+/// The first path that is not a symlink along the chain of links starting at `path`, which need
+/// not exist. A relative link target resolves against the link's own directory, lexically.
+fn follow_dangling_symlinks(path: &Path) -> io::Result<PathBuf> {
     let mut path = path.to_path_buf();
+    // One more check than hops: after the last hop, the path reached must not be a link.
     for _ in 0..=MAX_SYMLINK_HOPS {
         if !path.is_symlink() {
             return Ok(path);
