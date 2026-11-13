@@ -61,12 +61,36 @@ impl Placement {
     }
 }
 
+/// A mistake in how `generate` or `validate` was called, found before any input is read. Each one
+/// exits with clap's usage error, code 2.
+#[derive(Debug, thiserror::Error)]
+pub enum UsageError {
+    #[error("`-` (standard input) can be given at most once")]
+    StdinTwice,
+    #[error("`-o` requires exactly one input, but {count} were given")]
+    OutputNeedsOneInput { count: usize },
+    #[error("the Dissector of `{input}` would overwrite the input `{overwritten}`")]
+    OverwritesInput { input: String, overwritten: String },
+    #[error("`{first}` and `{second}` would both be written to `{}`", .output.display())]
+    SameOutput { first: String, second: String, output: PathBuf },
+    #[error("`--check` compares files, so it cannot be used with `-o -`")]
+    CheckWithDashOutput,
+    #[error("`--check` compares files, but the Dissector of `{input}` goes to standard output; give `-o <FILE>`")]
+    CheckToStdout { input: String },
+    #[error("`--message-format json` writes to standard output, so it cannot be used with `-o -`")]
+    JsonWithDashOutput,
+    #[error(
+        "`--message-format json` writes to standard output, but so does the Dissector of `{input}`; give `-o <FILE>`"
+    )]
+    JsonAndDissectorToStdout { input: String },
+}
+
 /// Turns input arguments into inputs, rejecting `-` given more than once.
-pub fn inputs(args: Vec<PathBuf>) -> Result<Vec<Input>, String> {
+pub fn inputs(args: Vec<PathBuf>) -> Result<Vec<Input>, UsageError> {
     let inputs: Vec<Input> =
         args.into_iter().map(|arg| if is_dash(&arg) { Input::Stdin } else { Input::File(arg) }).collect();
     if inputs.iter().filter(|input| **input == Input::Stdin).count() > 1 {
-        return Err("`-` (standard input) can be given at most once".to_owned());
+        return Err(UsageError::StdinTwice);
     }
     Ok(inputs)
 }
@@ -74,9 +98,9 @@ pub fn inputs(args: Vec<PathBuf>) -> Result<Vec<Input>, String> {
 /// The output of each input, in order, rejecting `-o` with other than one input, two inputs
 /// written to one file, and an output that is an input. Paths are compared after joining them
 /// to `cwd` and folding `.` and `..`, without touching the file system.
-pub fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Vec<Output>, String> {
+pub fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Vec<Output>, UsageError> {
     if matches!(placement, Placement::Single(_)) && inputs.len() != 1 {
-        return Err(format!("`-o` requires exactly one input, but {} were given", inputs.len()));
+        return Err(UsageError::OutputNeedsOneInput { count: inputs.len() });
     }
     let outputs: Vec<Output> = inputs.iter().map(|input| output_of(input, placement)).collect();
 
@@ -92,19 +116,17 @@ pub fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Ve
         let Output::File(path) = output else { continue };
         let key = normalize(cwd, path);
         if let Some(overwritten) = input_paths.get(&key) {
-            return Err(format!(
-                "the Dissector of `{}` would overwrite the input `{}`",
-                input.name(),
-                overwritten.name()
-            ));
+            return Err(UsageError::OverwritesInput {
+                input: input.name().into_owned(),
+                overwritten: overwritten.name().into_owned(),
+            });
         }
         if let Some(first) = written.insert(key, input) {
-            return Err(format!(
-                "`{}` and `{}` would both be written to `{}`",
-                first.name(),
-                input.name(),
-                path.display()
-            ));
+            return Err(UsageError::SameOutput {
+                first: first.name().into_owned(),
+                second: input.name().into_owned(),
+                output: path.clone(),
+            });
         }
     }
     Ok(outputs)
@@ -112,19 +134,14 @@ pub fn outputs(inputs: &[Input], placement: &Placement, cwd: &Path) -> Result<Ve
 
 /// The file of each output under `generate --check`, which compares files, rejecting any Dissector
 /// bound for standard output.
-pub fn output_files(inputs: &[Input], placement: &Placement, outputs: Vec<Output>) -> Result<Vec<PathBuf>, String> {
+pub fn output_files(inputs: &[Input], placement: &Placement, outputs: Vec<Output>) -> Result<Vec<PathBuf>, UsageError> {
     inputs
         .iter()
         .zip(outputs)
         .map(|(input, output)| match output {
             Output::File(path) => Ok(path),
-            Output::Stdout if matches!(placement, Placement::Single(_)) => {
-                Err("`--check` compares files, so it cannot be used with `-o -`".to_owned())
-            }
-            Output::Stdout => Err(format!(
-                "`--check` compares files, but the Dissector of `{}` goes to standard output; give `-o <FILE>`",
-                input.name()
-            )),
+            Output::Stdout if matches!(placement, Placement::Single(_)) => Err(UsageError::CheckWithDashOutput),
+            Output::Stdout => Err(UsageError::CheckToStdout { input: input.name().into_owned() }),
         })
         .collect()
 }
@@ -168,4 +185,59 @@ fn normalize(cwd: &Path, path: &Path) -> PathBuf {
         }
     }
     normal
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn files(names: &[&str]) -> Vec<Input> {
+        names.iter().map(|name| Input::File(PathBuf::from(name))).collect()
+    }
+
+    #[test]
+    fn stdin_given_twice_is_a_usage_error() {
+        let args = vec![PathBuf::from("-"), PathBuf::from("a.yaml"), PathBuf::from("-")];
+        assert!(matches!(inputs(args), Err(UsageError::StdinTwice)));
+    }
+
+    #[test]
+    fn single_output_needs_exactly_one_input() {
+        let placement = Placement::Single(Output::File(PathBuf::from("out.lua")));
+        let result = outputs(&files(&["a.yaml", "b.yaml"]), &placement, Path::new("/work"));
+        assert!(matches!(result, Err(UsageError::OutputNeedsOneInput { count: 2 })));
+    }
+
+    #[test]
+    fn output_overwriting_an_input_is_a_usage_error() {
+        let placement = Placement::Single(Output::File(PathBuf::from("./a.yaml")));
+        let result = outputs(&files(&["a.yaml"]), &placement, Path::new("/work"));
+        let Err(UsageError::OverwritesInput { input, overwritten }) = result else { panic!("{result:?}") };
+        assert_eq!((input.as_str(), overwritten.as_str()), ("a.yaml", "a.yaml"));
+    }
+
+    #[test]
+    fn two_inputs_to_one_output_is_a_usage_error() {
+        let placement = Placement::Dir(PathBuf::from("out"));
+        let result = outputs(&files(&["x/p.yaml", "y/p.yaml"]), &placement, Path::new("/work"));
+        let Err(UsageError::SameOutput { first, second, output }) = result else { panic!("{result:?}") };
+        assert_eq!((first.as_str(), second.as_str()), ("x/p.yaml", "y/p.yaml"));
+        assert_eq!(output, PathBuf::from("out/p.lua"));
+    }
+
+    #[test]
+    fn check_rejects_dash_output() {
+        let inputs = files(&["a.yaml"]);
+        let placement = Placement::Single(Output::Stdout);
+        let result = output_files(&inputs, &placement, vec![Output::Stdout]);
+        assert!(matches!(result, Err(UsageError::CheckWithDashOutput)));
+    }
+
+    #[test]
+    fn check_rejects_stdin_going_to_standard_output() {
+        let inputs = vec![Input::Stdin];
+        let result = output_files(&inputs, &Placement::NextToInput, vec![Output::Stdout]);
+        let Err(UsageError::CheckToStdout { input }) = result else { panic!("{result:?}") };
+        assert_eq!(input, "<stdin>");
+    }
 }

@@ -18,7 +18,7 @@ use wirdigen::{Diagnostic, RenderOptions, Severity, Source};
 
 use crate::cli::{Cli, Command, GenerateArgs, MessageFormat, SchemaArgs, ValidationArgs};
 use crate::json::FileStatus;
-use crate::placement::{Input, Output, Placement};
+use crate::placement::{Input, Output, Placement, UsageError};
 
 /// How much `validate` and `generate` say on stderr besides errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,12 +66,10 @@ fn main() -> ExitCode {
     let mut options = RenderOptions::default();
     options.color = color;
     options.deny_warnings = deny_warnings;
-    let inputs = placement::inputs(paths).unwrap_or_else(|message| usage_error(subcommand, &message));
+    let inputs = placement::inputs(paths).unwrap_or_else(|err| usage_error(subcommand, &err));
     let actions = match &placement {
         None => vec![Action::Validate; inputs.len()],
-        Some(placement) => {
-            actions(&inputs, placement, check).unwrap_or_else(|message| usage_error(subcommand, &message))
-        }
+        Some(placement) => actions(&inputs, placement, check).unwrap_or_else(|err| usage_error(subcommand, &err)),
     };
     if cli.message_format == MessageFormat::Json {
         if let Some(input) = inputs
@@ -79,16 +77,12 @@ fn main() -> ExitCode {
             .zip(&actions)
             .find_map(|(input, action)| matches!(action, Action::Write(Output::Stdout)).then_some(input))
         {
-            let message = if matches!(placement, Some(Placement::Single(_))) {
-                "`--message-format json` writes to standard output, so it cannot be used with `-o -`".to_owned()
+            let err = if matches!(placement, Some(Placement::Single(_))) {
+                UsageError::JsonWithDashOutput
             } else {
-                format!(
-                    "`--message-format json` writes to standard output, but so does the Dissector of `{}`; \
-                     give `-o <FILE>`",
-                    input.name()
-                )
+                UsageError::JsonAndDissectorToStdout { input: input.name().into_owned() }
             };
-            usage_error(subcommand, &message);
+            usage_error(subcommand, &err);
         }
     }
 
@@ -114,8 +108,8 @@ fn schema(output: Option<PathBuf>) -> ExitCode {
     let output = output.map_or(Output::Stdout, Output::from_arg);
     match write(&output, &wirdigen::json_schema()) {
         Ok(_) => ExitCode::SUCCESS,
-        Err(message) => {
-            report_error(&message);
+        Err(err) => {
+            report_error(&err);
             ExitCode::FAILURE
         }
     }
@@ -144,7 +138,7 @@ impl Action {
 }
 
 /// The `generate` action of each input, in order, from where its Dissector goes.
-fn actions(inputs: &[Input], placement: &Placement, check: bool) -> Result<Vec<Action>, String> {
+fn actions(inputs: &[Input], placement: &Placement, check: bool) -> Result<Vec<Action>, UsageError> {
     let cwd = std::env::current_dir().unwrap_or_default();
     let outputs = placement::outputs(inputs, placement, &cwd)?;
     Ok(if check {
@@ -155,11 +149,11 @@ fn actions(inputs: &[Input], placement: &Placement, check: bool) -> Result<Vec<A
 }
 
 /// Exits with clap's usage error (code 2) for a mistake clap cannot see on its own.
-fn usage_error(subcommand: &str, message: &str) -> ! {
+fn usage_error(subcommand: &str, err: &UsageError) -> ! {
     let mut command = Cli::command();
     command.build();
     let command = command.find_subcommand_mut(subcommand).expect("the subcommand exists");
-    command.error(ErrorKind::ArgumentConflict, message).exit()
+    command.error(ErrorKind::ArgumentConflict, err).exit()
 }
 
 /// The state of one `validate` or `generate` run across its inputs.
@@ -196,8 +190,8 @@ impl Run {
         };
         let text = match text {
             Ok(text) => text,
-            Err(err) => {
-                report_error(&format!("cannot read `{name}`: {err}"));
+            Err(source) => {
+                report_error(&InputError::Read { name: name.into_owned(), source });
                 return FileStatus::Failed;
             }
         };
@@ -221,8 +215,8 @@ impl Run {
                             WriteOutcome::Unchanged => FileStatus::Unchanged,
                         }
                     }
-                    Err(message) => {
-                        report_error(&message);
+                    Err(err) => {
+                        report_error(&err);
                         FileStatus::Failed
                     }
                 },
@@ -234,15 +228,15 @@ impl Run {
                             FileStatus::Unchanged
                         }
                         Ok(Freshness::Stale) => {
-                            report_error(&format!("`{display}` is stale"));
+                            eprintln!("error: `{display}` is stale");
                             FileStatus::Stale
                         }
                         Ok(Freshness::Missing) => {
-                            report_error(&format!("`{display}` is stale (missing)"));
+                            eprintln!("error: `{display}` is stale (missing)");
                             FileStatus::Stale
                         }
-                        Err(err) => {
-                            report_error(&format!("cannot read `{display}`: {err}"));
+                        Err(source) => {
+                            report_error(&InputError::ReadExisting { path: path.clone(), source });
                             FileStatus::Failed
                         }
                     }
@@ -332,9 +326,45 @@ impl Run {
     }
 }
 
+/// Why one input failed, short of its Diagnostics, or why `schema` could not write. It fails only
+/// that input, which gives exit code 1. A stale Dissector under `--check` is a [`Freshness`], not
+/// one of these.
+#[derive(Debug, thiserror::Error)]
+enum InputError {
+    /// Reading the input itself.
+    #[error("cannot read `{name}`: {source}")]
+    Read {
+        name: String,
+        #[source]
+        source: io::Error,
+    },
+    /// Writing its Dissector.
+    #[error("cannot write {}: {source}", output_target(.output))]
+    Write {
+        output: Output,
+        #[source]
+        source: io::Error,
+    },
+    /// Reading the file `--check` compares its Dissector with.
+    #[error("cannot read `{}`: {source}", .path.display())]
+    ReadExisting {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+}
+
+/// How a write error names its output: `to standard output`, or the path in backticks.
+fn output_target(output: &Output) -> String {
+    match output {
+        Output::Stdout => "to standard output".to_owned(),
+        Output::File(path) => format!("`{}`", path.display()),
+    }
+}
+
 /// Prints why an input failed to stderr, in either message format.
-fn report_error(message: &str) {
-    eprintln!("error: {message}");
+fn report_error(err: &InputError) {
+    eprintln!("error: {err}");
 }
 
 /// What writing a Dissector did.
@@ -376,20 +406,15 @@ fn read_existing(path: &Path) -> io::Result<Option<Vec<u8>>> {
 }
 
 /// Writes a Dissector to its output, creating missing parent directories of a file.
-fn write(output: &Output, lua: &str) -> Result<WriteOutcome, String> {
-    match output {
+fn write(output: &Output, lua: &str) -> Result<WriteOutcome, InputError> {
+    let written = match output {
         Output::Stdout => {
             let mut stdout = io::stdout().lock();
-            stdout
-                .write_all(lua.as_bytes())
-                .and_then(|()| stdout.flush())
-                .map(|()| WriteOutcome::Written)
-                .map_err(|err| format!("cannot write to standard output: {err}"))
+            stdout.write_all(lua.as_bytes()).and_then(|()| stdout.flush()).map(|()| WriteOutcome::Written)
         }
-        Output::File(path) => {
-            write_file(path, lua.as_bytes()).map_err(|err| format!("cannot write `{}`: {err}", path.display()))
-        }
-    }
+        Output::File(path) => write_file(path, lua.as_bytes()),
+    };
+    written.map_err(|source| InputError::Write { output: output.clone(), source })
 }
 
 /// Replaces `path` atomically with `bytes`, through a temporary file in the same directory, unless
