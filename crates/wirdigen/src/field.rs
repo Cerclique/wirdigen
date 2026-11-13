@@ -10,7 +10,7 @@ use crate::bits::{self, Bit, RawBits};
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expect::{self, Expect, RawExpect};
 use crate::expr::{self, Expr, ExprKind, Fault};
-use crate::index::FieldId;
+use crate::index::{FieldId, TypeId};
 use crate::keys::{
     Keys, Spanned, closest, expect_bool, expect_integer, expect_string, is_single_line, read_keys, wrong_type,
 };
@@ -1159,8 +1159,10 @@ pub(crate) enum FieldKind {
     Builtin(BuiltinField),
     /// An inline structure: its entries, in order, shown as a subtree.
     Structure(Vec<Entry>),
-    /// A Field of the named Type, shown as a subtree.
+    /// A Field of a Type, shown as a subtree.
     Type {
+        id: TypeId,
+        /// The Type's name, for Lua names and messages.
         name: String,
         /// The context table this use passes: what each name the Type reads but does not
         /// declare resolves to here, by the name as written (spec §4.3).
@@ -1465,9 +1467,9 @@ pub(crate) fn check<'a>(
                 if let Some(bits) = &field.bits {
                     diagnostics.push(invalid_bits(bits, "a Field whose type is a Type has no bits"));
                 }
-                types.resolve(name).and_then(|ty| {
-                    let context = scope::resolve_context(&ty, &name.span, scope, types, diagnostics)?;
-                    Some(FieldKind::Type { name: ty, context })
+                types.resolve(name).and_then(|id| {
+                    let context = scope::resolve_context(&name.value, &name.span, scope, types, diagnostics)?;
+                    Some(FieldKind::Type { id, name: name.value.clone(), context })
                 })
             }
             RawKind::Type { name, .. } => {

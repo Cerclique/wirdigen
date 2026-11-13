@@ -9,6 +9,7 @@ use std::ops::Range;
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expr::Expr;
 use crate::field::{self, Builtin, Endian, Entry, Operand, Parse, RawAmount, RawEntry};
+use crate::index::TypeId;
 use crate::keys::{Keys, Spanned, duplicate_key, wrong_type};
 use crate::mapping::{self, Enums, Key};
 use crate::scalar::{Kind, resolve_plain};
@@ -218,6 +219,8 @@ pub(crate) enum Body {
     Fields(Vec<Entry>),
     /// The Fields of a Type, read by its dissect function.
     Type {
+        id: TypeId,
+        /// The Type's name, for Lua names and messages.
         name: String,
         /// The context table this use passes (spec §4.3).
         context: Vec<(String, Reference)>,
@@ -280,9 +283,9 @@ fn check_body<'a>(
 ) -> Option<Body> {
     match body {
         RawBody::Fields(fields) => Some(Body::Fields(field::check(fields, endian, enums, types, scope, diagnostics))),
-        RawBody::Type(name) => types.resolve(name).and_then(|ty| {
-            let context = scope::resolve_context(&ty, &name.span, scope, types, diagnostics)?;
-            Some(Body::Type { name: ty, context })
+        RawBody::Type(name) => types.resolve(name).and_then(|id| {
+            let context = scope::resolve_context(&name.value, &name.span, scope, types, diagnostics)?;
+            Some(Body::Type { id, name: name.value.clone(), context })
         }),
     }
 }

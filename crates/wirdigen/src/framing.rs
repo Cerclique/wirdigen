@@ -13,7 +13,7 @@ use crate::field::{Amount, Array, Builtin, Entry, Field, FieldKind, Length, Pars
 use crate::index::FieldId;
 use crate::keys::{Spanned, expect_integer, read_keys, wrong_type};
 use crate::scope::{self, Reference};
-use crate::types::NamedType;
+use crate::types::NamedTypes;
 use crate::yaml::{Node, Value};
 
 /// The keys of `framing:`, both required.
@@ -103,7 +103,7 @@ impl RawFraming<Parse> {
 pub(crate) fn check(
     raw: &RawFraming,
     top: &[Entry],
-    types: &[NamedType],
+    types: &NamedTypes,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Framing> {
     let header = match usize::try_from(raw.header.value) {
@@ -288,7 +288,7 @@ enum Place {
 }
 
 /// The place of each top-level Field, by name.
-fn places<'t>(top: &'t [Entry], types: &[NamedType]) -> BTreeMap<&'t str, Place> {
+fn places<'t>(top: &'t [Entry], types: &NamedTypes) -> BTreeMap<&'t str, Place> {
     let mut places = BTreeMap::new();
     let mut offset = Some(0_usize);
     for entry in top {
@@ -309,7 +309,7 @@ fn places<'t>(top: &'t [Entry], types: &[NamedType]) -> BTreeMap<&'t str, Place>
 }
 
 /// The bytes an entry reads in every Message, when they are known before it is read.
-fn entry_size(entry: &Entry, types: &[NamedType]) -> Option<usize> {
+fn entry_size(entry: &Entry, types: &NamedTypes) -> Option<usize> {
     match entry {
         Entry::Padding(Amount::Constant(size)) => Some(*size),
         Entry::Padding(Amount::Expression { .. }) => None,
@@ -318,7 +318,7 @@ fn entry_size(entry: &Entry, types: &[NamedType]) -> Option<usize> {
 }
 
 /// The bytes a Field reads in every Message, when they are known before it is read.
-fn field_size(field: &Field, types: &[NamedType]) -> Option<usize> {
+fn field_size(field: &Field, types: &NamedTypes) -> Option<usize> {
     if field.condition.is_some() {
         return None;
     }
@@ -328,7 +328,7 @@ fn field_size(field: &Field, types: &[NamedType]) -> Option<usize> {
             _ => None,
         },
         FieldKind::Structure(entries) => structure_size(entries, types),
-        FieldKind::Type { name, .. } => structure_size(&types.iter().find(|t| &t.name == name)?.fields, types),
+        FieldKind::Type { id, .. } => structure_size(&types.get(*id).fields, types),
         FieldKind::Switch(_) => None,
     }?;
     match &field.array {
@@ -340,7 +340,7 @@ fn field_size(field: &Field, types: &[NamedType]) -> Option<usize> {
 
 /// The bytes the entries of a structure read in every Message, when they are known before it is
 /// read.
-fn structure_size(entries: &[Entry], types: &[NamedType]) -> Option<usize> {
+fn structure_size(entries: &[Entry], types: &NamedTypes) -> Option<usize> {
     entries.iter().try_fold(0usize, |total, entry| total.checked_add(entry_size(entry, types)?))
 }
 

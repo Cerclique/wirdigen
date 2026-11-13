@@ -12,11 +12,11 @@ use std::ops::Range;
 
 use crate::diagnostic::{Diagnostic, Name};
 use crate::field::{Entry, FieldKind, is_field_name};
-use crate::index::{FieldId, SubFieldId};
+use crate::index::{FieldId, SubFieldId, TypeId};
 use crate::keys::{expect_string, is_single_line};
 use crate::scope::{self, Miss};
 use crate::switch::Body;
-use crate::types::NamedType;
+use crate::types::NamedTypes;
 use crate::yaml::Node;
 
 /// `info:` as written, after stage 2.
@@ -159,7 +159,7 @@ fn parse(text: &str) -> Result<Vec<Piece>, SyntaxError> {
 pub(crate) fn check(
     raw: &RawInfo,
     top: &[Entry],
-    types: &[NamedType],
+    types: &NamedTypes,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Template> {
     let pieces = raw.parsed.as_ref().ok()?;
@@ -189,7 +189,7 @@ pub(crate) enum Target {
     SubField(SubFieldId),
     /// A `switch` Field: the Type it is in, `None` in the top-level layout, and its path from
     /// the Type's body or the top-level layout, where its dissect function reads it.
-    Switch { ty: Option<String>, path: Vec<String> },
+    Switch { ty: Option<TypeId>, path: Vec<String> },
 }
 
 /// Why a template's Field Path shows nothing.
@@ -231,14 +231,14 @@ impl Unresolved {
 /// (`types`), `switch` cases and bitfields. Cases add no segment, so the path goes on in the
 /// case that has the next Field; cases reaching one path share its `ProtoField` (spec §3.9).
 /// Only validation resolves a template's paths; lowering takes the [`Target`] it recorded.
-fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]) -> Result<Target, Unresolved> {
+fn find<'p>(top: &'p [Entry], types: &'p NamedTypes, path: &[String]) -> Result<Target, Unresolved> {
     let names = |entries: &'p [Entry]| entries.iter().filter_map(Entry::field);
     let Some(mut field) = names(top).find(|f| f.name == path[0]) else {
         return Err(Unresolved::Unknown(names(top).map(|f| f.name.clone()).collect()));
     };
-    let body = |name: &str| &types.iter().find(|t| t.name == name).expect("validation resolved the Type").fields;
+    let body = |id: TypeId| types.get(id).fields.as_slice();
     // The Type the Field is in, and the Field's path from the Type's body or the top level.
-    let (mut ty, mut at): (Option<&'p str>, Vec<String>) = (None, vec![field.name.clone()]);
+    let (mut ty, mut at): (Option<TypeId>, Vec<String>) = (None, vec![field.name.clone()]);
     for (index, segment) in path.iter().enumerate().skip(1) {
         if field.array.is_some() {
             return Err(Unresolved::Miss(Miss::IntoArray(field.name.clone())));
@@ -249,14 +249,14 @@ fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]) -> Result
         };
         // Each place the next Field can be, with the Type it is in and the path there of what
         // holds it.
-        let places: Vec<(&'p [Entry], Option<&'p str>, Vec<String>)> = match &field.kind {
+        let places: Vec<(&'p [Entry], Option<TypeId>, Vec<String>)> = match &field.kind {
             FieldKind::Structure(children) => vec![(children.as_slice(), ty, at.clone())],
-            FieldKind::Type { name, .. } => vec![(body(name).as_slice(), Some(name.as_str()), Vec::new())],
+            FieldKind::Type { id, .. } => vec![(body(*id), Some(*id), Vec::new())],
             FieldKind::Switch(switch) => switch
                 .bodies()
                 .map(|case| match case {
                     Body::Fields(children) => (children.as_slice(), ty, at.clone()),
-                    Body::Type { name, .. } => (body(name).as_slice(), Some(name.as_str()), Vec::new()),
+                    Body::Type { id, .. } => (body(*id), Some(*id), Vec::new()),
                 })
                 .collect(),
             FieldKind::Builtin(value) => {
@@ -283,7 +283,7 @@ fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]) -> Result
     let what = match &field.kind {
         _ if field.array.is_some() => "an array",
         FieldKind::Builtin(_) => return Ok(Target::Value(field.id)),
-        FieldKind::Switch(_) => return Ok(Target::Switch { ty: ty.map(str::to_owned), path: at }),
+        FieldKind::Switch(_) => return Ok(Target::Switch { ty, path: at }),
         FieldKind::Structure(_) => "a structure",
         FieldKind::Type { .. } => "a Field of a Type",
     };

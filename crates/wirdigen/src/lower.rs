@@ -14,13 +14,13 @@ use crate::field::{
     self, Amount, Array, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind, Operand, default_label,
 };
 use crate::framing::{Extent, Framing, HeaderField};
-use crate::index::FieldIndex;
+use crate::index::{FieldIndex, TypeId};
 use crate::info::{self, Target, Template};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::registration::Ports;
 use crate::scope::Reference;
 use crate::switch::{Body, Switch, wire_ranges};
-use crate::types::NamedType;
+use crate::types::NamedTypes;
 
 /// The model the emitter prints.
 #[derive(Debug, PartialEq, Eq)]
@@ -586,7 +586,7 @@ pub(crate) enum Decode {
 }
 
 pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
-    let (top, mut plans) = plans(protocol);
+    let (top, plans) = plans(protocol);
     let mut lowering = Lowering {
         plan: Plan::default(),
         index: FieldIndex::new(protocol),
@@ -605,12 +605,12 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     let info = lowering.info(protocol);
     // Every Type's slots are known before any use of it builds a site table.
     let mut types = Vec::new();
-    for t in &protocol.types {
+    for (t, plan) in protocol.types.iter().zip(plans) {
         let mut slots = Vec::new();
-        lowering.plan = plans.remove(&t.name).expect("every Type has a plan");
-        lowering.current_type = Some(&t.name);
+        lowering.plan = plan;
+        lowering.current_type = Some(t.id);
         let body = lowering.type_structure(&t.fields, &[], &mut slots);
-        lowering.slots.insert(&t.name, slots);
+        lowering.slots.insert(t.id, slots);
         let plan = &lowering.plan;
         let exports = plan.export_table();
         types.push(TypeFunction { name: t.name.clone(), body, context: plan.context, locals: plan.locals(), exports });
@@ -657,28 +657,29 @@ struct Plan {
     context: bool,
 }
 
-/// The plans of the top-level layout and of each Type. A caller's Expressions decide what a
-/// Type returns, so callers are planned first: the layout, then the Types from the last one,
-/// which no other Type uses.
-fn plans(protocol: &Protocol) -> (Plan, BTreeMap<String, Plan>) {
-    let mut demands: BTreeMap<String, BTreeSet<Vec<String>>> = BTreeMap::new();
+/// The paths callers read inside each Type, which it returns.
+type Demands = BTreeMap<TypeId, BTreeSet<Vec<String>>>;
+
+/// The plans of the top-level layout and of each Type, in the order of `protocol.types`. A
+/// caller's Expressions decide what a Type returns, so callers are planned first: the layout,
+/// then the Types from the last one, which no other Type uses.
+fn plans(protocol: &Protocol) -> (Plan, Vec<Plan>) {
+    let mut demands = Demands::new();
     let top = Plan::new(&protocol.fields, BTreeSet::new(), &mut demands);
-    let mut plans = BTreeMap::new();
-    for t in protocol.types.iter().rev() {
-        let exports = demands.remove(&t.name).unwrap_or_default();
-        plans.insert(t.name.clone(), Plan::new(&t.fields, exports, &mut demands));
-    }
+    let mut plans: Vec<Plan> = protocol
+        .types
+        .iter()
+        .rev()
+        .map(|t| Plan::new(&t.fields, demands.remove(&t.id).unwrap_or_default(), &mut demands))
+        .collect();
+    plans.reverse();
     (top, plans)
 }
 
 impl Plan {
     /// The plan of a function reading `fields` that returns `exports`, adding to `demands` the
     /// paths it reads inside each Type.
-    fn new(
-        fields: &[field::Entry],
-        exports: BTreeSet<Vec<String>>,
-        demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>,
-    ) -> Self {
+    fn new(fields: &[field::Entry], exports: BTreeSet<Vec<String>>, demands: &mut Demands) -> Self {
         let mut read = Vec::new();
         let mut context = false;
         references(fields, &mut |reference| match reference {
@@ -697,12 +698,7 @@ impl Plan {
 
     /// Gives the value at `path` a local: the Field's own, or the table of the Field of a Type
     /// among `uses` the path goes into.
-    fn keep(
-        &mut self,
-        path: &[String],
-        uses: &[(Vec<String>, &str)],
-        demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>,
-    ) {
+    fn keep(&mut self, path: &[String], uses: &[(Vec<String>, TypeId)], demands: &mut Demands) {
         let into = uses.iter().find(|(prefix, _)| prefix.len() < path.len() && path.starts_with(prefix));
         let Some((prefix, ty)) = into else {
             if !self.values.contains_key(path) {
@@ -715,7 +711,7 @@ impl Plan {
             let local = self.local(prefix);
             self.results.insert(prefix.clone(), local);
         }
-        demands.entry((*ty).to_owned()).or_default().insert(path[prefix.len()..].to_vec());
+        demands.entry(*ty).or_default().insert(path[prefix.len()..].to_vec());
     }
 
     /// A fresh local for the value at `path`: `v_` then the segments joined by `__`.
@@ -784,11 +780,11 @@ impl Plan {
 /// their path from the dissect function's root. Inline structures add a segment, `switch` cases
 /// none: cases reaching one path share its `ProtoField`, so they have the same kind of Field
 /// there (spec §3.9). The bodies of Types are left out: their own functions read them.
-fn type_uses<'f>(entries: &'f [field::Entry], parent: &[String], uses: &mut Vec<(Vec<String>, &'f str)>) {
+fn type_uses(entries: &[field::Entry], parent: &[String], uses: &mut Vec<(Vec<String>, TypeId)>) {
     for field in entries.iter().filter_map(field::Entry::field) {
         let path = [parent, std::slice::from_ref(&field.name)].concat();
         match &field.kind {
-            FieldKind::Type { name, .. } => uses.push((path, name)),
+            FieldKind::Type { id, .. } => uses.push((path, *id)),
             FieldKind::Structure(children) => type_uses(children, &path, uses),
             FieldKind::Switch(switch) => {
                 for body in switch.bodies() {
@@ -860,7 +856,7 @@ enum SlotKind<'p> {
     /// The `ProtoField` of this sub-Field of the bitfield.
     Bit(&'p BuiltinField, &'p Bit),
     /// The site table of this Type, which the Field is of.
-    Site(&'p str),
+    Site(TypeId),
 }
 
 /// What lowering has built so far, while it walks the layout.
@@ -876,12 +872,12 @@ struct Lowering<'p> {
     tables: Vec<SharedTable>,
     names: Vec<NamesTable>,
     /// The slots of each Type's site tables, in the Type's layout order.
-    slots: BTreeMap<&'p str, Vec<Slot<'p>>>,
+    slots: BTreeMap<TypeId, Vec<Slot<'p>>>,
     sites: Vec<SharedSite>,
     /// The Type whose dissect function is being lowered, `None` for the top-level layout.
-    current_type: Option<&'p str>,
+    current_type: Option<TypeId>,
     /// The `switch` Fields whose subject value label the Info column shows.
-    info_cases: BTreeSet<SwitchSite<'p>>,
+    info_cases: BTreeSet<SwitchSite>,
     /// The field extractors of the Fields the Info column shows, each once.
     extractors: Vec<Extractor>,
 }
@@ -890,8 +886,8 @@ struct Lowering<'p> {
 /// reads it, `None` for the top-level layout, and its path from that Type's body or the top
 /// level. The emitter keeps its subject value label under its whole path (spec §3.14).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct SwitchSite<'p> {
-    ty: Option<&'p str>,
+struct SwitchSite {
+    ty: Option<TypeId>,
     path: Vec<String>,
 }
 
@@ -920,7 +916,7 @@ impl<'p> Lowering<'p> {
     fn info_field(&mut self, path: &[String], target: &'p Target) -> InfoPart {
         let (mapping, range) = match target {
             Target::Switch { ty, path: at } => {
-                self.keep_case(SwitchSite { ty: ty.as_deref(), path: at.clone() });
+                self.keep_case(SwitchSite { ty: *ty, path: at.clone() });
                 return InfoPart::Case(path.join("."));
             }
             Target::Value(id) => {
@@ -942,7 +938,7 @@ impl<'p> Lowering<'p> {
     }
 
     /// Keeps the subject value label of the `switch` Field at `site` for the Info column.
-    fn keep_case(&mut self, site: SwitchSite<'p>) {
+    fn keep_case(&mut self, site: SwitchSite) {
         self.info_cases.insert(site);
     }
 
@@ -999,8 +995,8 @@ impl<'p> Lowering<'p> {
                 let body = self.structure(fields, &segments);
                 Stmt::Structure { field: Ref::Local(index), body, path, hidden: field.hidden }
             }
-            FieldKind::Type { name, .. } => {
-                let site = self.site(name, &segments);
+            FieldKind::Type { id, .. } => {
+                let site = self.site(*id, &segments);
                 let local =
                     unique(&format!("site_{}", segments.join("__")), |n| self.sites.iter().any(|s| s.local == n));
                 self.sites.push(SharedSite { local, site });
@@ -1044,18 +1040,18 @@ impl<'p> Lowering<'p> {
                 Some(slots) => self.type_structure(fields, segments, slots),
                 None => self.structure(fields, segments),
             }),
-            Body::Type { name, context } => {
+            Body::Type { id, name, context } => {
                 let site = if let Some(slots) = slots {
                     let key = format!("t_{}__{name}", segments.join("__"));
                     if !slots.iter().any(|s| s.key == key) {
-                        let kind = SlotKind::Site(name);
+                        let kind = SlotKind::Site(*id);
                         slots.push(Slot { key: key.clone(), segments: segments.to_vec(), kind });
                     }
                     Ref::Slot(key)
                 } else {
                     let local = format!("site_{}__{name}", segments.join("__"));
                     let index = self.sites.iter().position(|s| s.local == local).unwrap_or_else(|| {
-                        let site = self.site(name, segments);
+                        let site = self.site(*id, segments);
                         self.sites.push(SharedSite { local, site });
                         self.sites.len() - 1
                     });
@@ -1185,8 +1181,8 @@ impl<'p> Lowering<'p> {
                         let body = self.type_structure(fields, &segments, slots);
                         Stmt::Structure { field: field_ref, path, body, hidden: field.hidden }
                     }
-                    FieldKind::Type { name, .. } => {
-                        let site = slot(slots, "t_", segments.clone(), SlotKind::Site(name));
+                    FieldKind::Type { id, .. } => {
+                        let site = slot(slots, "t_", segments.clone(), SlotKind::Site(*id));
                         self.call(field_ref, field, &segments, site)
                     }
                     FieldKind::Switch(switch) => self.switch(field_ref, field, switch, &segments, Some(slots)),
@@ -1199,8 +1195,8 @@ impl<'p> Lowering<'p> {
 
     /// The site table of a use of the Type `ty` at the path `segments`, registering the
     /// `ProtoField`s of that use.
-    fn site(&mut self, ty: &str, segments: &[&'p str]) -> Site {
-        let slots = self.slots.get(ty).expect("every Type is lowered before any use of it").clone();
+    fn site(&mut self, ty: TypeId, segments: &[&'p str]) -> Site {
+        let slots = self.slots.get(&ty).expect("every Type is lowered before any use of it").clone();
         let entries = slots
             .into_iter()
             .map(|slot| {
@@ -1219,7 +1215,9 @@ impl<'p> Lowering<'p> {
     /// The statement calling the dissect function of the Type of `field`, a Field of a Type at
     /// `segments` whose `ProtoField` is `proto_field`, with the site table `site`.
     fn call(&mut self, proto_field: Ref, field: &Field, segments: &[&str], site: Ref) -> Stmt {
-        let FieldKind::Type { name, context } = &field.kind else { unreachable!("only a Field of a Type is called") };
+        let FieldKind::Type { name, context, .. } = &field.kind else {
+            unreachable!("only a Field of a Type is called")
+        };
         let context = context.iter().map(|(key, reference)| (key.clone(), self.reference(reference))).collect();
         let result = self.plan.results.get(&owned(segments)).cloned();
         let (path, ty, hidden) = (segments.join("."), name.clone(), field.hidden);
@@ -1401,7 +1399,7 @@ impl<'p> Lowering<'p> {
 /// and Fields of Types away from the top level, the first in layout order among them. Arrays
 /// are not looked into: their Fields are read once per Element. Returns where it is lowered,
 /// and its path from the top level.
-fn outermost_switch<'p>(fields: &'p [field::Entry], types: &'p [NamedType]) -> Option<(SwitchSite<'p>, Vec<String>)> {
+fn outermost_switch(fields: &[field::Entry], types: &NamedTypes) -> Option<(SwitchSite, Vec<String>)> {
     // Each structure of the current depth, with where it is lowered and its path from the top.
     let mut level = vec![(fields, SwitchSite { ty: None, path: Vec::new() }, Vec::new())];
     while !level.is_empty() {
@@ -1413,11 +1411,9 @@ fn outermost_switch<'p>(fields: &'p [field::Entry], types: &'p [NamedType]) -> O
                 match &field.kind {
                     FieldKind::Switch(_) => return Some((inside, extend(&absolute))),
                     FieldKind::Structure(children) => next.push((children.as_slice(), inside, extend(&absolute))),
-                    FieldKind::Type { name, .. } => {
-                        let body =
-                            &types.iter().find(|t| t.name == *name).expect("validation resolved the Type").fields;
-                        let site = SwitchSite { ty: Some(name.as_str()), path: Vec::new() };
-                        next.push((body.as_slice(), site, extend(&absolute)));
+                    FieldKind::Type { id, .. } => {
+                        let site = SwitchSite { ty: Some(*id), path: Vec::new() };
+                        next.push((types.get(*id).fields.as_slice(), site, extend(&absolute)));
                     }
                     FieldKind::Builtin(_) => {}
                 }

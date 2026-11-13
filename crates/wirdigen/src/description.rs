@@ -12,7 +12,7 @@ use crate::info::{self, RawInfo, Template};
 use crate::keys::{Spanned, expect_string, is_single_line, read_keys, wrong_type};
 use crate::mapping::{self, Enums, RawEnum, Table};
 use crate::registration::{self, Ports, RawRegistration};
-use crate::types::{self, NamedType, RawType};
+use crate::types::{self, NamedTypes, RawType};
 use crate::yaml::{Node, Value};
 
 /// The shortest protocol name Wireshark registers: it refuses one-character filter names
@@ -88,8 +88,7 @@ pub(crate) struct Protocol {
     /// The ports the Dissector registers on by default, per transport.
     pub(crate) ports: Vec<Ports>,
     pub(crate) fields: Vec<Entry>,
-    /// The Types, each after the Types it uses (spec §7.3).
-    pub(crate) types: Vec<NamedType>,
+    pub(crate) types: NamedTypes,
     /// The tables of the Enums, by name.
     pub(crate) enums: BTreeMap<String, Table>,
     /// The `info:` template, when written; without one, the Info column shows the outermost
