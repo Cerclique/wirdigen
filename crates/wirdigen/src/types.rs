@@ -51,8 +51,12 @@ pub(crate) struct NamedTypes {
 
 impl NamedTypes {
     /// The Type a resolved `type:` names.
+    ///
+    /// # Panics
+    ///
+    /// When no Type of the description has that id: every id is given out for one of them.
     pub(crate) fn get(&self, id: TypeId) -> &NamedType {
-        &self.declared[id.position()]
+        self.declared.get(id.position()).expect("every TypeId names a Type of the description")
     }
 
     /// The Types in dependency order, each after the Types it uses, so lowering can define each
