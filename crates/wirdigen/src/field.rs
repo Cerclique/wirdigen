@@ -187,9 +187,9 @@ impl Builtin {
     pub(crate) fn displays(self) -> &'static [Display] {
         match self {
             Self::Int { signed: false, .. } => &UNSIGNED_DISPLAYS,
-            Self::Int { signed: true, .. } => &[Display::Dec],
+            Self::Int { signed: true, .. } => &SIGNED_DISPLAYS,
             Self::Bytes => &BYTES_DISPLAYS,
-            Self::AbsTime => &[Display::Local, Display::Utc, Display::DoyUtc],
+            Self::AbsTime => &ABS_TIME_DISPLAYS,
             Self::Bool
             | Self::Float32
             | Self::Float64
@@ -207,11 +207,9 @@ impl Builtin {
     /// type takes none.
     pub(crate) fn encodings(self) -> &'static [Encoding] {
         match self {
-            Self::String => &[Encoding::Utf8, Encoding::Ascii, Encoding::Utf16, Encoding::Ucs2, Encoding::Latin1],
-            Self::AbsTime => {
-                &[Encoding::Secs, Encoding::SecsNsecs, Encoding::Ntp, Encoding::Msecs, Encoding::Usecs, Encoding::Nsecs]
-            }
-            Self::RelTime => &[Encoding::Secs, Encoding::SecsNsecs, Encoding::Msecs, Encoding::Usecs, Encoding::Nsecs],
+            Self::String => &STRING_ENCODINGS,
+            Self::AbsTime => &ABS_TIME_ENCODINGS,
+            Self::RelTime => &REL_TIME_ENCODINGS,
             Self::Int { .. }
             | Self::Bool
             | Self::Float32
@@ -263,11 +261,33 @@ pub(crate) enum Display {
     DoyUtc,
 }
 
+// Each family's `display:` and `encoding:` values, the default first. The defaults applied in
+// validation index these arrays in a const, so they are taken when the crate compiles and
+// reordering a table moves its default with it.
+
 /// The `display:` values of an unsigned integer, the default first.
 const UNSIGNED_DISPLAYS: [Display; 5] = [Display::Dec, Display::Hex, Display::Oct, Display::DecHex, Display::HexDec];
 
+/// The `display:` of an unsigned integer Field or a Sub-Field that names none.
+pub(crate) const UNSIGNED_DISPLAY: Display = UNSIGNED_DISPLAYS[0];
+
+/// The `display:` values of a signed integer, the default first.
+const SIGNED_DISPLAYS: [Display; 1] = [Display::Dec];
+
+/// The `display:` of a signed integer that names none.
+const SIGNED_DISPLAY: Display = SIGNED_DISPLAYS[0];
+
 /// The `display:` values of `bytes`, the default first.
 const BYTES_DISPLAYS: [Display; 5] = [Display::Plain, Display::Dot, Display::Dash, Display::Colon, Display::Space];
+
+/// The `display:` of a `bytes` that names none.
+const BYTES_DISPLAY: Display = BYTES_DISPLAYS[0];
+
+/// The `display:` values of `abs_time`, the default first.
+const ABS_TIME_DISPLAYS: [Display; 3] = [Display::Local, Display::Utc, Display::DoyUtc];
+
+/// The `display:` of an `abs_time` that names none.
+const ABS_TIME_DISPLAY: Display = ABS_TIME_DISPLAYS[0];
 
 impl Display {
     /// The value as written in `display:`.
@@ -337,6 +357,27 @@ pub(crate) enum Encoding {
     /// 8-byte nanoseconds.
     Nsecs,
 }
+
+/// The `encoding:` values of `string`, the default first.
+const STRING_ENCODINGS: [Encoding; 5] =
+    [Encoding::Utf8, Encoding::Ascii, Encoding::Utf16, Encoding::Ucs2, Encoding::Latin1];
+
+/// The `encoding:` of a `string` that names none.
+const STRING_ENCODING: Encoding = STRING_ENCODINGS[0];
+
+/// The `encoding:` values of `abs_time`, the default first.
+const ABS_TIME_ENCODINGS: [Encoding; 6] =
+    [Encoding::Secs, Encoding::SecsNsecs, Encoding::Ntp, Encoding::Msecs, Encoding::Usecs, Encoding::Nsecs];
+
+/// The `encoding:` of an `abs_time` that names none.
+const ABS_TIME_ENCODING: Encoding = ABS_TIME_ENCODINGS[0];
+
+/// The `encoding:` values of `rel_time`, the default first.
+const REL_TIME_ENCODINGS: [Encoding; 5] =
+    [Encoding::Secs, Encoding::SecsNsecs, Encoding::Msecs, Encoding::Usecs, Encoding::Nsecs];
+
+/// The `encoding:` of a `rel_time` that names none.
+const REL_TIME_ENCODING: Encoding = REL_TIME_ENCODINGS[0];
 
 impl Encoding {
     /// The value as written in `encoding:`.
@@ -1652,21 +1693,21 @@ fn check_builtin<'a>(
         Builtin::Float64 => (keys.sized(diagnostics), keys.float(Float::Double, diagnostics)),
         Builtin::Bytes => (keys.sized(diagnostics), keys.bytes(diagnostics)),
         Builtin::String => {
-            let encoding = keys.encoding(Encoding::Utf8, diagnostics);
+            let encoding = keys.encoding(STRING_ENCODING, diagnostics);
             let length = encoding.and_then(|encoding| keys.length(Some(encoding), diagnostics));
             let rest = keys.nothing_else(diagnostics);
             (length, encoding.zip(rest).map(|(encoding, ())| BuiltinKind::String { encoding }))
         }
         Builtin::AbsTime => {
-            let encoding = keys.encoding(Encoding::Secs, diagnostics);
+            let encoding = keys.encoding(ABS_TIME_ENCODING, diagnostics);
             let length = encoding.and_then(|encoding| keys.length(Some(encoding), diagnostics));
-            let display = keys.display(Display::Local, diagnostics);
+            let display = keys.display(ABS_TIME_DISPLAY, diagnostics);
             let rest = keys.no_labels(diagnostics).and(keys.no_expect_bits_dissector(diagnostics));
             let kind = encoding.zip(display).zip(rest);
             (length, kind.map(|((encoding, display), ())| BuiltinKind::AbsTime { encoding, display }))
         }
         Builtin::RelTime => {
-            let encoding = keys.encoding(Encoding::Secs, diagnostics);
+            let encoding = keys.encoding(REL_TIME_ENCODING, diagnostics);
             let length = encoding.and_then(|encoding| keys.length(Some(encoding), diagnostics));
             let rest = keys.nothing_else(diagnostics);
             (length, encoding.zip(rest).map(|(encoding, ())| BuiltinKind::RelTime { encoding }))
@@ -1702,7 +1743,7 @@ impl BuiltinKeys<'_, '_, '_> {
         enums: &mut Enums<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Option<BuiltinKind> {
-        let display = self.display(Display::Dec, diagnostics);
+        let display = self.display(if signed { SIGNED_DISPLAY } else { UNSIGNED_DISPLAY }, diagnostics);
         let (subject, range) = (Subject::builtin(self.ty_name), int_range(signed, bytes));
         let labels = mapping::check_integer(&self.field.mappings, &subject, &range, enums, diagnostics).ok();
         let expect = self.expect(diagnostics);
@@ -1746,7 +1787,7 @@ impl BuiltinKeys<'_, '_, '_> {
 
     /// A `bytes`: `display`, `dissector`.
     fn bytes(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<BuiltinKind> {
-        let display = self.display(Display::Plain, diagnostics);
+        let display = self.display(BYTES_DISPLAY, diagnostics);
         let no_labels = self.no_labels(diagnostics);
         let no_expect = self.no_expect(diagnostics);
         let no_bits = self.no_bits(diagnostics);

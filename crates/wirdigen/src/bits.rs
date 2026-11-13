@@ -302,7 +302,7 @@ pub(crate) fn check(
         } else {
             let display = match &sub.display {
                 Some(value) => record(Display::check(value, ty, container), diagnostics),
-                None => Some(Display::Dec),
+                None => Some(field::UNSIGNED_DISPLAY),
             };
             let labels = width.and_then(|width| {
                 let subject = Subject::sub_field(&sub.name.span, width);
