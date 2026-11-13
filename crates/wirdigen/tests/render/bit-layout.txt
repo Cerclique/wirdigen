@@ -1,0 +1,46 @@
+error[invalid-bit-width]: a width is at least 1 bit, found `0`
+ --> bit-layout.wirdigen.yaml:6:30
+  |
+6 |       - { name: kind, width: 0 }
+  |                              ^
+  |
+  = note: remove an entry that takes no bits
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#invalid-bit-width
+
+warning[unreachable-value]: `4` is never a value of a 2-bit sub-Field
+ --> bit-layout.wirdigen.yaml:7:51
+  |
+7 |       - { name: mode, width: 2, values: { 3: Max, 4: Never } }
+  |                 ----                              ^
+  |                 |
+  |                 a 2-bit sub-Field holds 0 to 3
+  |
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unreachable-value
+
+error[mismatched-bit-widths]: these widths add up to 3 bits, but `uint8` has 8
+  --> bit-layout.wirdigen.yaml:11:5
+   |
+11 |     bits:
+   |     ^^^^
+   |
+   = note: name every bit, or cover the gaps with `{ padding: <bits> }` entries
+   = note: see https://cerclique.github.io/wirdigen/diagnostics.html#mismatched-bit-widths
+
+warning[unreachable-expect]: this `expect` never matches a value of a 2-bit sub-Field
+  --> bit-layout.wirdigen.yaml:12:41
+   |
+12 |       - { name: kind, width: 2, expect: 4 }
+   |                 ----                    ^
+   |                 |
+   |                 a 2-bit sub-Field holds 0 to 3
+   |
+   = note: see https://cerclique.github.io/wirdigen/diagnostics.html#unreachable-expect
+
+error[incompatible-display]: a 1-bit sub-Field takes no `true`
+  --> bit-layout.wirdigen.yaml:13:31
+   |
+13 |       - { name: on, width: 1, true: Yes, values: { 1: One } }
+   |                               ^^^^
+   |
+   = note: only 1-bit sub-Fields without `values`, `unit` or `display` take `true`
+   = note: see https://cerclique.github.io/wirdigen/diagnostics.html#incompatible-display
