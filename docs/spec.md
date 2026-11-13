@@ -410,6 +410,8 @@ Operators from tightest to loosest binding (Rust/Python order, **not** C):
 
 So `flags & 0x80 == 0x80` means `(flags & 0x80) == 0x80`, and `a < b < c` is an error.
 
+An Expression nests at most 64 levels deep; a deeper one is the error `expression-too-deep`, at the token that reaches depth 65, because it would make a Dissector Lua cannot load ([ADR 0018](adr/0018-expression-depth-limit.md)). Depth counts every level the parser enters: a value, a parenthesis, a unary operator, and a binary operator over its operands. A value alone is 1 deep, `-x` and `(x)` are 2 deep, and a flat chain `a + a + … + a` of k operands is k deep, as it groups from the left.
+
 Literals: decimal, `0x` hex (case-insensitive), `0b` binary, with `_` separators. A leading-zero literal such as `010` is an error. No character literals. `"low-high"` ranges are not an operator; they exist only in `switch` cases, `expect:` and `registration: ports:`.
 
 ### 4.3 References
@@ -519,7 +521,7 @@ Errors:
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
 - `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding`, `invalid-dissector` (§3.10); `invalid-info` (§3.14);
 - `framing:` `length` breaking the header-only rule;
-- a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-syntax`: any other Expression that does not parse;
+- a YAML float or bool where an integer is required; `leading-zero-literal`; `chained-comparison`: a non-associative comparison chain; `expression-too-deep`: an Expression nested more than 64 levels deep (§4.2); `expression-syntax`: any other Expression that does not parse;
 - `invalid-port`, `overlapping-ports`: invalid ports and port ranges (§3.12);
 - `invalid-protocol-name`, `invalid-protocol-title`;
 - `conflicting-filter-name`: two Fields reaching one filter name whose ProtoFields do not match (§3.4.9, §3.9);

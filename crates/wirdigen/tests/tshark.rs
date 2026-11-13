@@ -356,6 +356,7 @@ cases! {
     structures => "structures",
     types => "types",
     expressions => "expressions",
+    deep_expressions => "deep-expressions",
     framing => "framing",
     references => "references",
     runtime => "runtime",

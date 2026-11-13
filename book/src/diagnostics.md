@@ -929,6 +929,26 @@ fields: [ {name: data, type: bytes, size: "1 < 2 < 3"} ]
 **Fix**: join the two comparisons with `&&`, as in `a < b && b < c`, or add parentheses to
 compare the 1 or 0 of the first: `(a < b) < c`.
 
+## `expression-too-deep` {#expression-too-deep}
+
+**Severity**: error
+
+An [Expression](reference/expressions.md#operators) nests more than 64 levels deep. Each
+value, parenthesis and unary operator is a level, and so is each binary operator over its
+operands, so a flat chain such as `1+1+…+1` of 65 operands is 65 deep. Lua cannot load the
+Dissector such an Expression would make. The error points at the token that reaches depth 65.
+
+```yaml,diagnostic=expression-too-deep
+name: demo
+fields:
+  - name: data
+    type: bytes
+    size: "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1"
+```
+
+**Fix**: make the Expression shallower. Group a long chain with parentheses, as
+`(1+1+…) + (1+1+…)`, which is about half as deep, and remove parentheses that change nothing.
+
 ## `unknown-field` {#unknown-field}
 
 **Severity**: error

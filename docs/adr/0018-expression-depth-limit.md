@@ -17,7 +17,7 @@ At 64, an Expression loads under 20 nested Structures, which is about as deep as
 - Raising the limit later is a minor change. Lowering it rejects descriptions that used to be accepted, which is a major change (ADR 0008).
 - Every pass after the parser can stay recursive, because no Expression it receives is deeper than 64.
 - The limit does not guarantee that a Dissector loads. The Lua locals limit (#199) is a separate constraint on how large a description can be.
-- The Type dependency walk is made iterative instead of limited. A chain of Types adds no Lua nesting, because each Type is its own function, so no Type depth limit is needed.
+- The Type dependency walk and the walk of the names a Type reads are made iterative. This does not make long chains of Types safe: other passes still recurse once per Type, and the site tables nest once per Type in the generated Lua, so a chain stops loading at about 150 Types. That is left to #207.
 
 ## Considered Options
 

@@ -277,6 +277,8 @@ struct Walk<'a> {
     state: Vec<Visit>,
     /// The Types being visited, outermost first.
     path: Vec<usize>,
+    /// For each Type on the path, how many of its uses the walk has followed.
+    cursors: Vec<usize>,
     /// The Types visited, each after the Types it uses.
     order: Vec<usize>,
     /// The Types of each cycle reported, so a cycle closed by several uses is one error.
@@ -299,6 +301,7 @@ impl<'a> Walk<'a> {
             uses,
             state: vec![Visit::New; raw.len()],
             path: Vec::new(),
+            cursors: Vec::new(),
             order: Vec::new(),
             cycles: BTreeSet::new(),
         }
@@ -313,16 +316,25 @@ impl<'a> Walk<'a> {
         self.order
     }
 
-    fn visit(&mut self, node: usize, diagnostics: &mut Vec<Diagnostic>) {
-        if self.state[node] != Visit::New {
+    /// Visits the Types reachable from `start` depth-first, with an explicit stack instead of
+    /// recursion: a chain of Types has no depth limit (ADR 0018).
+    fn visit(&mut self, start: usize, diagnostics: &mut Vec<Diagnostic>) {
+        if self.state[start] != Visit::New {
             return;
         }
-        self.state[node] = Visit::Open;
-        self.path.push(node);
-        for use_index in 0..self.uses[node].len() {
-            let next = self.uses[node][use_index].0;
+        self.open(start);
+        while let Some(&node) = self.path.last() {
+            let cursor = self.cursors.last_mut().expect("a cursor per Type on the path");
+            let Some(&(next, _)) = self.uses[node].get(*cursor) else {
+                self.path.pop();
+                self.cursors.pop();
+                self.state[node] = Visit::Done;
+                self.order.push(node);
+                continue;
+            };
+            *cursor += 1;
             match self.state[next] {
-                Visit::New => self.visit(next, diagnostics),
+                Visit::New => self.open(next),
                 Visit::Open => {
                     let from = self.path.iter().position(|&n| n == next).expect("an open Type is on the path");
                     let cycle = self.path[from..].to_vec();
@@ -335,9 +347,13 @@ impl<'a> Walk<'a> {
                 Visit::Done => {}
             }
         }
-        self.path.pop();
-        self.state[node] = Visit::Done;
-        self.order.push(node);
+    }
+
+    /// Puts `node` on the path, before any of its uses is followed.
+    fn open(&mut self, node: usize) {
+        self.state[node] = Visit::Open;
+        self.path.push(node);
+        self.cursors.push(0);
     }
 
     /// The Diagnostic of the cycle through `cycle`, in use order, each Type using the next and
@@ -356,5 +372,49 @@ impl<'a> Walk<'a> {
         };
         Diagnostic::new(Name::RecursiveType, site.span.clone(), message)
             .with_note(format!("a Type cannot contain itself: {}", names.join(" → ")), None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt::Write as _;
+
+    use super::*;
+
+    /// The Types of a chain `T0` → `T1` → … → `T<n-1>`, each holding the next, the last a `uint8`.
+    fn chain(n: usize) -> Vec<RawType> {
+        let mut text = String::new();
+        for i in 0..n - 1 {
+            writeln!(text, "T{i}:\n  fields:\n    - {{ name: next, type: T{} }}", i + 1).expect("writing to a String");
+        }
+        writeln!(text, "T{}:\n  fields:\n    - {{ name: last, type: uint8 }}", n - 1).expect("writing to a String");
+        let node = crate::yaml::parse(&text).expect("valid YAML").expect("a document");
+        let mut errors = Vec::new();
+        let raw = read(&node, &mut errors).into_iter().map(|t| t.parsed(&mut errors)).collect();
+        assert_eq!(errors, []);
+        raw
+    }
+
+    // A test thread's stack holds a few thousand frames: neither walk below may take one per Type.
+    const LONG: usize = 10_000;
+
+    #[test]
+    fn a_long_chain_of_types_is_ordered_innermost_first() {
+        let raw = chain(LONG);
+        let mut diagnostics = Vec::new();
+        let order = Walk::new(&raw).dependency_order(&mut diagnostics);
+        assert_eq!(diagnostics, []);
+        assert_eq!(order, (0..LONG).rev().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_long_chain_of_types_reads_no_free_name() {
+        let raw = chain(LONG);
+        let mut types = Types::new(&raw);
+        let mut diagnostics = Vec::new();
+        let name = Spanned { value: "T0".to_owned(), span: 0..0 };
+        let scope = Scope { ty: None, levels: &[] };
+        let context = scope::resolve_context(&name.value, &name.span, scope, &mut types, &mut diagnostics);
+        assert_eq!((context, diagnostics), (Some(Vec::new()), Vec::new()));
     }
 }
