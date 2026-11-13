@@ -394,6 +394,16 @@ pub(crate) fn miss_diagnostic(miss: &Miss, segments: &[String], span: Range<usiz
     with_notes(Diagnostic::new(name, span, message), notes)
 }
 
+/// The `unknown-field` Diagnostic, at `span`, of a path whose first name `name` is none of the
+/// top-level Fields `candidates`: a guess if one is close, the note `otherwise` if none is.
+pub(crate) fn unknown_top_level(name: &str, candidates: &[&str], otherwise: &str, span: Range<usize>) -> Diagnostic {
+    let unknown = Diagnostic::new(Name::UnknownField, span, format!("no top-level Field is named `{name}`"));
+    match closest(name, candidates) {
+        Some(guess) => unknown.with_note(format!("did you mean `{guess}`?"), None),
+        None => unknown.with_note(otherwise, None),
+    }
+}
+
 fn with_notes(diagnostic: Diagnostic, notes: Notes) -> Diagnostic {
     notes.into_iter().fold(diagnostic, |d, (message, span)| d.with_note(message, span))
 }

@@ -6,7 +6,7 @@
 use std::ops::Range;
 
 use serde::Serialize;
-use wirdigen::{Diagnostic, Severity};
+use wirdigen::{Diagnostic, Source};
 
 /// What happened to one input, as the `status` of its `file` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -77,9 +77,9 @@ struct Span {
 }
 
 impl Span {
-    fn new(text: &str, span: Range<usize>) -> Self {
-        let (line, column) = line_column(text, span.start);
-        let (end_line, end_column) = line_column(text, span.end);
+    fn new(source: &Source, span: Range<usize>) -> Self {
+        let (line, column) = source.line_column(span.start);
+        let (end_line, end_column) = source.line_column(span.end);
         Span { start: span.start, end: span.end, line, column, end_line, end_column }
     }
 }
@@ -90,25 +90,22 @@ impl Record<'_> {
     }
 }
 
-/// A `diagnostic` record for one Diagnostic of the input named `file`, whose text is `text`.
+/// A `diagnostic` record for one Diagnostic of the input `source`.
 ///
 /// `rendered` is the uncoloured human rendering; `denied` marks a warning promoted by
 /// `--deny-warnings`, which keeps its `warning` severity.
-pub fn diagnostic(file: &str, text: &str, diagnostic: &Diagnostic, rendered: &str, denied: bool) -> String {
+pub fn diagnostic(source: &Source, diagnostic: &Diagnostic, rendered: &str, denied: bool) -> String {
     let notes = diagnostic
         .notes()
         .iter()
-        .map(|note| NoteRecord { message: note.message(), span: note.span().map(|span| Span::new(text, span)) })
+        .map(|note| NoteRecord { message: note.message(), span: note.span().map(|span| Span::new(source, span)) })
         .collect();
     Record::Diagnostic {
-        file,
+        file: source.name(),
         name: diagnostic.name(),
-        severity: match diagnostic.severity() {
-            Severity::Error => "error",
-            Severity::Warning => "warning",
-        },
+        severity: diagnostic.severity().as_str(),
         message: diagnostic.message(),
-        span: Span::new(text, diagnostic.span()),
+        span: Span::new(source, diagnostic.span()),
         notes,
         rendered,
         denied,
@@ -125,28 +122,4 @@ pub fn file(input: &str, output: Option<&str>, status: FileStatus) -> String {
 /// The `summary` record closing a run: the Diagnostics by severity, and the exit code.
 pub fn summary(errors: usize, warnings: usize, exit_code: u8) -> String {
     Record::Summary { errors, warnings, exit_code }.to_line()
-}
-
-/// The 1-based line and column, in characters, of the byte `offset` in `text`.
-fn line_column(text: &str, offset: usize) -> (usize, usize) {
-    let before = &text[..offset];
-    let line = before.matches('\n').count() + 1;
-    let column = before.rsplit('\n').next().unwrap_or_default().chars().count() + 1;
-    (line, column)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn columns_count_characters_not_bytes() {
-        assert_eq!(line_column("é: x\nab", 4), (1, 4));
-        assert_eq!(line_column("é: x\nab", 7), (2, 2));
-    }
-
-    #[test]
-    fn an_offset_after_a_newline_starts_the_next_line() {
-        assert_eq!(line_column("a\n", 2), (2, 1));
-    }
 }

@@ -13,6 +13,17 @@ pub enum Severity {
     Warning,
 }
 
+impl Severity {
+    /// The stable token of the severity: `"error"` or `"warning"`, as in the JSON Lines output.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+        }
+    }
+}
+
 /// Declares every Diagnostic name once, with its stable kebab-case token and its severity.
 macro_rules! names {
     ($($variant:ident => $token:literal, $severity:ident;)*) => {

@@ -11,8 +11,8 @@ use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expr::{Expr, ExprKind, Fault};
 use crate::field::{Amount, Array, Builtin, Entry, Field, FieldKind, Length, RawAmount, read_amount};
 use crate::index::FieldId;
-use crate::keys::{Spanned, closest, expect_integer, read_keys, wrong_type};
-use crate::scope::Reference;
+use crate::keys::{Spanned, expect_integer, read_keys, wrong_type};
+use crate::scope::{self, Reference};
 use crate::types::NamedType;
 use crate::yaml::{Node, Value};
 
@@ -208,12 +208,8 @@ fn resolve<'e>(
     let fields: Vec<&Field> = top.iter().filter_map(Entry::field).collect();
     let Some(field) = fields.iter().find(|f| f.name == segments[0]) else {
         let names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
-        let unknown =
-            Diagnostic::new(Name::UnknownField, span, format!("no top-level Field is named `{}`", segments[0]));
-        return Err(match closest(&segments[0], &names) {
-            Some(guess) => unknown.with_note(format!("did you mean `{guess}`?"), None),
-            None => unknown.with_note("a framing `length` reads the top-level Fields of the header", None),
-        });
+        let otherwise = "a framing `length` reads the top-level Fields of the header";
+        return Err(scope::unknown_top_level(&segments[0], &names, otherwise, span));
     };
     let nested = || {
         Diagnostic::new(
