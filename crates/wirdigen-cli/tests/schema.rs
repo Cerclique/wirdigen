@@ -5,7 +5,7 @@ use std::fs;
 use assert_cmd::Command;
 
 fn wirdigen() -> Command {
-    Command::cargo_bin("wirdigen").unwrap()
+    Command::cargo_bin("wirdigen").expect("cargo builds the `wirdigen` binary for integration tests")
 }
 
 #[test]

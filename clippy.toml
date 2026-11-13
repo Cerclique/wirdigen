@@ -1,0 +1,2 @@
+# `#[cfg(test)]` code and `tests/` may unwrap; shipped code names its invariant with `expect` (ADR 0017).
+allow-unwrap-in-tests = true

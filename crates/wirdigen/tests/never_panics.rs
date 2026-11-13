@@ -56,7 +56,7 @@ fn corpus() -> Vec<String> {
 
 fn collect(dir: &Path, paths: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
-        let path = entry.unwrap().path();
+        let path = entry.unwrap_or_else(|e| panic!("{}: {e}", dir.display())).path();
         if path.is_dir() {
             collect(&path, paths);
         } else if path.to_str().is_some_and(|p| p.ends_with(".wirdigen.yaml")) {

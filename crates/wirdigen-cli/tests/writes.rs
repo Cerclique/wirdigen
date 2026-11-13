@@ -13,16 +13,17 @@ const ERRORS: &str = "../wirdigen/tests/render/several.wirdigen.yaml";
 const WARNINGS: &str = "../wirdigen/tests/diagnostics/unused-type/unused.wirdigen.yaml";
 
 fn wirdigen() -> Command {
-    let mut command = Command::cargo_bin("wirdigen").unwrap();
+    let mut command = Command::cargo_bin("wirdigen").expect("cargo builds the `wirdigen` binary for integration tests");
     command.env_remove("NO_COLOR").env_remove("CLICOLOR_FORCE");
     command
 }
 
 /// A work directory holding `minimal.wirdigen.yaml`, and the path its Dissector goes to.
 fn work_dir() -> (TempDir, PathBuf) {
-    let work = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().expect("the system temp directory is writable");
     let input = Path::new(env!("CARGO_MANIFEST_DIR")).join(MINIMAL);
-    fs::copy(input, work.path().join("minimal.wirdigen.yaml")).unwrap();
+    fs::copy(input, work.path().join("minimal.wirdigen.yaml"))
+        .expect("the minimal corpus case exists and the work dir is writable");
     let output = work.path().join("minimal.lua");
     (work, output)
 }
@@ -32,7 +33,7 @@ fn generate_minimal(work: &TempDir) {
 }
 
 fn mtime(path: &Path) -> SystemTime {
-    fs::metadata(path).unwrap().modified().unwrap()
+    fs::metadata(path).and_then(|m| m.modified()).expect("the file exists and the platform records mtimes")
 }
 
 #[test]

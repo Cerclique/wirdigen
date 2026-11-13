@@ -74,7 +74,7 @@ impl Scratch {
     fn new(name: &str) -> Scratch {
         let dir = std::env::temp_dir().join(format!("wirdigen-tshark-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(dir.join("config")).unwrap();
+        fs::create_dir_all(dir.join("config")).expect("the system temp directory is writable");
         Scratch(dir)
     }
 
@@ -244,8 +244,9 @@ fn case_dir(case: &str) -> PathBuf {
 
 /// `dissected.json`, or the documented `dissected-<major>.<minor>.json` exception for this tshark.
 fn expectation(dir: &Path, scratch: &Scratch) -> PathBuf {
-    let has_exception =
-        fs::read_dir(dir).unwrap().any(|entry| entry.unwrap().file_name().to_string_lossy().starts_with("dissected-"));
+    let has_exception = fs::read_dir(dir).expect("the corpus case directory exists").any(|entry| {
+        entry.expect("the corpus case directory is readable").file_name().to_string_lossy().starts_with("dissected-")
+    });
     if has_exception {
         let specific = dir.join(format!("dissected-{}.json", scratch.tshark_version()));
         if specific.exists() {
@@ -279,10 +280,11 @@ fn check(case: &str) {
     }
     let dir = case_dir(case);
     let lua = dir.join(format!("{case}.lua"));
-    let source = fs::read_to_string(&lua).unwrap();
+    let source = fs::read_to_string(&lua).expect("every corpus case has its golden `.lua`");
     let proto = proto_name(&source);
     let packets = dir.join("packets.txt");
-    let expected_count = packet_count(&fs::read_to_string(&packets).unwrap());
+    let expected_count =
+        packet_count(&fs::read_to_string(&packets).expect("every tshark corpus case has its `packets.txt`"));
     assert!(expected_count > 0, "{}: no packets", packets.display());
 
     let scratch = Scratch::new(case);
@@ -294,10 +296,10 @@ fn check(case: &str) {
     let layers = layers.unwrap_or_else(|e| panic!("{case}: {e}"));
     assert_eq!(layers.len(), expected_count, "{case}: tshark dissected a different number of packets");
 
-    let actual = serde_json::to_string_pretty(&layers).unwrap() + "\n";
+    let actual = serde_json::to_string_pretty(&layers).expect("a `serde_json::Value` always serialises") + "\n";
     let golden = expectation(&dir, &scratch);
     if blessing() {
-        fs::write(&golden, &actual).unwrap();
+        fs::write(&golden, &actual).expect("the corpus case directory is writable when blessing");
     }
     let expected = fs::read_to_string(&golden)
         .unwrap_or_else(|_| panic!("{} is missing: bless it. tshark produced:\n{actual}", golden.display()));
@@ -307,9 +309,9 @@ fn check(case: &str) {
     if info.exists() {
         let actual = scratch.info_column(&lua, &pcap, options).unwrap_or_else(|e| panic!("{case}: {e}"));
         if blessing() {
-            fs::write(&info, &actual).unwrap();
+            fs::write(&info, &actual).expect("the corpus case directory is writable when blessing");
         }
-        let expected = fs::read_to_string(&info).unwrap();
+        let expected = fs::read_to_string(&info).expect("`info.txt` was just seen to exist");
         assert_eq!(actual, expected, "{case}: tshark's Info column differs from {}", info.display());
     }
 }
@@ -403,7 +405,7 @@ mod examples {
         let pcap = scratch.capture_between(transport, CLIENT_PORT, port, &packets);
         let lua = dir.join(format!("{example}.lua"));
         let layers = scratch.dissect_with(&lua, example, &pcap, &[]).unwrap_or_else(|e| panic!("{example}: {e}"));
-        let expected = packet_count(&fs::read_to_string(&packets).unwrap());
+        let expected = packet_count(&fs::read_to_string(&packets).expect("every example has its `packets.txt`"));
         assert_eq!(layers.len(), expected, "{example}: not every packet was dissected on port {port}");
     }
 
@@ -575,7 +577,7 @@ mod harness {
     fn dissect_uints_with(name: &str, lua: &str) -> Result<Vec<Value>, String> {
         let scratch = Scratch::new(name);
         let script = scratch.path("dissector.lua");
-        fs::write(&script, lua).unwrap();
+        fs::write(&script, lua).expect("the scratch directory is writable");
         let pcap = scratch.capture(&case_dir("uints").join("packets.txt"));
         scratch.dissect(&script, "uints", &pcap)
     }
@@ -627,8 +629,11 @@ mod harness {
     fn bad_uints_with(name: &str, lua: &str) -> Result<(), String> {
         let scratch = Scratch::new(name);
         let script = scratch.path("dissector.lua");
-        fs::write(&script, lua).unwrap();
-        let valid = bad_input::parse_packets(&fs::read_to_string(case_dir("uints").join("packets.txt")).unwrap());
+        fs::write(&script, lua).expect("the scratch directory is writable");
+        let valid = bad_input::parse_packets(
+            &fs::read_to_string(case_dir("uints").join("packets.txt"))
+                .expect("the `uints` corpus case has its `packets.txt`"),
+        );
         let config = bad_input::Config { seed: 42, mutations: 4, random: 2 };
         let decode_as = format!("udp.port=={PORT},uints");
         let target = bad_input::Target {

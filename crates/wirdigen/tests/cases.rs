@@ -11,8 +11,8 @@ use std::path::Path;
 use wirdigen::Source;
 
 fn generate(path: &Path) -> String {
-    let text = fs::read_to_string(path).unwrap();
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap();
+    let text = fs::read_to_string(path).expect("every corpus case has its `.wirdigen.yaml`");
+    let name = path.file_name().and_then(|n| n.to_str()).expect("corpus file names are UTF-8");
     wirdigen::validate(&Source::new(name, text)).unwrap_or_else(|d| panic!("{name} is invalid: {d}")).generate()
 }
 
@@ -21,7 +21,7 @@ fn check(case: &str) {
     let actual = generate(&dir.join(format!("{case}.wirdigen.yaml")));
     let golden = dir.join(format!("{case}.lua"));
     if std::env::var_os("WIRDIGEN_BLESS").is_some_and(|v| v == "1") {
-        fs::write(&golden, &actual).unwrap();
+        fs::write(&golden, &actual).expect("the corpus case directory is writable when blessing");
     }
     let expected = fs::read_to_string(&golden).unwrap_or_else(|_| panic!("{} is missing: bless it", golden.display()));
     assert_eq!(actual, expected, "{case}: generated Lua differs from {}", golden.display());

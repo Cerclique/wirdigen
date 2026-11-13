@@ -44,18 +44,22 @@ pub(super) fn check(case: &str) {
     }
     let dir = case_dir(case);
     let lua = dir.join(format!("{case}.lua"));
-    let source = fs::read_to_string(&lua).unwrap();
+    let source = fs::read_to_string(&lua).expect("every corpus case has its golden `.lua`");
     let proto = proto_name(&source);
     let options = case_options(case, proto);
     let options: Vec<&str> = options.iter().map(String::as_str).collect();
-    let valid = parse_packets(&fs::read_to_string(dir.join("packets.txt")).unwrap());
+    let valid = parse_packets(
+        &fs::read_to_string(dir.join("packets.txt")).expect("every tshark corpus case has its `packets.txt`"),
+    );
     let scratch = Scratch::new(&format!("bad-{case}"));
     let transport = case_transport(case);
     let target = Target { scratch: &scratch, lua: &lua, proto, options: &options, transport };
     let config = Config::from_env();
     if transport == Transport::Tcp {
-        let expected = fs::read_to_string(expectation(&dir, &scratch)).unwrap();
-        let expected: Vec<Value> = serde_json::from_str(&expected).unwrap();
+        let expected =
+            fs::read_to_string(expectation(&dir, &scratch)).expect("every TCP corpus case has a blessed dissection");
+        let expected: Vec<Value> =
+            serde_json::from_str(&expected).expect("blessed dissections are the JSON the tshark tests wrote");
         target.resplit(&valid, &messages(&expected), &config).unwrap_or_else(|e| panic!("{case}: {e}"));
     }
     target.run(&valid, &config).unwrap_or_else(|e| panic!("{case}: {e}"));
@@ -135,7 +139,8 @@ impl Target<'_> {
         let (pcap, origins) = match self.transport {
             Transport::Udp => {
                 let hex = self.scratch.path("bad-packets.txt");
-                fs::write(&hex, packets.iter().map(|p| text2pcap(&p.bytes)).collect::<String>()).unwrap();
+                fs::write(&hex, packets.iter().map(|p| text2pcap(&p.bytes)).collect::<String>())
+                    .expect("the scratch directory is writable");
                 (self.scratch.capture(&hex), (0..packets.len()).collect())
             }
             Transport::Tcp => {
@@ -169,7 +174,7 @@ impl Target<'_> {
     /// segment per frame, and returns its path.
     fn tcp_capture(&self, streams: &[Vec<&[u8]>]) -> std::path::PathBuf {
         let path = self.scratch.path("bad-packets.pcap");
-        fs::write(&path, tcp_pcap(streams)).unwrap();
+        fs::write(&path, tcp_pcap(streams)).expect("the scratch directory is writable");
         path
     }
 
