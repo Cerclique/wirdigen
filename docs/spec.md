@@ -581,7 +581,7 @@ Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─�
 ```
 
 - The model keeps source spans for every key and value, Expressions included.
-- **Lowering** builds a private model: the ProtoFields and value strings to register, one dissect function per Type, and for each a statement list (bounds-checked read, add to tree, evaluate an Expression into a local, branch, loop, hand off), with every Expression already compiled to helper calls.
+- **Lowering** builds a private model: the ProtoFields and value strings to register, one dissect function per Type, and for each a statement list (bounds-checked read, add to tree, evaluate an Expression into a local, branch, loop, hand off), with every Expression keeping its operators, which the emitter prints as prelude helper calls.
 - **Emitting** prints the model through an indenting writer. Placeholder substitution and template engines are rejected.
 - **Generation cannot fail** on a validated description. Everything lowering relies on is checked by validation, so a lowering failure is a Wirdigen bug, never a Diagnostic.
 - The model and the emitter are not public API.
@@ -589,7 +589,7 @@ Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─�
 ### 7.3 Generated code
 
 - **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Locals exist only for Fields some Expression references; the `info:` template reads its Fields through field extractors once the Message is read (§3.14). Outer scopes are reached through a context table.
-- **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks that declare their dependencies. It holds the version guard, bounds-checked readers, C-style division and modulo, 64-bit bitwise operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks a Dissector uses, plus their dependencies, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
+- **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks, each needing the chunks whose names its code uses. It holds the version guard, bounds-checked readers, C-style division and modulo, 64-bit bitwise operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks whose names a Dissector's emitted Lua uses, plus the chunks they need, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
 - **Names**: user names are always mangled (`f_<name>`, `dissect_<Type>`), and prelude names start with `wd_`, so a Field called `end` or `type` is safe.
 - **Format**: 4-space indent, fixed by the emitter (no external formatter). Comments name each Type (`-- Type: X`) and each Field's path, with no source line numbers.
 - **Header**: the Wirdigen version, the Source name's last `/`- or `\`-separated component, and "Requires Wireshark >= 4.4".

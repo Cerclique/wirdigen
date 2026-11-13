@@ -17,7 +17,6 @@ use crate::framing::{Extent, Framing, HeaderField};
 use crate::index::FieldIndex;
 use crate::info::{self, Target, Template};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
-use crate::prelude;
 use crate::registration::Ports;
 use crate::scope::Reference;
 use crate::switch::{Body, Switch, wire_ranges};
@@ -48,8 +47,6 @@ pub(crate) struct Dissector {
     pub(crate) layout: Vec<Stmt>,
     /// The locals the top-level layout keeps values Expressions read in, declared up front.
     pub(crate) locals: Vec<String>,
-    /// The prelude chunks the Dissector uses, before dependencies are added.
-    pub(crate) chunks: Vec<&'static str>,
     /// The range preference of each transport with declared ports (spec §3.12, §5.5).
     pub(crate) port_preferences: Vec<PortPreference>,
     /// The field extractors of the Fields the Info column shows, each declared once.
@@ -102,6 +99,17 @@ pub(crate) enum Info {
     /// Without `info:`, the subject value label of the outermost `switch` Field, at this path. When it was
     /// not read, the column keeps what the transport wrote.
     Case(String),
+}
+
+impl Info {
+    /// Whether it shows the subject value label of a `switch` Field, which the Dissector keeps
+    /// for it while reading the packet.
+    pub(crate) fn shows_case(&self) -> bool {
+        match self {
+            Self::Template(parts) => parts.iter().any(|part| matches!(part, InfoPart::Case(_))),
+            Self::Case(_) => true,
+        }
+    }
 }
 
 /// A part of an `info:` template, as the Dissector shows it.
@@ -466,7 +474,7 @@ pub(crate) struct Computed {
     /// as malformed (spec §4.4).
     pub(crate) checked: bool,
     /// Whether evaluating it can fault (division by zero, a shift out of 0..63), so it runs
-    /// under `wd_evaluate`.
+    /// under the prelude's guard, which catches the fault.
     pub(crate) faults: bool,
 }
 
@@ -537,18 +545,21 @@ pub(crate) enum Length {
     Terminator { terminator: u8, width: usize },
 }
 
-/// An Expression compiled to prelude helper calls (ADR 0010): the emitter prints no native
-/// bitwise operator or `//`, so the file parses under Lua 5.2.
+/// An Expression as the Dissector evaluates it, its operators kept (ADR 0010): the emitter
+/// prints each as a prelude helper call, never a native bitwise operator or `//`, so the file
+/// parses under Lua 5.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LuaExpr {
     /// A literal, wrapping above `i64::MAX` as Lua's hexadecimal integers do.
     Int(u64),
-    /// A call of the prelude helper `helper` (`wd_add`).
-    Call { helper: &'static str, args: Vec<LuaExpr> },
-    /// C's `&&`: 1 when both are non-zero, evaluating the right side only when the left is.
-    And(Box<LuaExpr>, Box<LuaExpr>),
-    /// C's `||`: 1 when either is non-zero, evaluating the right side only when the left is zero.
-    Or(Box<LuaExpr>, Box<LuaExpr>),
+    /// A unary operator on its operand.
+    Unary { op: UnaryOp, operand: Box<LuaExpr> },
+    /// A binary operator on its operands. `&&` and `||` keep C's short-circuit: the right side is
+    /// evaluated only when the left one does not decide the result.
+    Binary { op: BinaryOp, left: Box<LuaExpr>, right: Box<LuaExpr> },
+    /// A sub-Field `width` bits wide, `shift` bits above the least significant bit of `value`,
+    /// its container's value: shifted down and masked.
+    SubField { value: Box<LuaExpr>, shift: u32, width: u32 },
     /// A value kept in a local, or inside the table a Type returned, by the keys down to it.
     Local { local: String, keys: Vec<String> },
     /// A value of the context table, by its key.
@@ -586,8 +597,6 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         names: Vec::new(),
         slots: BTreeMap::new(),
         sites: Vec::new(),
-        // The layout is never empty, so every Dissector reads something and checks bounds.
-        chunks: vec![prelude::VERSION, prelude::MALFORMED, prelude::BOUNDS],
         current_type: None,
         info_cases: BTreeSet::new(),
         extractors: Vec::new(),
@@ -610,11 +619,8 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     lowering.current_type = None;
     let layout = lowering.structure(&protocol.fields, &[]);
     let locals = lowering.plan.locals();
-    if !protocol.ports.is_empty() {
-        lowering.use_chunk(prelude::PORTS);
-    }
     let framing = protocol.framing.as_ref().map(|framing| lowering.framing(framing));
-    let Lowering { proto_fields, tables, names, sites, chunks, extractors, .. } = lowering;
+    let Lowering { proto_fields, tables, names, sites, extractors, .. } = lowering;
 
     let filter_name = protocol.name.clone();
     let short_name = filter_name.to_ascii_uppercase();
@@ -631,7 +637,6 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         types,
         layout,
         locals,
-        chunks,
         port_preferences,
         extractors,
         info,
@@ -733,7 +738,7 @@ impl Plan {
     }
 
     /// How an Expression reads `reference`, whose sub-Field `index` holds. A sub-Field is its
-    /// container's value shifted down and masked, which needs the bitwise prelude chunk.
+    /// container's value shifted down and masked.
     fn read(&self, reference: &Reference, index: &FieldIndex<'_>) -> LuaExpr {
         match reference {
             Reference::Context(key) => LuaExpr::Context(key.clone()),
@@ -873,7 +878,6 @@ struct Lowering<'p> {
     /// The slots of each Type's site tables, in the Type's layout order.
     slots: BTreeMap<&'p str, Vec<Slot<'p>>>,
     sites: Vec<SharedSite>,
-    chunks: Vec<&'static str>,
     /// The Type whose dissect function is being lowered, `None` for the top-level layout.
     current_type: Option<&'p str>,
     /// The `switch` Fields whose subject value label the Info column shows.
@@ -930,11 +934,9 @@ impl<'p> Lowering<'p> {
         };
         let extractor = self.extractor(path);
         if let Some((mapping @ Mapping::Values(_), range)) = mapping.zip(range) {
-            self.use_chunk(prelude::INFO_LABEL);
             let segments: Vec<&str> = path.iter().map(String::as_str).collect();
             InfoPart::Label { extractor, names: self.names_table(mapping, &range, &segments) }
         } else {
-            self.use_chunk(prelude::INFO);
             InfoPart::Display(extractor)
         }
     }
@@ -942,7 +944,6 @@ impl<'p> Lowering<'p> {
     /// Keeps the subject value label of the `switch` Field at `site` for the Info column.
     fn keep_case(&mut self, site: SwitchSite<'p>) {
         self.info_cases.insert(site);
-        self.use_chunk(prelude::INFO_CASES);
     }
 
     /// The field extractor of the `ProtoField` at `path`, declared once.
@@ -1031,9 +1032,6 @@ impl<'p> Lowering<'p> {
             .map(|case| (wire_ranges(case.key.low, case.key.high), self.branch(&case.body, segments, &mut slots)))
             .collect();
         let default = switch.default.as_ref().map(|body| self.branch(body, segments, &mut slots));
-        if default.is_none() {
-            self.use_chunk(prelude::UNMATCHED);
-        }
         let path = segments.join(".");
         Stmt::Switch { field: proto_field, path, hidden: field.hidden, subject, names, info, cases, default }
     }
@@ -1087,9 +1085,7 @@ impl<'p> Lowering<'p> {
             }
             Reference::Context(_) => return None,
         };
-        let names = self.names_table(mapping, &range, segments)?;
-        self.use_chunk(prelude::NAMES);
-        Some(names)
+        self.names_table(mapping, &range, segments)
     }
 
     /// The table naming the values in `range` of a Field with `mapping`, declared once, when the
@@ -1130,11 +1126,7 @@ impl<'p> Lowering<'p> {
                 Computed::checked_already(LuaExpr::Int(u64::from_ne_bytes(value.to_ne_bytes())))
             }
             Operand::Expression { expr, references } => {
-                let faults = can_fault(expr);
-                if faults {
-                    self.use_chunk(prelude::INVALID);
-                }
-                Computed { value: self.expression(expr, references), checked: false, faults }
+                Computed { value: self.expression(expr, references), checked: false, faults: can_fault(expr) }
             }
         }
     }
@@ -1143,8 +1135,6 @@ impl<'p> Lowering<'p> {
     /// `stmt` itself, or `stmt` repeated when the Field is an array.
     fn array(&mut self, field: &Field, segments: &[&str], stmt: Stmt) -> Stmt {
         let Some(array) = &field.array else { return stmt };
-        // An element that reads no bytes is reported as malformed.
-        self.use_chunk(prelude::EMPTY);
         let repeat = match array {
             Array::ToEnd => Repeat::ToEnd,
             Array::Count(Amount::Constant(count)) => {
@@ -1239,16 +1229,11 @@ impl<'p> Lowering<'p> {
     /// The model of `framing:`: its length is computed in a function of its own, which keeps
     /// each header Field it reads in a local.
     fn framing(&mut self, framing: &Framing) -> FramedMessages {
-        self.use_chunk(prelude::FRAMING);
-        self.use_chunk(prelude::INVALID);
         let mut plan = Plan::default();
         let mut reads = Vec::new();
         for (name, &HeaderField { target, extent: Extent { offset, size } }) in &framing.reads {
             let local = format!("v_{name}");
             let read = value_read(builtin(self.index.field(target)));
-            if read == ValueRead::Bool {
-                self.use_chunk(prelude::LOGIC);
-            }
             plan.values.insert(vec![name.clone()], local.clone());
             reads.push(HeaderRead { local, offset, size, read });
         }
@@ -1263,11 +1248,8 @@ impl<'p> Lowering<'p> {
         FramedMessages { header: framing.header, reads, length }
     }
 
-    /// How an Expression reads `reference`, using the prelude chunk a sub-Field needs.
-    fn reference(&mut self, reference: &Reference) -> LuaExpr {
-        if matches!(reference, Reference::Bits { .. }) {
-            self.use_chunk(prelude::BITWISE);
-        }
+    /// How an Expression reads `reference`.
+    fn reference(&self, reference: &Reference) -> LuaExpr {
         self.plan.read(reference, &self.index)
     }
 
@@ -1285,14 +1267,8 @@ impl<'p> Lowering<'p> {
             field::Length::Expression { expr, references } => Length::Expression(self.computed(expr, references)),
             _ => length(field_value),
         };
-        if matches!(length, Length::Terminator { .. }) {
-            self.use_chunk(prelude::TERMINATED);
-        }
         let value =
             self.plan.values.get(&owned(segments)).cloned().map(|local| Value { local, read: value_read(field_value) });
-        if value.as_ref().is_some_and(|v| v.read == ValueRead::Bool) {
-            self.use_chunk(prelude::LOGIC);
-        }
         let little = field_value.endian == Endian::Little && field_value.ty.has_byte_order();
         let whole = LuaExpr::Local { local: "value".to_owned(), keys: Vec::new() };
         let path = segments.join(".");
@@ -1301,7 +1277,6 @@ impl<'p> Lowering<'p> {
             .into_iter()
             .map(|(field, bit)| {
                 let expect = bit.expect.as_ref().map(|e| {
-                    self.use_chunk(prelude::BITWISE);
                     expect_check(
                         e,
                         &format!("{path}.{}", bit.name),
@@ -1312,90 +1287,36 @@ impl<'p> Lowering<'p> {
             })
             .collect();
         let check_read = (expect.is_some() || bits.iter().any(|b| b.expect.is_some())).then(|| value_read(field_value));
-        if check_read.is_some() {
-            self.use_chunk(prelude::UNEXPECTED);
-        }
-        if check_read == Some(ValueRead::Bool) {
-            self.use_chunk(prelude::LOGIC);
-        }
         let handoff = field_value.dissector.clone();
-        if handoff.is_some() {
-            self.use_chunk(prelude::HANDOFF);
-        }
         let decode = decode(field_value);
         Stmt::Read { field, length, decode, path, value, hidden, bits, check_read, expect, handoff }
     }
 
     /// Compiles a `size:` or `count:` Expression whose paths read `references`, with the
-    /// checks it needs: a value known only when the packet is read is reported when negative,
-    /// under the `invalid` chunk.
-    fn computed(&mut self, expr: &Expr, references: &BTreeMap<Vec<String>, Reference>) -> Computed {
+    /// checks it needs: a value known only when the packet is read is reported when negative.
+    fn computed(&self, expr: &Expr, references: &BTreeMap<Vec<String>, Reference>) -> Computed {
         let checked = expr.constant().is_none();
         let faults = checked && can_fault(expr);
-        if checked {
-            self.use_chunk(prelude::INVALID);
-        }
         Computed { value: self.expression(expr, references), checked, faults }
     }
 
-    /// Adds a prelude chunk the Dissector needs, once.
-    fn use_chunk(&mut self, chunk: &'static str) {
-        if !self.chunks.contains(&chunk) {
-            self.chunks.push(chunk);
-        }
-    }
-
-    /// Compiles an Expression whose paths read `references` to helper calls, using the prelude
-    /// chunks that define them.
-    fn expression(&mut self, expr: &Expr, references: &BTreeMap<Vec<String>, Reference>) -> LuaExpr {
-        let (helper, chunk, args) = match &expr.kind {
-            ExprKind::Int(value) => return LuaExpr::Int(*value),
-            ExprKind::Path(segments) => return self.reference(&references[segments]),
-            ExprKind::Builtin(expr::Builtin::Offset) => return LuaExpr::Offset,
-            ExprKind::Builtin(expr::Builtin::Remaining) => return LuaExpr::Remaining,
+    /// Lowers an Expression whose paths read `references`. Its operators stay as they are: the
+    /// emitter prints them (ADR 0010).
+    fn expression(&self, expr: &Expr, references: &BTreeMap<Vec<String>, Reference>) -> LuaExpr {
+        match &expr.kind {
+            ExprKind::Int(value) => LuaExpr::Int(*value),
+            ExprKind::Path(segments) => self.reference(&references[segments]),
+            ExprKind::Builtin(expr::Builtin::Offset) => LuaExpr::Offset,
+            ExprKind::Builtin(expr::Builtin::Remaining) => LuaExpr::Remaining,
             ExprKind::Unary { op, operand } => {
-                let (helper, chunk) = match op.value {
-                    UnaryOp::Not => ("wd_not", prelude::LOGIC),
-                    UnaryOp::Complement => ("wd_bnot", prelude::BITWISE),
-                    UnaryOp::Negate => ("wd_neg", prelude::ARITHMETIC),
-                };
-                (helper, chunk, vec![operand])
+                LuaExpr::Unary { op: op.value, operand: Box::new(self.expression(operand, references)) }
             }
-            ExprKind::Binary { op, left, right } => {
-                let (helper, chunk) = match op.value {
-                    BinaryOp::And | BinaryOp::Or => {
-                        // `wd_bool` turns Lua's `and`/`or`, which short-circuit, into 1 or 0.
-                        self.use_chunk(prelude::LOGIC);
-                        let left = Box::new(self.expression(left, references));
-                        let right = Box::new(self.expression(right, references));
-                        return if op.value == BinaryOp::And {
-                            LuaExpr::And(left, right)
-                        } else {
-                            LuaExpr::Or(left, right)
-                        };
-                    }
-                    BinaryOp::Mul => ("wd_mul", prelude::ARITHMETIC),
-                    BinaryOp::Add => ("wd_add", prelude::ARITHMETIC),
-                    BinaryOp::Sub => ("wd_sub", prelude::ARITHMETIC),
-                    BinaryOp::Div => ("wd_div", prelude::DIVISION),
-                    BinaryOp::Rem => ("wd_mod", prelude::DIVISION),
-                    BinaryOp::Shl => ("wd_shl", prelude::BITWISE),
-                    BinaryOp::Shr => ("wd_shr", prelude::BITWISE),
-                    BinaryOp::BitAnd => ("wd_band", prelude::BITWISE),
-                    BinaryOp::BitXor => ("wd_bxor", prelude::BITWISE),
-                    BinaryOp::BitOr => ("wd_bor", prelude::BITWISE),
-                    BinaryOp::Eq => ("wd_eq", prelude::LOGIC),
-                    BinaryOp::Ne => ("wd_ne", prelude::LOGIC),
-                    BinaryOp::Lt => ("wd_lt", prelude::LOGIC),
-                    BinaryOp::Le => ("wd_le", prelude::LOGIC),
-                    BinaryOp::Gt => ("wd_gt", prelude::LOGIC),
-                    BinaryOp::Ge => ("wd_ge", prelude::LOGIC),
-                };
-                (helper, chunk, vec![left, right])
-            }
-        };
-        self.use_chunk(chunk);
-        LuaExpr::Call { helper, args: args.into_iter().map(|arg| self.expression(arg, references)).collect() }
+            ExprKind::Binary { op, left, right } => LuaExpr::Binary {
+                op: op.value,
+                left: Box::new(self.expression(left, references)),
+                right: Box::new(self.expression(right, references)),
+            },
+        }
     }
 
     /// Registers the `ProtoField` of a Field at the path `segments`, returning its index. Fields
@@ -1782,16 +1703,9 @@ fn value_read(field: &BuiltinField) -> ValueRead {
 }
 
 /// The value of a sub-Field `width` bits wide, `shift` bits above the least significant bit of
-/// `container`: shifted down and masked, with the helpers of the bitwise prelude chunk.
+/// `container`: shifted down and masked.
 fn sub_field_value(container: LuaExpr, shift: u32, width: u32) -> LuaExpr {
-    let mut value = container;
-    if shift > 0 {
-        value = LuaExpr::Call { helper: "wd_shr", args: vec![value, LuaExpr::Int(u64::from(shift))] };
-    }
-    if width < 64 {
-        value = LuaExpr::Call { helper: "wd_band", args: vec![value, LuaExpr::Int((1 << width) - 1)] };
-    }
-    value
+    LuaExpr::SubField { value: Box::new(container), shift, width }
 }
 
 /// The check of `expect` on `value`, the value of the Field or sub-Field at `path`.
@@ -1834,12 +1748,19 @@ fn names_entries(table: &[Entry], range: &RangeInclusive<i128>) -> Vec<(i64, i64
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emit::emit;
+    use crate::prelude::chunks_in;
     use crate::{description, yaml};
 
     fn lowered(text: &str, source_name: &str) -> Dissector {
         let root = yaml::parse(text).unwrap();
         let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
         lower(&protocol.unwrap_or_else(|| panic!("{diagnostics:?}")), source_name)
+    }
+
+    /// The Lua of the Dissector of `text`.
+    fn emitted(text: &str) -> String {
+        emit(&lowered(text, "x"))
     }
 
     /// How each top-level read ends and is decoded, for a layout of reads only.
@@ -2143,28 +2064,31 @@ mod tests {
         );
     }
 
-    /// ADR 0010: every operator is a prelude helper call, and `&&`/`||` keep C's short-circuit.
+    /// ADR 0010: lowering keeps each operator, for the emitter to print.
     #[test]
-    fn expressions_lower_to_helper_calls() {
+    fn expressions_keep_their_operators() {
         let d = lowered(
             "name: demo\nfields:\n  - {name: a, type: bytes, size: \"4 / -2 + 3\"}\n  - {name: b, type: bytes, size: \"0 && 1 << 2\"}\n  - {name: c, type: bytes, size: \"(2)\"}\n",
             "x",
         );
-        let call = |helper, args| LuaExpr::Call { helper, args };
+        let int = |value| Box::new(LuaExpr::Int(value));
+        let binary = |op, left, right| LuaExpr::Binary { op, left, right };
         // A constant was checked by validation: it is evaluated as is.
         let constant = |value| Length::Expression(Computed::checked_already(value));
         let lengths: Vec<Length> = reads(&d).into_iter().map(|(length, _)| length).collect();
         assert_eq!(
             lengths,
             [
-                constant(call(
-                    "wd_add",
-                    vec![call("wd_div", vec![LuaExpr::Int(4), call("wd_neg", vec![LuaExpr::Int(2)])]), LuaExpr::Int(3)]
+                constant(binary(
+                    BinaryOp::Add,
+                    Box::new(binary(
+                        BinaryOp::Div,
+                        int(4),
+                        Box::new(LuaExpr::Unary { op: UnaryOp::Negate, operand: int(2) })
+                    )),
+                    int(3)
                 )),
-                constant(LuaExpr::And(
-                    Box::new(LuaExpr::Int(0)),
-                    Box::new(call("wd_shl", vec![LuaExpr::Int(1), LuaExpr::Int(2)]))
-                )),
+                constant(binary(BinaryOp::And, int(0), Box::new(binary(BinaryOp::Shl, int(1), int(2))))),
                 Length::Fixed(2),
             ]
         );
@@ -2174,9 +2098,9 @@ mod tests {
     #[test]
     fn expressions_select_only_the_chunks_they_use() {
         let chunks = |size: &str| {
-            let d = lowered(&format!("name: demo\nfields: [ {{name: a, type: bytes, size: \"{size}\"}} ]\n"), "x");
-            let operators = [prelude::ARITHMETIC, prelude::DIVISION, prelude::BITWISE, prelude::LOGIC];
-            let mut used: Vec<&str> = d.chunks.into_iter().filter(|c| operators.contains(c)).collect();
+            let lua = emitted(&format!("name: demo\nfields: [ {{name: a, type: bytes, size: \"{size}\"}} ]\n"));
+            let operators = ["arithmetic", "division", "bitwise", "logic"];
+            let mut used: Vec<&str> = chunks_in(&lua).into_iter().filter(|c| operators.contains(c)).collect();
             used.sort_unstable();
             used
         };
@@ -2218,8 +2142,9 @@ mod tests {
         // The Type's switch keeps its subject value label under the path of each use: only `t.s` is shown.
         let Stmt::Switch { info, .. } = &d.types[0].body[0] else { panic!("a switch") };
         assert!(info);
-        assert!(d.chunks.contains(&prelude::INFO_CASES));
-        assert!(!d.chunks.contains(&prelude::INFO));
+        let chunks = chunks_in(&emit(&d));
+        assert!(chunks.contains(&"info_cases"));
+        assert!(!chunks.contains(&"info"));
     }
 
     #[test]
@@ -2251,8 +2176,9 @@ mod tests {
         );
         let abbrevs: Vec<&str> = d.extractors.iter().map(|x| x.abbrev.as_str()).collect();
         assert_eq!(abbrevs, ["demo.a", "demo.b", "demo.c.f"]);
-        for chunk in [prelude::INFO_LABEL, prelude::INFO_CASES] {
-            assert!(d.chunks.contains(&chunk), "{chunk}");
+        let chunks = chunks_in(&emit(&d));
+        for chunk in ["info_label", "info_cases"] {
+            assert!(chunks.contains(&chunk), "{chunk}");
         }
     }
 
@@ -2353,7 +2279,11 @@ mod tests {
         assert_eq!(record.locals, ["v_count"]);
         assert_eq!(
             size(&record.body, "items"),
-            &LuaExpr::Call { helper: "wd_add", args: vec![local("v_count", &[]), LuaExpr::Context("len".to_owned())] }
+            &LuaExpr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(local("v_count", &[])),
+                right: Box::new(LuaExpr::Context("len".to_owned()))
+            }
         );
         let context = |path| match stmt(&d.layout, path) {
             Stmt::Call { context, .. } => context.clone(),
@@ -2401,9 +2331,10 @@ mod tests {
         );
         assert_eq!(
             size(&d.layout, "data"),
-            &LuaExpr::Call {
-                helper: "wd_add",
-                args: vec![local("v_o", &["inner", "n"]), local("v_o", &["opts", "m"])]
+            &LuaExpr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(local("v_o", &["inner", "n"])),
+                right: Box::new(local("v_o", &["opts", "m"]))
             }
         );
         match stmt(&d.layout, "o") {
@@ -2424,7 +2355,7 @@ mod tests {
     }
 
     /// Spec §4.4, §7.3: a size known only at runtime is checked for a negative value, under the
-    /// `invalid` chunk, and runs under `wd_evaluate` only when an operator can fault.
+    /// `invalid` chunk, and runs under its guard only when an operator can fault.
     #[test]
     fn runtime_sizes_select_their_checks_and_chunks() {
         let checks = |size: &str| {
@@ -2438,7 +2369,7 @@ mod tests {
                 Stmt::Read { length: Length::Expression(Computed { checked, faults, .. }), .. } => (*checked, *faults),
                 other => panic!("{other:?}"),
             };
-            (checked, faults, d.chunks.contains(&prelude::INVALID))
+            (checked, faults, chunks_in(&emit(&d)).contains(&"invalid"))
         };
         assert_eq!(checks("4 / 2"), (false, false, false));
         assert_eq!(checks("n * 2"), (true, false, true));
@@ -2473,7 +2404,7 @@ mod tests {
         assert_eq!(repeat, &Repeat::Count(Computed { value: local("v_n", &[]), checked: true, faults: false }));
         assert!(matches!(element, Stmt::Structure { path, .. } if path == "items"));
         assert_eq!(size(&d.layout, "items.data"), &local("v_items__len", &[]));
-        assert!(d.chunks.contains(&prelude::EMPTY), "an empty element is reported as malformed");
+        assert!(chunks_in(&emit(&d)).contains(&"empty"), "an empty element is reported as malformed");
     }
 
     /// A constant count needs no runtime check; `repeat: to_end` has no count, and a Type repeats
@@ -2490,14 +2421,12 @@ mod tests {
         assert_eq!(array(&d.layout, "rest").0, &Repeat::ToEnd);
     }
 
-    /// Reading a `bool` for an Expression needs `wd_bool`.
+    /// Reading a `bool` for an Expression brings the logic chunk, which turns it into 1 or 0.
     #[test]
     fn a_referenced_bool_brings_the_logic_chunk() {
-        let d = lowered(
-            "name: demo\nfields:\n  - {name: f, type: bool}\n  - {name: a, type: bytes, size: \"f * 4\"}\n",
-            "x",
-        );
-        assert!(d.chunks.contains(&prelude::LOGIC));
+        let lua =
+            emitted("name: demo\nfields:\n  - {name: f, type: bool}\n  - {name: a, type: bytes, size: \"f * 4\"}\n");
+        assert!(chunks_in(&lua).contains(&"logic"));
     }
 
     #[test]
@@ -2520,13 +2449,13 @@ mod tests {
 
     #[test]
     fn terminators_bring_their_chunk_and_follow_the_code_unit() {
-        let d = lowered("name: demo\nfields: [ {name: a, type: string, size: 2} ]\n", "x");
-        assert!(!d.chunks.contains(&prelude::TERMINATED));
+        let lua = emitted("name: demo\nfields: [ {name: a, type: string, size: 2} ]\n");
+        assert!(!chunks_in(&lua).contains(&"terminated"));
         let d = lowered(
             "name: demo\nfields:\n  - {name: a, type: string, terminator: 0, encoding: ucs2}\n  - {name: b, type: bytes, terminator: 255}\n",
             "x",
         );
-        assert!(d.chunks.contains(&prelude::TERMINATED));
+        assert!(chunks_in(&emit(&d)).contains(&"terminated"));
         let lengths: Vec<Length> = reads(&d).into_iter().map(|(length, _)| length).collect();
         assert_eq!(
             lengths,
