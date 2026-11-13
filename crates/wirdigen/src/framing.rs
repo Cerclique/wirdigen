@@ -9,7 +9,7 @@ use std::ops::Range;
 
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expr::{Expr, ExprKind, Fault};
-use crate::field::{Amount, Array, Builtin, Entry, Field, FieldKind, Length, RawAmount, read_amount};
+use crate::field::{Amount, Array, Builtin, Entry, Field, FieldKind, Length, Parse, RawAmount, read_amount};
 use crate::index::FieldId;
 use crate::keys::{Spanned, expect_integer, read_keys, wrong_type};
 use crate::scope::{self, Reference};
@@ -21,11 +21,11 @@ pub(crate) const KEYS: [&str; 2] = ["header", "length"];
 
 /// A `framing:` as written, after stage 2.
 #[derive(Debug, Clone)]
-pub(crate) struct RawFraming {
+pub(crate) struct RawFraming<E = Expr> {
     /// `header:`, the bytes `length` is computed from.
     header: Spanned<i64>,
     /// `length:`, the whole Message's length.
-    length: Spanned<RawAmount>,
+    length: Spanned<RawAmount<E>>,
 }
 
 /// Where a top-level Field lies in every Message.
@@ -66,7 +66,7 @@ pub(crate) struct HeaderField {
 }
 
 /// Stage 2: reads `framing:`, pushing its errors.
-pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawFraming> {
+pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawFraming<Parse>> {
     let Value::Mapping(entries) = &node.value else {
         errors.push(
             wrong_type(node.span.clone(), "`framing` must be a mapping")
@@ -91,10 +91,11 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawFrami
     Some(RawFraming { header: header?, length: length? })
 }
 
-impl RawFraming {
-    /// Stage 3: the syntax error of the `length` Expression, if any.
-    pub(crate) fn syntax_error(&self) -> Option<&Diagnostic> {
-        self.length.value.syntax_error()
+impl RawFraming<Parse> {
+    /// Stage 3: the framing with its `length` Expression parsed, `None` after pushing its
+    /// syntax error.
+    pub(crate) fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<RawFraming> {
+        Some(RawFraming { header: self.header, length: self.length.parsed(errors)? })
     }
 }
 
@@ -124,7 +125,7 @@ pub(crate) fn check(
                 reads: BTreeMap::new(),
             });
         }
-        RawAmount::Expression(expression) => expression.as_ref().expect("stage 3 reported every syntax error"),
+        RawAmount::Expression(expression) => expression,
     };
     if let Some(value) = expression.constant() {
         let value = match value {

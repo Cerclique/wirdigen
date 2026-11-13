@@ -54,7 +54,7 @@ pub(crate) const KEYS: [&str; 25] = [
 pub(crate) const KIND_KEYS: [&str; 3] = ["type", "fields", "switch"];
 
 /// How stage 2 reads the value of one length key.
-type ReadLength = fn(&Node) -> Result<RawLength, Diagnostic>;
+type ReadLength = fn(&Node) -> Result<RawLength<Parse>, Diagnostic>;
 
 /// The keys that give a variable-length Field its length (spec §3.6), each with its reader.
 const LENGTH_KEYS: [(&str, ReadLength); 3] =
@@ -422,38 +422,48 @@ pub(crate) enum Length {
     Terminator(u8),
 }
 
-/// A `size:`, `count:`, `if:` or `switch:` value as written, after stage 2.
+/// An Expression as stage 2 leaves it: parsed, or its syntax error, which stage 3 reports.
+///
+/// The raw description types take it as their parameter until stage 3 turns each into one
+/// holding a bare [`Expr`], the default, which is all stage 4 sees.
+pub(crate) type Parse = Result<Expr, Diagnostic>;
+
+/// A `size:`, `count:`, `if:` or `switch:` value as written: after stage 2 with a [`Parse`],
+/// after stage 3 with a bare [`Expr`].
 #[derive(Debug, Clone)]
-pub(crate) enum RawAmount {
+pub(crate) enum RawAmount<E = Expr> {
     /// A constant.
     Constant(i64),
-    /// An Expression, parsed in stage 2; stage 3 reports its syntax error.
-    Expression(Result<Expr, Diagnostic>),
+    /// An Expression.
+    Expression(E),
 }
 
 impl RawAmount {
-    /// The Expression, when it parsed.
+    /// The Expression, when the value is one.
     pub(crate) fn expression(&self) -> Option<&Expr> {
         match self {
-            Self::Expression(Ok(expr)) => Some(expr),
-            Self::Constant(_) | Self::Expression(Err(_)) => None,
+            Self::Expression(expr) => Some(expr),
+            Self::Constant(_) => None,
         }
     }
+}
 
-    /// The syntax error of the Expression, if any.
-    pub(crate) fn syntax_error(&self) -> Option<&Diagnostic> {
-        match self {
-            Self::Expression(Err(error)) => Some(error),
-            Self::Constant(_) | Self::Expression(Ok(_)) => None,
-        }
+impl Spanned<RawAmount<Parse>> {
+    /// Stage 3: the value with its Expression parsed, `None` after pushing its syntax error.
+    pub(crate) fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<Spanned<RawAmount>> {
+        let value = match self.value {
+            RawAmount::Constant(value) => RawAmount::Constant(value),
+            RawAmount::Expression(parse) => RawAmount::Expression(record(parse, errors)?),
+        };
+        Some(Spanned { value, span: self.span })
     }
 }
 
 /// A length key's value as written, after stage 2.
 #[derive(Debug, Clone)]
-enum RawLength {
+enum RawLength<E = Expr> {
     /// `size:` with a constant or an Expression.
-    Size(RawAmount),
+    Size(RawAmount<E>),
     /// `prefix:` with a type name.
     Prefix(String),
     /// `terminator:` with a constant.
@@ -462,19 +472,34 @@ enum RawLength {
 
 /// A length key of a Field, with its value.
 #[derive(Debug, Clone)]
-struct LengthKey {
+struct LengthKey<E = Expr> {
     key: Spanned<&'static str>,
-    value: Spanned<RawLength>,
+    value: Spanned<RawLength<E>>,
+}
+
+impl LengthKey<Parse> {
+    /// Stage 3: the key with a `size:` Expression parsed, `None` after pushing its syntax error.
+    fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<LengthKey> {
+        let Spanned { value, span } = self.value;
+        let value = match value {
+            RawLength::Size(amount) => {
+                RawLength::Size(Spanned { value: amount, span: span.clone() }.parsed(errors)?.value)
+            }
+            RawLength::Prefix(name) => RawLength::Prefix(name),
+            RawLength::Terminator(byte) => RawLength::Terminator(byte),
+        };
+        Some(LengthKey { key: self.key, value: Spanned { value, span } })
+    }
 }
 
 /// `size:` is an integer, or an Expression written as a string.
-fn read_size(node: &Node) -> Result<RawLength, Diagnostic> {
+fn read_size(node: &Node) -> Result<RawLength<Parse>, Diagnostic> {
     read_amount(node, "size").map(RawLength::Size)
 }
 
 /// The value of `key`, `size:`, `count:`, `if:` or `switch:`: an integer, or an Expression
 /// written as a string.
-pub(crate) fn read_amount(node: &Node, key: &str) -> Result<RawAmount, Diagnostic> {
+pub(crate) fn read_amount(node: &Node, key: &str) -> Result<RawAmount<Parse>, Diagnostic> {
     match &node.value {
         Value::Scalar { text, plain, .. } if !*plain || resolve_plain(text) == Kind::Str => {
             Ok(RawAmount::Expression(expr::parse(node, text)))
@@ -485,15 +510,27 @@ pub(crate) fn read_amount(node: &Node, key: &str) -> Result<RawAmount, Diagnosti
 
 /// How a Field repeats (spec §3.7), as written.
 #[derive(Debug, Clone)]
-enum RawArray {
+enum RawArray<E = Expr> {
     /// `count:`, with its value.
-    Count(Spanned<RawAmount>),
+    Count(Spanned<RawAmount<E>>),
     /// `repeat: to_end`.
     ToEnd,
 }
 
+impl Spanned<RawArray<Parse>> {
+    /// Stage 3: the array with its `count:` Expression parsed, `None` after pushing its syntax
+    /// error.
+    fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<Spanned<RawArray>> {
+        let value = match self.value {
+            RawArray::Count(count) => RawArray::Count(count.parsed(errors)?),
+            RawArray::ToEnd => RawArray::ToEnd,
+        };
+        Some(Spanned { value, span: self.span })
+    }
+}
+
 /// Stage 2: reads `count:` and `repeat:`, which are mutually exclusive.
-fn read_array(keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<Spanned<RawArray>> {
+fn read_array(keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<Spanned<RawArray<Parse>>> {
     let count = keys.key_of("count").zip(keys.get("count"));
     let repeat = keys.key_of("repeat").zip(keys.get("repeat"));
     match (count, repeat) {
@@ -531,12 +568,12 @@ fn read_repeat(node: &Node) -> Result<(), Diagnostic> {
 }
 
 /// `prefix:` is a type name; whether it is an unsigned integer type is checked in stage 4.
-fn read_prefix(node: &Node) -> Result<RawLength, Diagnostic> {
+fn read_prefix(node: &Node) -> Result<RawLength<Parse>, Diagnostic> {
     expect_string(node, "prefix", Name::InvalidPrefix).map(|prefix| RawLength::Prefix(prefix.value))
 }
 
 /// `terminator:` is an integer; whether it is a byte is checked in stage 4.
-fn read_terminator(node: &Node) -> Result<RawLength, Diagnostic> {
+fn read_terminator(node: &Node) -> Result<RawLength<Parse>, Diagnostic> {
     expect_integer(node, "terminator").map(RawLength::Terminator)
 }
 
@@ -648,7 +685,7 @@ fn check_amount<'a>(
                 Diagnostic::new(what.invalid, span, format!("a {noun} cannot be negative, found `{value}`"))
             });
         }
-        RawAmount::Expression(expression) => expression.as_ref().expect("stage 3 reported every syntax error"),
+        RawAmount::Expression(expression) => expression,
     };
     let Some(value) = expression.constant() else {
         let paths = paths(expression);
@@ -686,31 +723,10 @@ fn paths(expression: &Expr) -> Vec<(&[String], Range<usize>)> {
         .collect()
 }
 
-/// Stage 3: the syntax errors of the Expressions of `entries` and of their inline structures.
-pub(crate) fn expression_errors(entries: &[RawEntry]) -> Vec<Diagnostic> {
-    let mut errors = Vec::new();
-    for entry in entries {
-        let field = match entry {
-            RawEntry::Field(field) => field,
-            RawEntry::Padding(padding) => {
-                errors.extend(padding.amount.value.syntax_error().cloned());
-                continue;
-            }
-        };
-        errors.extend(field.amounts().filter_map(RawAmount::syntax_error).cloned());
-        match &field.kind {
-            RawKind::Structure { fields, .. } => errors.extend(expression_errors(fields)),
-            RawKind::Switch(switch) => {
-                for (_, body) in switch.bodies() {
-                    if let RawBody::Fields(fields) = body {
-                        errors.extend(expression_errors(fields));
-                    }
-                }
-            }
-            RawKind::Type { .. } => {}
-        }
-    }
-    errors
+/// Stage 3: `entries` with every Expression parsed, theirs and their inline structures', pushing
+/// each syntax error. An entry with one is left out: the run stops at stage 3 then.
+pub(crate) fn parsed(entries: Vec<RawEntry<Parse>>, errors: &mut Vec<Diagnostic>) -> Vec<RawEntry> {
+    entries.into_iter().filter_map(|entry| entry.parsed(errors)).collect()
 }
 
 /// Byte order (spec §3.11).
@@ -774,31 +790,54 @@ struct RawDissector {
 
 /// What a Field is, as written.
 #[derive(Debug, Clone)]
-enum RawKind {
+enum RawKind<E = Expr> {
     /// `type:` with a type name, and the keys present that a Field of a Type does not take.
     Type { name: Spanned<String>, type_use_keys: Vec<Spanned<&'static str>> },
     /// `fields:` with an inline structure, and the keys present that only a value takes.
-    Structure { fields: Vec<RawEntry>, value_keys: Vec<Spanned<&'static str>> },
+    Structure { fields: Vec<RawEntry<E>>, value_keys: Vec<Spanned<&'static str>> },
     /// `switch:`, with its cases (spec §3.9).
-    Switch(RawSwitch),
+    Switch(RawSwitch<E>),
+}
+
+impl RawKind<Parse> {
+    /// Stage 3: the kind with its Expressions parsed, `None` after pushing a syntax error.
+    fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<RawKind> {
+        Some(match self {
+            Self::Type { name, type_use_keys } => RawKind::Type { name, type_use_keys },
+            Self::Structure { fields, value_keys } => RawKind::Structure { fields: parsed(fields, errors), value_keys },
+            Self::Switch(switch) => RawKind::Switch(switch.parsed(errors)?),
+        })
+    }
 }
 
 /// An entry of a structure as written, after stage 2 (spec §3.4.1): a Field, or bytes to skip.
 #[derive(Debug, Clone)]
-pub(crate) enum RawEntry {
+pub(crate) enum RawEntry<E = Expr> {
     /// A Field, boxed: it is many times the size of a padding.
-    Field(Box<RawField>),
+    Field(Box<RawField<E>>),
     /// `{ padding: n }`.
-    Padding(RawPadding),
+    Padding(RawPadding<E>),
+}
+
+impl RawEntry<Parse> {
+    /// Stage 3: the entry with its Expressions parsed, `None` after pushing a syntax error.
+    fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<RawEntry> {
+        match self {
+            Self::Field(field) => field.parsed(errors).map(|f| RawEntry::Field(Box::new(f))),
+            Self::Padding(RawPadding { key, amount }) => {
+                Some(RawEntry::Padding(RawPadding { key, amount: amount.parsed(errors)? }))
+            }
+        }
+    }
 }
 
 /// `{ padding: n }` as written (spec §3.10): bytes skipped, shown as one "Padding" item.
 #[derive(Debug, Clone)]
-pub(crate) struct RawPadding {
+pub(crate) struct RawPadding<E = Expr> {
     /// Where the `padding` key is written.
     key: Range<usize>,
     /// The number of bytes: a constant or an Expression.
-    amount: Spanned<RawAmount>,
+    amount: Spanned<RawAmount<E>>,
 }
 
 impl RawEntry {
@@ -826,18 +865,18 @@ pub(crate) fn fields(entries: &[RawEntry]) -> impl Iterator<Item = &RawField> {
 
 /// A Field as written, after stage 2: its keys are known and of the right kinds.
 #[derive(Debug, Clone)]
-pub(crate) struct RawField {
+pub(crate) struct RawField<E = Expr> {
     /// The declaration's identity, from where its name is written.
     id: FieldId,
     name: Spanned<String>,
-    kind: RawKind,
+    kind: RawKind<E>,
     endian: Option<Spanned<String>>,
     encoding: Option<Spanned<String>>,
     display: Option<Spanned<String>>,
     label: Option<Spanned<String>>,
     description: Option<Spanned<String>>,
     /// The length keys present, in documentation order.
-    lengths: Vec<LengthKey>,
+    lengths: Vec<LengthKey<E>>,
     mappings: mapping::RawMappings,
     /// `expect:`, the values the Field should hold (spec §3.10).
     expect: Option<RawExpect>,
@@ -846,11 +885,43 @@ pub(crate) struct RawField {
     /// The sub-Fields, when the Field is a bitfield (spec §3.8).
     bits: Option<RawBits>,
     /// How the Field repeats, when it is an array (spec §3.7), at its key.
-    array: Option<Spanned<RawArray>>,
+    array: Option<Spanned<RawArray<E>>>,
     /// `hidden:`, which leaves the Field out of the tree (spec §3.10).
     hidden: Option<Spanned<bool>>,
     /// `if:`, the condition the Field is read under (spec §3.9): a constant or an Expression.
-    condition: Option<Spanned<RawAmount>>,
+    condition: Option<Spanned<RawAmount<E>>>,
+}
+
+impl RawField<Parse> {
+    /// Stage 3: the Field with its Expressions parsed, its inline structures' and cases' too,
+    /// `None` after pushing a syntax error.
+    fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<RawField> {
+        let before = errors.len();
+        let condition = self.condition.and_then(|c| c.parsed(errors));
+        let lengths = self.lengths.into_iter().filter_map(|l| l.parsed(errors)).collect();
+        let array = self.array.and_then(|a| a.parsed(errors));
+        let kind = self.kind.parsed(errors);
+        // A syntax error anywhere below leaves the Field out, nested ones included.
+        let (Some(kind), true) = (kind, errors.len() == before) else { return None };
+        Some(RawField {
+            id: self.id,
+            name: self.name,
+            kind,
+            endian: self.endian,
+            encoding: self.encoding,
+            display: self.display,
+            label: self.label,
+            description: self.description,
+            lengths,
+            mappings: self.mappings,
+            expect: self.expect,
+            dissector: self.dissector,
+            bits: self.bits,
+            array,
+            hidden: self.hidden,
+            condition,
+        })
+    }
 }
 
 /// What a Field written in a description is, as references see it (spec §4.3).
@@ -1123,7 +1194,7 @@ pub(crate) struct BuiltinField {
 }
 
 /// Stage 2: reads one entry of a structure, a Field or `{ padding: n }`, pushing its errors.
-fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawEntry> {
+fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawEntry<Parse>> {
     let Value::Mapping(entries) = &node.value else {
         errors.push(wrong_type(node.span.clone(), "a Field is a mapping with a `name` and a `type`"));
         return None;
@@ -1139,7 +1210,7 @@ fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawEntry> {
 }
 
 /// Stage 2: reads a Field, the mapping `entries` at `node`, pushing its errors.
-fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField> {
+fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawField<Parse>> {
     let before = errors.len();
     let keys = read_keys(entries, &KEYS, errors);
 
@@ -1218,7 +1289,7 @@ fn read_dissector(node: &Node) -> Result<String, Diagnostic> {
 
 /// Stage 2: reads a structure, the value of a `fields:` key, pushing its errors (spec §3.4.1).
 /// `None` when it is not a non-empty list.
-pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawEntry>> {
+pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawEntry<Parse>>> {
     match &node.value {
         Value::Sequence(items) if items.is_empty() => {
             errors.push(Diagnostic::new(
@@ -1238,7 +1309,7 @@ pub(crate) fn read_structure(node: &Node, errors: &mut Vec<Diagnostic>) -> Optio
 
 /// Reads what a Field is from its one kind key (spec §3.4.3). A missing, conflicting or not yet
 /// supported kind is pushed as an error.
-fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<RawKind> {
+fn read_kind(node: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<RawKind<Parse>> {
     let kinds: Vec<(&str, &Node)> = KIND_KEYS.iter().filter_map(|k| keys.key_of(k).map(|key| (*k, key))).collect();
     // `cases:` and `default:` go only with `switch:` (spec §3.9).
     let case_key = ["cases", "default"].into_iter().find_map(|k| keys.key_of(k).map(|key| (k, key)));
@@ -1553,7 +1624,7 @@ pub(crate) fn check_operand<'a>(
 ) -> Option<Operand> {
     let expr = match operand {
         RawAmount::Constant(value) => return Some(Operand::Constant(*value)),
-        RawAmount::Expression(expr) => expr.as_ref().expect("stage 3 reported every syntax error"),
+        RawAmount::Expression(expr) => expr,
     };
     let references = scope::resolve_paths(&paths(expr), scope, types, diagnostics)?;
     Some(Operand::Expression { expr: expr.clone(), references })

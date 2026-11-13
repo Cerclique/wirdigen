@@ -7,7 +7,8 @@
 use std::ops::Range;
 
 use crate::diagnostic::{Diagnostic, Name, record};
-use crate::field::{self, Builtin, Endian, Entry, Operand, RawAmount, RawEntry};
+use crate::expr::Expr;
+use crate::field::{self, Builtin, Endian, Entry, Operand, Parse, RawAmount, RawEntry};
 use crate::keys::{Keys, Spanned, duplicate_key, wrong_type};
 use crate::mapping::{self, Enums, Key};
 use crate::scalar::{Kind, resolve_plain};
@@ -20,35 +21,61 @@ pub(crate) const KEYS: [&str; 8] = ["name", "label", "description", "if", "hidde
 
 /// A `switch` Field as written, after stage 2.
 #[derive(Debug, Clone)]
-pub(crate) struct RawSwitch {
+pub(crate) struct RawSwitch<E = Expr> {
     /// The `switch:` value: a constant or an Expression.
-    pub(crate) subject: Spanned<RawAmount>,
+    pub(crate) subject: Spanned<RawAmount<E>>,
     /// The entries of `cases:`, in source order.
-    pub(crate) cases: Vec<RawCase>,
+    pub(crate) cases: Vec<RawCase<E>>,
     /// `default:`, with the span of its key.
-    pub(crate) default: Option<(Range<usize>, RawBody)>,
+    pub(crate) default: Option<(Range<usize>, RawBody<E>)>,
     /// The keys present that a `switch` Field does not take, reported in stage 4.
     pub(crate) misplaced: Vec<Spanned<&'static str>>,
 }
 
 /// One entry of `cases:` as written.
 #[derive(Debug, Clone)]
-pub(crate) struct RawCase {
+pub(crate) struct RawCase<E = Expr> {
     /// The values the case matches, spanning the key.
     pub(crate) key: Spanned<Key>,
     /// The key as written, for messages.
     pub(crate) text: String,
     /// What the case reads.
-    pub(crate) body: RawBody,
+    pub(crate) body: RawBody<E>,
 }
 
 /// What a case reads, as written.
 #[derive(Debug, Clone)]
-pub(crate) enum RawBody {
+pub(crate) enum RawBody<E = Expr> {
     /// A Type, by name.
     Type(Spanned<String>),
     /// Inline Fields, spelled like an inline structure.
-    Fields(Vec<RawEntry>),
+    Fields(Vec<RawEntry<E>>),
+}
+
+impl RawSwitch<Parse> {
+    /// Stage 3: the `switch` Field with its subject and its cases' Expressions parsed, `None`
+    /// after pushing a syntax error.
+    pub(crate) fn parsed(self, errors: &mut Vec<Diagnostic>) -> Option<RawSwitch> {
+        let subject = self.subject.parsed(errors);
+        let cases = self
+            .cases
+            .into_iter()
+            .map(|RawCase { key, text, body }| RawCase { key, text, body: body.parsed(errors) })
+            .collect();
+        let default = self.default.map(|(span, body)| (span, body.parsed(errors)));
+        Some(RawSwitch { subject: subject?, cases, default, misplaced: self.misplaced })
+    }
+}
+
+impl RawBody<Parse> {
+    /// Stage 3: the body with its Expressions parsed, leaving out the entries with a syntax
+    /// error after pushing it.
+    fn parsed(self, errors: &mut Vec<Diagnostic>) -> RawBody {
+        match self {
+            Self::Type(name) => RawBody::Type(name),
+            Self::Fields(fields) => RawBody::Fields(field::parsed(fields, errors)),
+        }
+    }
 }
 
 impl RawSwitch {
@@ -61,7 +88,12 @@ impl RawSwitch {
 
 /// Stage 2: reads the keys of a `switch` Field other than `name:`, given the node of its
 /// `switch:` value. `None` after pushing an error.
-pub(crate) fn read(subject: &Node, field: &Node, keys: &Keys<'_>, errors: &mut Vec<Diagnostic>) -> Option<RawSwitch> {
+pub(crate) fn read(
+    subject: &Node,
+    field: &Node,
+    keys: &Keys<'_>,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<RawSwitch<Parse>> {
     let before = errors.len();
     let amount = record(field::read_amount(subject, "switch"), errors);
     let cases = if let Some(node) = keys.get("cases") {
@@ -90,7 +122,7 @@ pub(crate) fn read(subject: &Node, field: &Node, keys: &Keys<'_>, errors: &mut V
 
 /// Reads `cases:`, a non-empty mapping from integers or ranges to layouts. A key written twice
 /// is `duplicate-key`, as in a values table; overlapping keys are a stage 4 check.
-fn read_cases(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawCase>> {
+fn read_cases(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawCase<Parse>>> {
     let Value::Mapping(pairs) = &node.value else {
         errors.push(
             wrong_type(node.span.clone(), "`cases` must map values to layouts")
@@ -127,7 +159,7 @@ fn read_cases(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<Vec<RawCase>>
 }
 
 /// Reads a case or `default:`: a Type name or a list of Fields.
-fn read_body(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawBody> {
+fn read_body(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawBody<Parse>> {
     match &node.value {
         Value::Sequence(_) => field::read_structure(node, errors).map(RawBody::Fields),
         Value::Scalar { text, plain, .. } if !*plain || resolve_plain(text) == Kind::Str => {
