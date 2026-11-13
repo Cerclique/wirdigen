@@ -9,7 +9,7 @@ The Lua checks that need no Wireshark (ADR 0006's Lua 5.2 parse rule, and ADR 00
 ## Consequences
 
 - Plain `cargo test` covers generation (golden Lua, Diagnostics, schema, property tests) on every OS, but not Dissector behaviour. The tshark and Lua tests are Rust tests gated by `WIRDIGEN_TSHARK=1` and `WIRDIGEN_LUA=1`. When the variable is set they fail rather than skip if the tool is missing, and `make test-tshark` / `make test-lua` run them locally.
-- The `lua`, `tshark-4.4` and `tshark-stable` jobs are required PR checks, so a behaviour regression cannot merge just because it only shows up outside `cargo test`.
+- The `lua`, `tshark-4.4`, `tshark-stable-24.04` and `tshark-stable-26.04` jobs are required PR checks, so a behaviour regression cannot merge just because it only shows up outside `cargo test`.
 - The "never raises a Lua error on bad input" promise is tested by generated bad packets run through tshark (truncations, seeded mutations, random bytes), with no coverage-guided fuzzing: coverage cannot be seen inside Lua running in tshark.
 - tshark exits 0 on a Lua load error, so the harness checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
 - Lua 5.3 is checked only for parsing and loading; no packaged Wireshark ≥ 4.4 is known to use it, and a source build was judged not worth its CI cost.

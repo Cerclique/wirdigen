@@ -3,8 +3,8 @@
 //! `builtin_protocols.tsv` is a `tshark -G protocols` snapshot from the latest stable Wireshark,
 //! the union of its builds on Ubuntu 24.04 and 26.04: a `#` header naming the version, then the
 //! full name, short name and filter name of each protocol, tab-separated and sorted. The
-//! `tshark-stable` and `tshark-stable-26.04` CI jobs fail when it is out of date (spec §10.9);
-//! `make docker-refresh-protocols` rewrites it.
+//! `tshark-stable-24.04` and `tshark-stable-26.04` CI jobs fail when it is out of date
+//! (spec §10.9); `make docker-refresh-protocols` rewrites it.
 
 use crate::diagnostic::{Diagnostic, Name};
 use crate::keys::Spanned;

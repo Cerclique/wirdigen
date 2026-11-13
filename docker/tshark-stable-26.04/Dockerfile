@@ -1,5 +1,5 @@
 # The latest stable Wireshark on Ubuntu 26.04 (spec §10.5), where the `tshark-stable-26.04` CI
-# job runs its tests: the same PPA as tshark-stable, built against the newer LTS's libraries.
+# job runs its tests: the same PPA as tshark-stable-24.04, built against the newer LTS's libraries.
 # Built and run by `make docker-test-tshark-stable-26.04`; see docker/README.md.
 FROM ubuntu:26.04
 

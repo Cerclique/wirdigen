@@ -790,12 +790,12 @@ Shrunk failures become corpus cases.
 | `test`: goldens, Diagnostics, renderer, schema, lowering, proptest, CLI | ubuntu / macos / windows (macOS disabled for now, #106) | yes |
 | `lua` (`WIRDIGEN_LUA=1`) | ubuntu-24.04 with `lua5.2`/`5.3`/`5.4` | yes |
 | `tshark-4.4` (`WIRDIGEN_TSHARK=1`): `dissected.json` + fixed-seed bad packets | `debian:trixie` container, non-root | yes |
-| `tshark-stable` | ubuntu-24.04 + PPA | yes |
+| `tshark-stable-24.04` | ubuntu-24.04 + PPA | yes |
 | `tshark-stable-26.04` | `ubuntu:26.04` container + PPA, non-root | yes |
-| weekly `Refresh protocols` (separate workflow): refreshes the `protocol-name-taken` snapshot | ubuntu-24.04, `tshark-stable` and `tshark-stable-26.04` images | n/a; a changed snapshot opens or updates one PR |
-| weekly `Weekly` (separate workflow): large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions, the beta toolchain and `cargo deny check advisories` | ubuntu, `tshark-4.4` and `tshark-stable` images | n/a; a failure opens or updates one issue with the seed |
+| weekly `Refresh protocols` (separate workflow): refreshes the `protocol-name-taken` snapshot | ubuntu-24.04, `tshark-stable-24.04` and `tshark-stable-26.04` images | n/a; a changed snapshot opens or updates one PR |
+| weekly `Weekly` (separate workflow): large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions, the beta toolchain and `cargo deny check advisories` | ubuntu, `tshark-4.4` and `tshark-stable-24.04` images | n/a; a failure opens or updates one issue with the seed |
 
-The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date: `tshark-stable` and `tshark-stable-26.04`, whose tshark is at least the snapshot's version, fail when it is newer or lists a protocol the snapshot lacks. Builds of one version differ by distribution (26.04's has the Falco plugin's protocols, #177), so the snapshot is the union of both builds at its version, sorted; a protocol dropped within a version stays until the next version. `make docker-refresh-protocols` rewrites the snapshot from both images. The weekly `Refresh protocols` workflow, early each Monday UTC and on demand, runs it in the two images built as those jobs build them, sharing their weekly caches. A changed snapshot is force-pushed as one commit on `main` to `chore/refresh-protocols`, and one PR titled `chore: refresh built-in protocols for Wireshark <version>` is opened or updated from it; an unchanged one pushes nothing. Pushes and PR calls use a token minted by a GitHub App (secrets `PROTOCOLS_CLIENT_ID` and `PROTOCOLS_APP_PRIVATE_KEY`; installed on this repository only, with Contents and Pull requests read/write) so that CI runs on the PR. The PR is not merged automatically, and `tshark-stable` stays the safety net.
+The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date: `tshark-stable-24.04` and `tshark-stable-26.04`, whose tshark is at least the snapshot's version, fail when it is newer or lists a protocol the snapshot lacks. Builds of one version differ by distribution (26.04's has the Falco plugin's protocols, #177), so the snapshot is the union of both builds at its version, sorted; a protocol dropped within a version stays until the next version. `make docker-refresh-protocols` rewrites the snapshot from both images. The weekly `Refresh protocols` workflow, early each Monday UTC and on demand, runs it in the two images built as those jobs build them, sharing their weekly caches. A changed snapshot is force-pushed as one commit on `main` to `chore/refresh-protocols`, and one PR titled `chore: refresh built-in protocols for Wireshark <version>` is opened or updated from it; an unchanged one pushes nothing. Pushes and PR calls use a token minted by a GitHub App (secrets `PROTOCOLS_CLIENT_ID` and `PROTOCOLS_APP_PRIVATE_KEY`; installed on this repository only, with Contents and Pull requests read/write) so that CI runs on the PR. The PR is not merged automatically, and the `tshark-stable-24.04` and `tshark-stable-26.04` jobs stay the safety net.
 
 ## 11. Documentation
 
@@ -851,7 +851,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 - `deny` (advisories, licenses, bans, sources) plus `cargo machete`.
 - `typos`, `links` (lychee, offline), `workflows` (actionlint, zizmor) and `pr-title`.
 - A `cargo publish --dry-run --locked` packaging check.
-- The `lua`, `tshark-4.4`, `tshark-stable` and `tshark-stable-26.04` jobs of §10.9.
+- The `lua`, `tshark-4.4`, `tshark-stable-24.04` and `tshark-stable-26.04` jobs of §10.9.
 - The book build and snippet checks.
 
 `semver` (cargo-semver-checks, not required) is added once 1.0.0 is published. There is no coverage job.

@@ -8,26 +8,26 @@ the same make targets, so CI and local runs share one environment:
 | Image | Base | Has | CI jobs |
 |---|---|---|---|
 | `tshark-4.4` | `debian:trixie` | tshark 4.4 | `tshark-4.4` |
-| `tshark-stable` | `ubuntu:24.04` | tshark from `ppa:wireshark-dev/stable`, Lua 5.2, 5.3, 5.4 | `tshark-stable`, `lua` |
+| `tshark-stable-24.04` | `ubuntu:24.04` | tshark from `ppa:wireshark-dev/stable`, Lua 5.2, 5.3, 5.4 | `tshark-stable-24.04`, `lua` |
 | `tshark-stable-26.04` | `ubuntu:26.04` | tshark from `ppa:wireshark-dev/stable` | `tshark-stable-26.04` |
 
 Each image also has the Rust toolchain pinned by `rust-toolchain.toml`. `tshark-stable-26.04`
-runs the same Wireshark as `tshark-stable`, built against the newer LTS's libraries, so a
+runs the same Wireshark as `tshark-stable-24.04`, built against the newer LTS's libraries, so a
 difference between the two builds shows up. Besides the aggregates, only
-`docker-refresh-protocols` also uses it; every other target uses `tshark-stable`.
+`docker-refresh-protocols` also uses it; every other target uses `tshark-stable-24.04`.
 
 ## Use
 
 With Docker installed and running:
 
 ```sh
-make docker-test-lua             # make test-lua in tshark-stable
-make docker-test-tshark          # make test-tshark in tshark-4.4, tshark-stable, tshark-stable-26.04
+make docker-test-lua             # make test-lua in tshark-stable-24.04
+make docker-test-tshark          # make test-tshark in tshark-4.4, tshark-stable-24.04, tshark-stable-26.04
 make docker-test-tshark-4.4      # make test-tshark in tshark-4.4 only
-make docker-test-tshark-stable   # make test-tshark in tshark-stable only
+make docker-test-tshark-stable-24.04   # make test-tshark in tshark-stable-24.04 only
 make docker-test-tshark-stable-26.04   # make test-tshark in tshark-stable-26.04 only
 make docker-test-tshark-random-4.4     # random descriptions x packets (weekly), in tshark-4.4
-make docker-test-tshark-random-stable  # the same in tshark-stable
+make docker-test-tshark-random-stable-24.04  # the same in tshark-stable-24.04
 make docker-bless-tshark         # rewrite dissected.json in tshark-4.4, then check both stables
 make docker-refresh-protocols    # rewrite the built-in protocols snapshot from both stables
 ```
@@ -39,8 +39,8 @@ downloaded crates go to `target/docker/`.
 
 ## CI
 
-The `lua`, `tshark-4.4`, `tshark-stable` and `tshark-stable-26.04` jobs run
-`make docker-test-lua`, `make docker-test-tshark-4.4`, `make docker-test-tshark-stable` and
+The `lua`, `tshark-4.4`, `tshark-stable-24.04` and `tshark-stable-26.04` jobs run
+`make docker-test-lua`, `make docker-test-tshark-4.4`, `make docker-test-tshark-stable-24.04` and
 `make docker-test-tshark-stable-26.04`. Each job first builds its
 image with `docker/build-push-action`, caching the layers across workflow runs, then passes
 `DOCKER_PREBUILT=1`, which skips the target's own `docker build` and uses the loaded
@@ -48,8 +48,8 @@ image with `docker/build-push-action`, caching the layers across workflow runs, 
 `docker build` would not use.
 
 The `Weekly` workflow (`.github/workflows/weekly.yml`) runs on Sunday and on demand, with one
-random seed for all its jobs. In `tshark-4.4` and `tshark-stable` it runs the bad-input harness with large
-counts (`WIRDIGEN_BAD_SEED`, `WIRDIGEN_BAD_MUTATIONS`, `WIRDIGEN_BAD_RANDOM`) and
+random seed for all its jobs. In `tshark-4.4` and `tshark-stable-24.04` it runs the bad-input
+harness with large counts (`WIRDIGEN_BAD_SEED`, `WIRDIGEN_BAD_MUTATIONS`, `WIRDIGEN_BAD_RANDOM`) and
 `make docker-test-tshark-random-<version>`: `PROPTEST_CASES` random descriptions (seeded by
 `PROPTEST_RNG_SEED`), each with `WIRDIGEN_RANDOM_PACKETS` random packets and their truncations.
 It also runs the tests and clippy on the beta toolchain and `cargo deny check advisories`. When
@@ -60,10 +60,11 @@ variables into the container when they are set.
 
 The `Refresh protocols` workflow (`.github/workflows/refresh-protocols.yml`) runs early each
 Monday UTC, just after the stable images' weekly cache scopes roll over, and on demand. It
-builds the `tshark-stable` and `tshark-stable-26.04` images as their jobs do, sharing their
-caches, and runs `make docker-refresh-protocols DOCKER_PREBUILT=1`, which writes the union of
-the two builds' protocols: they differ even at one version. When the snapshot changed, it force-pushes
-one commit on `main` to the branch `chore/refresh-protocols` and opens a PR from it, titled
+builds the `tshark-stable-24.04` and `tshark-stable-26.04` images as their jobs do, sharing
+their caches, and runs `make docker-refresh-protocols DOCKER_PREBUILT=1`, which writes the
+union of the two builds' protocols: they differ even at one version. When the snapshot changed,
+it force-pushes one commit on `main` to the branch `chore/refresh-protocols` and opens a PR
+from it, titled
 `chore: refresh built-in protocols for Wireshark <version>`, or updates the PR already open.
 Otherwise it pushes nothing.
 
@@ -86,12 +87,12 @@ The minted token is limited to this repository with `contents: write` and
   Run the targets as a normal user, not with `sudo`.
 - The images follow the moving tags `debian:trixie`, `ubuntu:24.04` and the stable PPA. After
   a Wireshark release, rebuild the stable image to pick it up:
-  `docker build --no-cache -t wirdigen-tshark-stable -f docker/tshark-stable/Dockerfile .`
+  `docker build --no-cache -t wirdigen-tshark-stable-24.04 -f docker/tshark-stable-24.04/Dockerfile .`
   CI starts a fresh layer cache for the stable image each week, so it picks up a release
   within a week.
 - `crates/wirdigen/src/builtin_protocols.tsv`, the snapshot of Wireshark's built-in protocols
   behind the warning `protocol-name-taken` (spec §3.3), comes from the stable image. The
-  `tshark-stable` job fails once the image's Wireshark lists other protocols or is newer than
+  `tshark-stable-24.04` job fails once the image's Wireshark lists other protocols or is newer than
   the snapshot; a tshark older than the snapshot, such as 4.4, is not compared. The
   `Refresh protocols` workflow (see [CI](#ci)) opens a PR with the refreshed snapshot each
   week. To refresh it by hand, run `make docker-refresh-protocols` after rebuilding the stable
