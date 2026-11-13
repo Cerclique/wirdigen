@@ -1,13 +1,11 @@
-# The latest stable Wireshark (spec §10.5) and Lua 5.2, 5.3 and 5.4 (spec §10.4), where the
-# `tshark-stable` and `lua` CI jobs run their tests.
-# Built and run by `make docker-test-tshark-stable` and `make docker-test-lua`; see
-# docker/README.md.
-FROM ubuntu:24.04
+# The latest stable Wireshark on Ubuntu 26.04 (spec §10.5), where the `tshark-stable-26.04` CI
+# job runs its tests: the same PPA as tshark-stable-24.04, built against the newer LTS's libraries.
+# Built and run by `make docker-test-tshark-stable-26.04`; see docker/README.md.
+FROM ubuntu:26.04
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         software-properties-common gpg-agent ca-certificates curl gcc libc6-dev make \
-        lua5.2 lua5.3 lua5.4 \
     && add-apt-repository -y ppa:wireshark-dev/stable \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark \

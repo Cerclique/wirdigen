@@ -98,7 +98,7 @@ Wireshark needs three names per protocol. Wirdigen asks for one and derives the 
 | Short name (`DNS`, Protocol column) | uppercase of `name:` | Always derived. A `short_name:` override can come later as a minor release. |
 | Full name (tree root) | `title:` | Optional, non-empty, single line, defaults to the short name. Error `invalid-protocol-title`. |
 
-A `name:` or `title:` equal to a protocol built into Wireshark is the warning `protocol-name-taken`, checked against a `tshark -G protocols` snapshot from the latest supported stable Wireshark, embedded in the library and kept current by a CI job. Each of the three derived names is compared with the same name of every built-in protocol, as Wireshark refuses a second protocol with any of them; a clash on the default full name is reported on `name:`. It is a warning because built-ins vary by Wireshark version and build. Clashes between two Wirdigen Dissectors are not detected.
+A `name:` or `title:` equal to a protocol built into Wireshark is the warning `protocol-name-taken`, checked against a `tshark -G protocols` snapshot from the latest supported stable Wireshark, the union of the builds CI runs (§10.5), embedded in the library and kept current by a CI job. Each of the three derived names is compared with the same name of every built-in protocol, as Wireshark refuses a second protocol with any of them; a clash on the default full name is reported on `name:`. It is a warning because built-ins vary by Wireshark version and build. Clashes between two Wirdigen Dissectors are not detected.
 
 Changing `name:` renames every filter of the protocol, so it breaks that protocol's users.
 
@@ -749,7 +749,7 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
 
 - Two versions:
   - the 4.4 floor, from a `debian:trixie` container, run as a non-root user because tshark skips `-X lua_script` as root;
-  - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04.
+  - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04, and again on ubuntu-26.04 so a difference in the newer LTS's build shows up.
 - No source builds and no RC or nightly job. Lua 5.3 is covered only by the load check.
 - The harness sets `LC_ALL=C`, `TZ=UTC` and a temporary `WIRESHARK_CONFIG_DIR`.
 - The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5) in both byte orders. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
@@ -790,11 +790,12 @@ Shrunk failures become corpus cases.
 | `test`: goldens, Diagnostics, renderer, schema, lowering, proptest, CLI | ubuntu / macos / windows (macOS disabled for now, #106) | yes |
 | `lua` (`WIRDIGEN_LUA=1`) | ubuntu-24.04 with `lua5.2`/`5.3`/`5.4` | yes |
 | `tshark-4.4` (`WIRDIGEN_TSHARK=1`): `dissected.json` + fixed-seed bad packets | `debian:trixie` container, non-root | yes |
-| `tshark-stable` | ubuntu-24.04 + PPA | yes |
-| weekly `Refresh protocols` (separate workflow): refreshes the `protocol-name-taken` snapshot | ubuntu-24.04, `tshark-stable` image | n/a; a changed snapshot opens or updates one PR |
-| weekly `Weekly` (separate workflow): large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions, the beta toolchain and `cargo deny check advisories` | ubuntu, `tshark-4.4` and `tshark-stable` images | n/a; a failure opens or updates one issue with the seed |
+| `tshark-stable-24.04` | ubuntu-24.04 + PPA | yes |
+| `tshark-stable-26.04` | `ubuntu:26.04` container + PPA, non-root | yes |
+| weekly `Refresh protocols` (separate workflow): refreshes the `protocol-name-taken` snapshot | ubuntu-24.04, `tshark-stable-24.04` and `tshark-stable-26.04` images | n/a; a changed snapshot opens or updates one PR |
+| weekly `Weekly` (separate workflow): large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions, the beta toolchain and `cargo deny check advisories` | ubuntu, `tshark-4.4` and `tshark-stable-24.04` images | n/a; a failure opens or updates one issue with the seed |
 
-The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date: `tshark-stable`, whose tshark is at least the snapshot's version, compares its `tshark -G protocols` with it. `make docker-refresh-protocols` rewrites the snapshot. The weekly `Refresh protocols` workflow, early each Monday UTC and on demand, runs it in the `tshark-stable` image built as that job builds it, sharing its weekly cache. A changed snapshot is force-pushed as one commit on `main` to `chore/refresh-protocols`, and one PR titled `chore: refresh built-in protocols for Wireshark <version>` is opened or updated from it; an unchanged one pushes nothing. Pushes and PR calls use a token minted by a GitHub App (secrets `PROTOCOLS_CLIENT_ID` and `PROTOCOLS_APP_PRIVATE_KEY`; installed on this repository only, with Contents and Pull requests read/write) so that CI runs on the PR. The PR is not merged automatically, and `tshark-stable` stays the safety net.
+The gated tests fail rather than skip when their tool is missing. `make test-lua` and `make test-tshark` run them locally. A CI job running real tshark also fails when the `protocol-name-taken` snapshot (§3.3) is out of date: `tshark-stable-24.04` and `tshark-stable-26.04`, whose tshark is at least the snapshot's version, fail when it is newer or lists a protocol the snapshot lacks. Builds of one version differ by distribution (26.04's has the Falco plugin's protocols, #177), so the snapshot is the union of both builds at its version, sorted; a protocol dropped within a version stays until the next version. `make docker-refresh-protocols` rewrites the snapshot from both images. The weekly `Refresh protocols` workflow, early each Monday UTC and on demand, runs it in the two images built as those jobs build them, sharing their weekly caches. A changed snapshot is force-pushed as one commit on `main` to `chore/refresh-protocols`, and one PR titled `chore: refresh built-in protocols for Wireshark <version>` is opened or updated from it; an unchanged one pushes nothing. Pushes and PR calls use a token minted by a GitHub App (secrets `PROTOCOLS_CLIENT_ID` and `PROTOCOLS_APP_PRIVATE_KEY`; installed on this repository only, with Contents and Pull requests read/write) so that CI runs on the PR. The PR is not merged automatically, and the `tshark-stable-24.04` and `tshark-stable-26.04` jobs stay the safety net.
 
 ## 11. Documentation
 
@@ -850,7 +851,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 - `deny` (advisories, licenses, bans, sources) plus `cargo machete`.
 - `typos`, `links` (lychee, offline), `workflows` (actionlint, zizmor) and `pr-title`.
 - A `cargo publish --dry-run --locked` packaging check.
-- The `lua`, `tshark-4.4` and `tshark-stable` jobs of §10.9.
+- The `lua`, `tshark-4.4`, `tshark-stable-24.04` and `tshark-stable-26.04` jobs of §10.9.
 - The book build and snippet checks.
 
 `semver` (cargo-semver-checks, not required) is added once 1.0.0 is published. There is no coverage job.

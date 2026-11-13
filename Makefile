@@ -3,8 +3,9 @@ export RUSTFLAGS := -D warnings
 export RUSTDOCFLAGS := -D warnings
 
 .PHONY: lint test test-lua test-tshark test-tshark-random book docker-test-lua docker-test-tshark \
-	docker-test-tshark-4.4 docker-test-tshark-stable docker-test-tshark-random-4.4 \
-	docker-test-tshark-random-stable docker-bless-tshark \
+	docker-test-tshark-4.4 docker-test-tshark-stable-24.04 docker-test-tshark-stable-26.04 \
+	docker-test-tshark-random-4.4 \
+	docker-test-tshark-random-stable-24.04 docker-bless-tshark \
 	refresh-protocols docker-refresh-protocols
 
 lint:
@@ -33,8 +34,9 @@ test-tshark:
 test-tshark-random:
 	WIRDIGEN_TSHARK=1 cargo test -p wirdigen --locked --lib tshark_random::
 
-# Rewrites src/builtin_protocols.tsv, the snapshot behind `protocol-name-taken`, from the tshark
-# on PATH, which must be the latest stable Wireshark (spec §3.3, §10.9).
+# Adds the protocols of the tshark on PATH, which must be the latest stable Wireshark, to
+# src/builtin_protocols.tsv, the snapshot behind `protocol-name-taken` (spec §3.3, §10.9); a
+# newer Wireshark than the snapshot's replaces it instead.
 refresh-protocols:
 	WIRDIGEN_TSHARK=1 WIRDIGEN_BLESS=1 cargo test -p wirdigen --locked --test tshark builtin_protocols::
 
@@ -58,26 +60,32 @@ docker_run = mkdir -p target/docker/$(1) target/docker/cargo-home && \
 		-e CARGO_TARGET_DIR=/work/target/docker/$(1) \
 		wirdigen-$(1) $(2)
 
-docker-test-lua: docker-image-tshark-stable
-	$(call docker_run,tshark-stable,make test-lua)
+docker-test-lua: docker-image-tshark-stable-24.04
+	$(call docker_run,tshark-stable-24.04,make test-lua)
 
-docker-test-tshark: docker-test-tshark-4.4 docker-test-tshark-stable
+docker-test-tshark: docker-test-tshark-4.4 docker-test-tshark-stable-24.04 docker-test-tshark-stable-26.04
 
-docker-test-tshark-4.4 docker-test-tshark-stable: docker-test-tshark-%: docker-image-tshark-%
+# stable-26.04 is the latest stable again, from the same PPA on Ubuntu 26.04.
+docker-test-tshark-4.4 docker-test-tshark-stable-24.04 docker-test-tshark-stable-26.04: docker-test-tshark-%: docker-image-tshark-%
 	$(call docker_run,tshark-$*,tshark --version)
 	$(call docker_run,tshark-$*,make test-tshark)
 
 # The weekly random-description run in one image; the variables it reads are passed through.
-docker-test-tshark-random-4.4 docker-test-tshark-random-stable: docker-test-tshark-random-%: docker-image-tshark-%
+docker-test-tshark-random-4.4 docker-test-tshark-random-stable-24.04: docker-test-tshark-random-%: docker-image-tshark-%
 	$(call docker_run,tshark-$*,tshark --version)
 	$(call docker_run,tshark-$*,make test-tshark-random)
 
-# Rewrites the dissected.json goldens from the 4.4 floor, then checks the latest stable agrees.
-docker-bless-tshark: docker-image-tshark-4.4 docker-image-tshark-stable
+# Rewrites the dissected.json goldens from the 4.4 floor, then checks the latest stable agrees,
+# on Ubuntu 24.04 and 26.04.
+docker-bless-tshark: docker-image-tshark-4.4 docker-image-tshark-stable-24.04 docker-image-tshark-stable-26.04
 	$(call docker_run,tshark-4.4,env WIRDIGEN_BLESS=1 make test-tshark)
-	$(call docker_run,tshark-stable,make test-tshark)
+	$(call docker_run,tshark-stable-24.04,make test-tshark)
+	$(call docker_run,tshark-stable-26.04,make test-tshark)
 
-# Rewrites the built-in protocols snapshot from the tshark-stable image.
-docker-refresh-protocols: docker-image-tshark-stable
-	$(call docker_run,tshark-stable,tshark --version)
-	$(call docker_run,tshark-stable,make refresh-protocols)
+# Rewrites the built-in protocols snapshot from the latest stable, as the union of its builds on
+# Ubuntu 24.04 and 26.04.
+docker-refresh-protocols: docker-image-tshark-stable-24.04 docker-image-tshark-stable-26.04
+	$(call docker_run,tshark-stable-24.04,tshark --version)
+	$(call docker_run,tshark-stable-24.04,make refresh-protocols)
+	$(call docker_run,tshark-stable-26.04,tshark --version)
+	$(call docker_run,tshark-stable-26.04,make refresh-protocols)

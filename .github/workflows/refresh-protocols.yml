@@ -1,15 +1,15 @@
 # Refreshes the built-in protocols snapshot behind `protocol-name-taken` (spec §3.3) each week,
-# when the tshark-stable image may pick up a new Wireshark from the stable PPA. A changed
+# when the stable images may pick up a new Wireshark from the stable PPA. A changed
 # snapshot is force-pushed as one commit on main to chore/refresh-protocols, with one PR opened
 # or updated from it. Pushes and PR calls use a GitHub App token rather than GITHUB_TOKEN, so
 # the pull_request workflows run on the PR; docker/README.md lists the App and its secrets.
-# The failing tshark-stable check in ci.yml stays as the safety net.
+# The failing tshark-stable-24.04 and tshark-stable-26.04 checks in ci.yml stay as the safety net.
 
 name: Refresh protocols
 
 on:
   schedule:
-    # Monday 01:17 UTC, just after the ISO week (and so the tshark-stable cache scope) rolls over.
+    # Monday 01:17 UTC, just after the ISO week (and so the stable images' cache scopes) rolls over.
     - cron: "17 1 * * 1"
   workflow_dispatch:
 
@@ -35,19 +35,29 @@ jobs:
           ref: main
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      # The same image and weekly cache scope as the tshark-stable job of ci.yml, so they share it.
+      # The same images and weekly cache scopes as the tshark-stable-24.04 and tshark-stable-26.04 jobs
+      # of ci.yml, so they share them. The snapshot is the union of both builds.
       - name: Week of the year
         id: week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
-      - name: Build the tshark-stable image
+      - name: Build the tshark-stable-24.04 image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: docker/tshark-stable/Dockerfile
-          tags: wirdigen-tshark-stable
+          file: docker/tshark-stable-24.04/Dockerfile
+          tags: wirdigen-tshark-stable-24.04
           load: true
-          cache-from: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }}
-          cache-to: type=gha,scope=tshark-stable-${{ steps.week.outputs.week }},mode=max
+          cache-from: type=gha,scope=tshark-stable-24.04-${{ steps.week.outputs.week }}
+          cache-to: type=gha,scope=tshark-stable-24.04-${{ steps.week.outputs.week }},mode=max
+      - name: Build the tshark-stable-26.04 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/tshark-stable-26.04/Dockerfile
+          tags: wirdigen-tshark-stable-26.04
+          load: true
+          cache-from: type=gha,scope=tshark-stable-26.04-${{ steps.week.outputs.week }}
+          cache-to: type=gha,scope=tshark-stable-26.04-${{ steps.week.outputs.week }},mode=max
       - name: Refresh the snapshot
         run: make docker-refresh-protocols DOCKER_PREBUILT=1
       - name: Check the snapshot
