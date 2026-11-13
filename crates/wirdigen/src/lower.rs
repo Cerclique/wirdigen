@@ -1754,7 +1754,8 @@ mod tests {
 
     fn lowered(text: &str, source_name: &str) -> Dissector {
         let root = yaml::parse(text).unwrap();
-        let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
+        let (protocol, diagnostics) =
+            description::check(&description::deserialize(root.as_ref()).unwrap().parsed().unwrap());
         lower(&protocol.unwrap_or_else(|| panic!("{diagnostics:?}")), source_name)
     }
 
@@ -1861,7 +1862,8 @@ mod tests {
             "name: demo\nenums:\n  Kind: {1: One, 300: Big}\nfields:\n  - {name: a, type: uint16, values: Kind}\n  - {name: b, type: uint16, values: Kind}\n  - {name: c, type: uint8, values: Kind}\n",
         )
         .unwrap();
-        let (protocol, diagnostics) = description::check(&description::deserialize(root.as_ref()).unwrap());
+        let (protocol, diagnostics) =
+            description::check(&description::deserialize(root.as_ref()).unwrap().parsed().unwrap());
         let protocol = protocol.unwrap_or_else(|| panic!("{diagnostics:?}"));
         let mapping = |field: &Field| match &field.kind {
             FieldKind::Builtin(value) => value.mapping.clone(),

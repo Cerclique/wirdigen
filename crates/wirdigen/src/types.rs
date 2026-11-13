@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, Name, record};
-use crate::field::{self, Endian, Entry, RawEntry};
+use crate::expr::Expr;
+use crate::field::{self, Endian, Entry, Parse, RawEntry};
 use crate::keys::{Spanned, closest, duplicate_key, expect_string, is_type_name, read_keys, wrong_type};
 use crate::mapping::Enums;
 use crate::scope::{FreeRef, Scope};
@@ -15,16 +16,17 @@ pub(crate) const KEYS: [&str; 2] = ["fields", "endian"];
 
 /// A Type as written, after stage 2.
 #[derive(Debug, Clone)]
-pub(crate) struct RawType {
+pub(crate) struct RawType<E = Expr> {
     name: Spanned<String>,
     endian: Option<Spanned<String>>,
-    fields: Vec<RawEntry>,
+    fields: Vec<RawEntry<E>>,
 }
 
-impl RawType {
-    /// The Fields of the Type body, as written.
-    pub(crate) fn fields(&self) -> &[RawEntry] {
-        &self.fields
+impl RawType<Parse> {
+    /// Stage 3: the Type with its Expressions parsed, leaving out the entries with a syntax
+    /// error after pushing it.
+    pub(crate) fn parsed(self, errors: &mut Vec<Diagnostic>) -> RawType {
+        RawType { name: self.name, endian: self.endian, fields: field::parsed(self.fields, errors) }
     }
 }
 
@@ -36,7 +38,7 @@ pub(crate) struct NamedType {
 }
 
 /// Stage 2: reads the top-level `types:`, a mapping from Type names to Type bodies.
-pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<RawType> {
+pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<RawType<Parse>> {
     let Value::Mapping(pairs) = &node.value else {
         errors.push(
             wrong_type(node.span.clone(), "`types` must map Type names to Type bodies")
@@ -44,7 +46,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<RawType> {
         );
         return Vec::new();
     };
-    let mut types: Vec<RawType> = Vec::new();
+    let mut types: Vec<RawType<Parse>> = Vec::new();
     for (key, value) in pairs {
         // Whether a name is valid is a stage 4 check, as for Enums.
         let Value::Scalar { text, .. } = &key.value else {
@@ -63,7 +65,7 @@ pub(crate) fn read(node: &Node, errors: &mut Vec<Diagnostic>) -> Vec<RawType> {
 
 /// Reads the body of the Type `name`, `{ fields: [...], endian: ... }`. `None` when it has
 /// errors.
-fn read_body(name: Spanned<String>, node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawType> {
+fn read_body(name: Spanned<String>, node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawType<Parse>> {
     let Value::Mapping(entries) = &node.value else {
         errors.push(
             wrong_type(node.span.clone(), "a Type is a mapping with `fields`")

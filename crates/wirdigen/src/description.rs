@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use crate::builtin;
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
-use crate::field::{self, Endian, Entry, RawEntry};
+use crate::expr::Expr;
+use crate::field::{self, Endian, Entry, Parse, RawEntry};
 use crate::filter;
 use crate::framing::{self, Framing, RawFraming};
 use crate::info::{self, RawInfo, Template};
@@ -26,39 +27,53 @@ pub(crate) const KEYS: [&str; 10] =
 
 /// The top level of a Protocol Description, as written.
 #[derive(Debug, Clone)]
-pub(crate) struct Description {
+pub(crate) struct Description<E = Expr> {
     pub(crate) name: Spanned<String>,
     pub(crate) title: Option<Spanned<String>>,
     /// The ports of `registration:`, none when it is left out.
     pub(crate) registration: RawRegistration,
     /// The `framing:` of TCP Messages, when written (spec §3.13).
-    pub(crate) framing: Option<RawFraming>,
+    pub(crate) framing: Option<RawFraming<E>>,
     pub(crate) endian: Option<Spanned<String>>,
     /// The `info:` template, when written (spec §3.14).
     pub(crate) info: Option<RawInfo>,
     /// The top-level Fields, in order.
-    pub(crate) fields: Vec<RawEntry>,
+    pub(crate) fields: Vec<RawEntry<E>>,
     /// The Types of `types:`, in order.
-    pub(crate) types: Vec<RawType>,
+    pub(crate) types: Vec<RawType<E>>,
     /// The Enums of `enums:`, in order.
     pub(crate) enums: Vec<RawEnum>,
     /// The `allow:` entries, as written.
     pub(crate) allow: Vec<Spanned<String>>,
 }
 
-impl Description {
-    /// Stage 3: the syntax errors of every Expression, in the top-level layout and in the Types,
-    /// and of the `info:` template.
-    pub(crate) fn expression_errors(&self) -> Vec<Diagnostic> {
+impl Description<Parse> {
+    /// Stage 3: the description with every Expression parsed, in the top-level layout, in the
+    /// Types and in `framing:`, and its `info:` template checked; else every syntax error.
+    pub(crate) fn parsed(self) -> Result<Description, Vec<Diagnostic>> {
         let mut errors: Vec<Diagnostic> = self.info.iter().filter_map(RawInfo::syntax_error).cloned().collect();
-        errors.extend(self.framing.iter().filter_map(RawFraming::syntax_error).cloned());
-        errors.extend(field::expression_errors(&self.fields));
-        for ty in &self.types {
-            errors.extend(field::expression_errors(ty.fields()));
+        let framing = self.framing.and_then(|framing| framing.parsed(&mut errors));
+        let fields = field::parsed(self.fields, &mut errors);
+        let types = self.types.into_iter().map(|ty| ty.parsed(&mut errors)).collect();
+        if !errors.is_empty() {
+            return Err(errors);
         }
-        errors
+        Ok(Description {
+            name: self.name,
+            title: self.title,
+            registration: self.registration,
+            framing,
+            endian: self.endian,
+            info: self.info,
+            fields,
+            types,
+            enums: self.enums,
+            allow: self.allow,
+        })
     }
+}
 
+impl Description {
     /// Whether `allow:` silences this Diagnostic. Errors are never silenced (spec §6.4).
     pub(crate) fn allows(&self, diagnostic: &Diagnostic) -> bool {
         diagnostic.severity() == Severity::Warning && self.allow.iter().any(|a| a.value == diagnostic.name())
@@ -85,7 +100,7 @@ pub(crate) struct Protocol {
 }
 
 /// Stage 2: unknown and duplicate keys, required keys and value kinds.
-pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description, Vec<Diagnostic>> {
+pub(crate) fn deserialize(root: Option<&Node>) -> Result<Description<Parse>, Vec<Diagnostic>> {
     let Some(root) = root else {
         return Err(vec![Diagnostic::new(
             Name::MissingKey,
