@@ -946,5 +946,6 @@ These are not open design questions, but the spec deliberately leaves them to th
 | Identity | [Protocol identity and top-level keys](https://github.com/Cerclique/wirdigen/issues/36) | [0014](adr/0014-protocol-identity-and-no-format-version.md) (amended by 0015) |
 | Documentation | [Documentation set for v1](https://github.com/Cerclique/wirdigen/issues/37) | — |
 | Field declaration | [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41) | [0015](adr/0015-own-field-vocabulary.md) |
+| Expression depth | [Deeply nested Expressions or Type chains abort the process](https://github.com/Cerclique/wirdigen/issues/191) | [0018](adr/0018-expression-depth-limit.md) |
 
 Research notes behind the first three rows live in [`docs/research/`](research/).
