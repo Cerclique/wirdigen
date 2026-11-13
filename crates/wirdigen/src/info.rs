@@ -260,11 +260,12 @@ fn find<'p>(top: &'p [Entry], types: &'p NamedTypes, path: &[String]) -> Result<
                 })
                 .collect(),
             FieldKind::Builtin(value) => {
-                let Some(bit) = value.bits.iter().find(|b| b.name == *segment) else {
-                    if value.bits.is_empty() {
+                let bits = value.kind.sub_fields();
+                let Some(bit) = bits.iter().find(|b| b.name == *segment) else {
+                    if bits.is_empty() {
                         return Err(Unresolved::Miss(Miss::NotStructure(field.name.clone())));
                     }
-                    return Err(no_member(value.bits.iter().map(|b| b.name.clone()).collect()));
+                    return Err(no_member(bits.iter().map(|b| b.name.clone()).collect()));
                 };
                 if index + 1 < path.len() {
                     return Err(Unresolved::Miss(Miss::NotStructure(segment.clone())));
