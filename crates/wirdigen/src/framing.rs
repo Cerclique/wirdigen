@@ -10,6 +10,7 @@ use std::ops::Range;
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expr::{Expr, ExprKind, Fault};
 use crate::field::{Amount, Array, Builtin, Entry, Field, FieldKind, Length, RawAmount, read_amount};
+use crate::index::FieldId;
 use crate::keys::{Spanned, closest, expect_integer, read_keys, wrong_type};
 use crate::scope::Reference;
 use crate::types::NamedType;
@@ -51,8 +52,17 @@ pub(crate) struct Framing {
     /// The whole Message's length. A constant one is at least `header`; an Expression reads
     /// only top-level Fields, and their sub-Fields, inside the header.
     pub(crate) length: Amount,
-    /// Where each top-level Field the length reads lies, by name.
-    pub(crate) reads: BTreeMap<String, Extent>,
+    /// Each top-level Field the length reads, by name.
+    pub(crate) reads: BTreeMap<String, HeaderField>,
+}
+
+/// A top-level Field of the header the length reads, itself or through a sub-Field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HeaderField {
+    /// The Field's declaration, an integer or a `bool`, or a bitfield.
+    pub(crate) target: FieldId,
+    /// Where it lies in every Message.
+    pub(crate) extent: Extent,
 }
 
 /// Stage 2: reads `framing:`, pushing its errors.
@@ -169,9 +179,9 @@ fn check_constant(value: i64, header: usize, span: Range<usize>, diagnostics: &m
     }
 }
 
-/// What resolving a reference of the length gives: its path, what it reads, and where the
-/// top-level Field it reads lies.
-type Resolved<'e> = (&'e Vec<String>, Reference, Extent);
+/// What resolving a reference of the length gives: its path, what it reads, and the top-level
+/// Field it reads.
+type Resolved<'e> = (&'e Vec<String>, Reference, HeaderField);
 
 /// Resolves one reference of the length: a top-level Field or one of its sub-Fields, lying
 /// entirely inside the first `header` bytes (spec §3.13).
@@ -224,7 +234,9 @@ fn resolve<'e>(
         .with_note(format!("`{}` is declared here", field.name), Some(field.span.clone())));
     };
     let resolved = match &segments[1..] {
-        [] if matches!(builtin.ty, Builtin::Int { .. } | Builtin::Bool) => Reference::Field(segments.clone()),
+        [] if matches!(builtin.ty, Builtin::Int { .. } | Builtin::Bool) => {
+            Reference::Field { path: segments.clone(), target: field.id }
+        }
         [] => {
             return Err(Diagnostic::new(
                 Name::NonNumericReference,
@@ -234,7 +246,7 @@ fn resolve<'e>(
             .with_note(format!("`{key}` is declared here"), Some(field.span.clone())));
         }
         [sub] => match builtin.bits.iter().find(|b| &b.name == sub) {
-            Some(bit) => Reference::Bits { container: segments[..1].to_vec(), shift: bit.shift, width: bit.width },
+            Some(bit) => Reference::Bits { path: segments[..1].to_vec(), target: bit.id },
             None => {
                 return Err(Diagnostic::new(
                     Name::UnknownField,
@@ -254,7 +266,9 @@ fn resolve<'e>(
         .with_note(why, Some(field.span.clone()))
     };
     match places[field.name.as_str()] {
-        Place::At(extent) if extent.end() <= header => Ok((segments, resolved, extent)),
+        Place::At(extent) if extent.end() <= header => {
+            Ok((segments, resolved, HeaderField { target: field.id, extent }))
+        }
         Place::At(extent) => {
             Err(outside(format!("`{}` is bytes {} to {} of the Message", field.name, extent.offset, extent.end())))
         }

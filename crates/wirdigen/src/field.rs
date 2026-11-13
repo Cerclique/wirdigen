@@ -10,6 +10,7 @@ use crate::bits::{self, Bit, RawBits};
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expect::{self, Expect, RawExpect};
 use crate::expr::{self, Expr, ExprKind, Fault};
+use crate::index::FieldId;
 use crate::keys::{
     Keys, Spanned, closest, expect_bool, expect_integer, expect_string, is_single_line, read_keys, wrong_type,
 };
@@ -826,6 +827,8 @@ pub(crate) fn fields(entries: &[RawEntry]) -> impl Iterator<Item = &RawField> {
 /// A Field as written, after stage 2: its keys are known and of the right kinds.
 #[derive(Debug, Clone)]
 pub(crate) struct RawField {
+    /// The declaration's identity, from where its name is written.
+    id: FieldId,
     name: Spanned<String>,
     kind: RawKind,
     endian: Option<Spanned<String>>,
@@ -866,6 +869,11 @@ pub(crate) enum Shape<'a> {
 }
 
 impl RawField {
+    /// The declaration's identity.
+    pub(crate) fn id(&self) -> FieldId {
+        self.id
+    }
+
     pub(crate) fn name(&self) -> &Spanned<String> {
         &self.name
     }
@@ -1031,6 +1039,8 @@ impl Entry {
 /// A validated Field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Field {
+    /// The declaration's identity, which resolved references name it by.
+    pub(crate) id: FieldId,
     pub(crate) name: String,
     /// The tree text, when `label:` gives one (spec §3.4.8).
     pub(crate) label: Option<String>,
@@ -1174,6 +1184,7 @@ fn read(entries: &[(Node, Node)], node: &Node, errors: &mut Vec<Diagnostic>) -> 
 
     match (name, kind) {
         (Some(name), Some(kind)) if errors.len() == before => Some(RawField {
+            id: FieldId::at(&name.span),
             name,
             kind,
             endian,
@@ -1419,6 +1430,7 @@ pub(crate) fn check<'a>(
         if let (Some(kind), Some(array), Some(condition)) = (kind, array, condition) {
             let text = |value: &Option<Spanned<String>>| value.as_ref().map(|v| v.value.clone());
             layout.push(Entry::Field(Box::new(Field {
+                id: field.id,
                 name: name.value.clone(),
                 label: text(&field.label),
                 description: text(&field.description),

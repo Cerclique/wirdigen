@@ -10,9 +10,9 @@
 
 use std::ops::Range;
 
-use crate::bits::Bit;
 use crate::diagnostic::{Diagnostic, Name};
-use crate::field::{BuiltinField, Entry, FieldKind, is_field_name};
+use crate::field::{Entry, FieldKind, is_field_name};
+use crate::index::{FieldId, SubFieldId};
 use crate::keys::{closest, expect_string, is_single_line};
 use crate::scope::{self, Miss};
 use crate::switch::Body;
@@ -47,9 +47,9 @@ pub(crate) struct Template {
 pub(crate) enum Part {
     /// Text shown as is, escapes undone.
     Text(String),
-    /// The Field at this path from the top-level layout, which is its Filter Name without the
-    /// protocol's: a built-in Field, a bitfield sub-Field or a `switch` Field.
-    Field(Vec<String>),
+    /// The Field at `path` from the top-level layout, which is its Filter Name without the
+    /// protocol's, and what it shows.
+    Field { path: Vec<String>, target: Target },
 }
 
 /// Stage 2: reads `info:`, a single-line string, and parses its template.
@@ -169,7 +169,7 @@ pub(crate) fn check(
         match piece {
             Piece::Text(text) => parts.push(Part::Text(text.clone())),
             Piece::Path { segments, span } => match find(top, types, segments) {
-                Ok(_) => parts.push(Part::Field(segments.clone())),
+                Ok(target) => parts.push(Part::Field { path: segments.clone(), target }),
                 Err(unresolved) => {
                     diagnostics.push(unresolved.diagnostic(segments, span.clone()));
                     ok = false;
@@ -181,15 +181,15 @@ pub(crate) fn check(
 }
 
 /// A Field the Info column can show, as [`find`] finds it.
-#[derive(Debug)]
-pub(crate) enum Target<'p> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Target {
     /// A Field of a built-in type.
-    Value(&'p BuiltinField),
+    Value(FieldId),
     /// A bitfield sub-Field.
-    SubField(&'p Bit),
+    SubField(SubFieldId),
     /// A `switch` Field: the Type it is in, `None` in the top-level layout, and its path from
-    /// the Type's body or the top-level layout.
-    Switch { ty: Option<&'p str>, path: Vec<String> },
+    /// the Type's body or the top-level layout, where its dissect function reads it.
+    Switch { ty: Option<String>, path: Vec<String> },
 }
 
 /// Why a template's Field Path shows nothing.
@@ -233,8 +233,8 @@ impl Unresolved {
 /// Follows the Field Path `path` from the top-level layout `top`, into inline structures, Types
 /// (`types`), `switch` cases and bitfields. Cases add no segment, so the path goes on in the
 /// case that has the next Field; cases reaching one path share its `ProtoField` (spec §3.9).
-/// Validation and lowering both find the Fields of a template through it.
-pub(crate) fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]) -> Result<Target<'p>, Unresolved> {
+/// Only validation resolves a template's paths; lowering takes the [`Target`] it recorded.
+fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]) -> Result<Target, Unresolved> {
     let names = |entries: &'p [Entry]| entries.iter().filter_map(Entry::field);
     let Some(mut field) = names(top).find(|f| f.name == path[0]) else {
         let candidates: Vec<&str> = names(top).map(|f| f.name.as_str()).collect();
@@ -273,7 +273,7 @@ pub(crate) fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]
                 if index + 1 < path.len() {
                     return Err(Unresolved::Miss(Miss::NotStructure(segment.clone())));
                 }
-                return Ok(Target::SubField(bit));
+                return Ok(Target::SubField(bit.id));
             }
         };
         let found =
@@ -286,8 +286,8 @@ pub(crate) fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]
     }
     let what = match &field.kind {
         _ if field.array.is_some() => "an array",
-        FieldKind::Builtin(value) => return Ok(Target::Value(value)),
-        FieldKind::Switch(_) => return Ok(Target::Switch { ty, path: at }),
+        FieldKind::Builtin(_) => return Ok(Target::Value(field.id)),
+        FieldKind::Switch(_) => return Ok(Target::Switch { ty: ty.map(str::to_owned), path: at }),
         FieldKind::Structure(_) => "a structure",
         FieldKind::Type { .. } => "a Field of a Type",
     };
