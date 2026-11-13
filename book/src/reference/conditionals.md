@@ -144,7 +144,7 @@ into it: a case adds no level to the tree and no segment to filter names. Above,
 `user_id` is `demo.body.user_id`, not `demo.body.Login.user_id`.
 
 The subtree item is named after the subject's value: "Body: Login". When
-the subject is a bare Field path (`msg_type`, `hdr.kind`, `flags.op`) to a Field read in the
+the subject is a bare Field Path (`msg_type`, `hdr.kind`, `flags.op`) to a Field read in the
 same layout or Type, the name is that Field's `values:` label, else the number; any other
 Expression (`"kind & 0x0f"`), or a path a [Type](fields.md#types) reads from where it is used,
 shows the number: "Body: 7". Without [`info:`](info.md#default), the label of the outermost

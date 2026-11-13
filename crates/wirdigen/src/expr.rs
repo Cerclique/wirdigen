@@ -24,7 +24,7 @@ pub(crate) struct Expr {
 pub(crate) enum ExprKind {
     /// An integer literal. Literals above `i64::MAX` wrap to negative values (spec §4.4).
     Int(u64),
-    /// A Field path, by its dotted segments (`hdr.len`).
+    /// A Field Path, by its dotted segments (`hdr.len`).
     Path(Vec<String>),
     Builtin(Builtin),
     /// A unary operator; its span is the operator token's.
@@ -255,7 +255,7 @@ pub(crate) enum Fault {
 }
 
 impl Expr {
-    /// The Field paths and built-ins the Expression reads, in source order.
+    /// The Field Paths and built-ins the Expression reads, in source order.
     pub(crate) fn references(&self) -> Vec<&Expr> {
         match &self.kind {
             ExprKind::Int(_) => Vec::new(),
@@ -401,7 +401,7 @@ fn lex(text: &str) -> Result<Vec<Token>, SyntaxError> {
                 at = word_end(bytes, segment);
                 if segment == at || !(bytes[segment].is_ascii_alphabetic()) {
                     return Err(SyntaxError::new(start..at.max(segment), "expected a Field name after `.`")
-                        .with_note("a Field path is names separated by `.`, as in `header.length`"));
+                        .with_note("a Field Path is names separated by `.`, as in `header.length`"));
                 }
                 segments.push(text[segment..at].to_owned());
             }
@@ -449,11 +449,11 @@ fn unexpected_character(text: &str, at: usize) -> SyntaxError {
         '=' => error.with_note("compare with `==`"),
         '"' | '\'' => error.with_note("an Expression has no strings"),
         _ => error
-            .with_note("an Expression holds integers, Field paths, `_offset`, `_remaining`, operators and parentheses"),
+            .with_note("an Expression holds integers, Field Paths, `_offset`, `_remaining`, operators and parentheses"),
     }
 }
 
-/// A name starting with `_` is a built-in; any other is a Field path.
+/// A name starting with `_` is a built-in; any other is a Field Path.
 fn builtin_or_path(segments: Vec<String>, span: Range<usize>) -> Result<TokenKind, SyntaxError> {
     if !segments[0].starts_with('_') {
         return Ok(TokenKind::Path(segments));
@@ -554,7 +554,7 @@ impl Parser<'_> {
         Ok(Expr { kind: ExprKind::Unary { op: Spanned { value: op, span }, operand: Box::new(operand) }, span: whole })
     }
 
-    /// A literal, a Field path, a built-in or a parenthesized Expression.
+    /// A literal, a Field Path, a built-in or a parenthesized Expression.
     fn operand(&mut self) -> Result<Expr, SyntaxError> {
         let Some(token) = self.peek().cloned() else {
             return Err(SyntaxError::new(self.end..self.end, "the Expression ends early: expected a value"));

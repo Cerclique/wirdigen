@@ -1,4 +1,4 @@
-# Display filter names follow Field paths, not Type names
+# Display filter names follow Field Paths, not Type names
 
 Every Field a Dissector shows gets the display filter name `<protocol>.<path>`, where the path is the chain of Field names from the top-level layout down through inline `fields:` and Type-typed Fields. The name of a Type never appears. A Field `req_hdr` of Type `Header` with a Field `len` is filtered as `myproto.req_hdr.len`; the same Type used as `resp_hdr` gives `myproto.resp_hdr.len`. Filter names are Dissector behaviour under ADR 0001, so this rule is stable: users save filters and colouring rules against them.
 

@@ -94,7 +94,7 @@ Wireshark needs three names per protocol. Wirdigen asks for one and derives the 
 
 | Wireshark name | Comes from | Rules |
 |---|---|---|
-| Filter name (`dns`) | `name:` | `[a-z][a-z0-9_-]+`, 2 to 32 characters: Wireshark refuses one-character filter names. Uppercase is an error, never lowercased silently. No `.`, which would blur where the Field path starts. Error `invalid-protocol-name`. |
+| Filter name (`dns`) | `name:` | `[a-z][a-z0-9_-]+`, 2 to 32 characters: Wireshark refuses one-character filter names. Uppercase is an error, never lowercased silently. No `.`, which would blur where the Field Path starts. Error `invalid-protocol-name`. |
 | Short name (`DNS`, Protocol column) | uppercase of `name:` | Always derived. A `short_name:` override can come later as a minor release. |
 | Full name (tree root) | `title:` | Optional, non-empty, single line, defaults to the short name. Error `invalid-protocol-title`. |
 
@@ -307,7 +307,7 @@ The two are mutually exclusive (`conflicting-repeat`); `repeat:` leaves room for
   - overlapping cases (values or ranges) are the error `overlapping-cases`, comparing values as the subject has them (§4.4), so `-1` and `18446744073709551615` overlap;
   - with no matching case and no `default:`, the rest of the message is shown raw as a bytes item filtered `<protocol>._unmatched`, with an expert info note (group Undecoded) filtered `<protocol>._undecoded.unmatched`, and the dissection stops: nothing says where the unknown layout ends.
 - A case adds no tree level either: its Fields go straight into the `switch` Field's subtree item.
-- A protocol with several kinds of message is a `switch` whose cases use Types. The `switch` Field's item shows the label of the Subject's value after its own label ("Body: Login"). When the `switch:` subject is a bare Field path to a Field read by the same dissect function (§7.3), the name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number, and so does a path a Type resolves at its use site (§4.3), which can name a different Field at each use.
+- A protocol with several kinds of message is a `switch` whose cases use Types. The `switch` Field's item shows the label of the Subject's value after its own label ("Body: Login"). When the `switch:` subject is a bare Field Path to a Field read by the same dissect function (§7.3), the name (and the default Info column, §3.14) is that Field's `values:` label, or the number if unmatched; any other Expression shows the number, and so does a path a Type resolves at its use site (§4.3), which can name a different Field at each use.
 - A `switch` Field accepts only `name`, `label`, `description`, `if`, `hidden`, `switch`, `cases` and `default`, never `values:`. Another key is reported under the name it has elsewhere: a length key `unexpected-length`, `endian` `invalid-endian`, `bits` `invalid-bits`, `count`/`repeat` `invalid-array`, a value key `incompatible-display`. `cases` or `default` without `switch` is `missing-field-kind`, or `conflicting-field-kind` beside `type` or `fields`.
 - Fields under `if:` or inside a case can be referenced only from inside the same conditional scope (§4.3). The way out is an inline structure carrying the `if:`.
 - `switch` cases add no segment to filter names (`myproto.body.user_id`). Two cases reaching the same path share a ProtoField under the rule of §3.4.9; otherwise it is the error `conflicting-filter-name`. For a Field of a Type, its "type" is the Type: two Fields of different Types at one path conflict.
@@ -391,7 +391,7 @@ framing:
 
 ### 4.2 Syntax
 
-A small C-like infix language: integer literals, Field paths, the built-ins `_offset` and `_remaining`, and parentheses. No function calls, assignment, strings or `?:` in v1; each can be added later.
+A small C-like infix language: integer literals, Field Paths, the built-ins `_offset` and `_remaining`, and parentheses. No function calls, assignment, strings or `?:` in v1; each can be added later.
 
 Operators from tightest to loosest binding (Rust/Python order, **not** C):
 
@@ -459,7 +459,7 @@ Everything in this section is observable in Wireshark and falls under semver (§
 - Bitfield sub-Fields extend their container's path (`myproto.flags.syn`).
 - `switch` cases add no segment.
 - Padding has no filter name.
-- Expert infos are filtered under a reserved `_` segment, which no Field path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, an array element that reads no bytes (§3.7) `<protocol>._malformed.empty_element`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`, a `dissector:` naming no dissector (§3.10) `<protocol>._undecoded.dissector`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
+- Expert infos are filtered under a reserved `_` segment, which no Field Path can reach (§3.4.2): a truncated packet is `<protocol>._malformed.truncated`, an Expression with no value (§4.4) `<protocol>._malformed.expression`, an array element that reads no bytes (§3.7) `<protocol>._malformed.empty_element`, a `switch` with no matching case (§3.9) `<protocol>._undecoded.unmatched`, a value outside its `expect:` (§3.10) `<protocol>._protocol.unexpected`, a `dissector:` naming no dissector (§3.10) `<protocol>._undecoded.dissector`. The bytes such a `switch` shows raw are `<protocol>._unmatched`.
 - Two Fields reaching one path share a ProtoField when type, display, value mappings, label and description match (§3.4.9). Otherwise validation fails with `conflicting-filter-name`. Wirdigen never renames a Field silently.
 - Renaming a Field, or moving it in or out of a nested structure, changes its filter name.
 

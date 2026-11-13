@@ -1,4 +1,4 @@
-# Inline structures nested to three levels, filtered by their Field paths.
+# Inline structures nested to three levels, filtered by their Field Paths.
 name: structures
 fields:
   - { name: id, type: uint8 }

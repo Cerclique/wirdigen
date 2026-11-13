@@ -1,6 +1,6 @@
 # Expressions use Rust-style precedence, C integer arithmetic and `_` built-ins
 
-Expressions in a Protocol Description (`size:`, `count:`, `if:`, `padding:`, the `framing:` length, `switch:` subjects) are a small infix language of Wirdigen's own (ADR 0005): integer literals, Field paths, two built-ins, parentheses and the arithmetic, comparison, logical and bitwise operators. There are no function calls, no strings and no assignment. Every value is a signed 64-bit integer; non-zero is true.
+Expressions in a Protocol Description (`size:`, `count:`, `if:`, `padding:`, the `framing:` length, `switch:` subjects) are a small infix language of Wirdigen's own (ADR 0005): integer literals, Field Paths, two built-ins, parentheses and the arithmetic, comparison, logical and bitwise operators. There are no function calls, no strings and no assignment. Every value is a signed 64-bit integer; non-zero is true.
 
 Three choices deliberately depart from what a C reader would expect, or from what Lua would do natively:
 

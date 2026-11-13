@@ -3,7 +3,7 @@
 //!
 //! The strategy draws a shape (which Fields, Types, Enums, Expressions and top-level keys a
 //! description has) and renders it as YAML. Rendering names every Field, Type and Enum uniquely
-//! and picks each Field path among those an Expression may read where it is written (spec §4.3),
+//! and picks each Field Path among those an Expression may read where it is written (spec §4.3),
 //! so every description is valid by construction: one that `validate` rejects is a bug in either.
 //!
 //! For each description, `validate` accepts it, `generate` does not panic, two generations are
@@ -655,7 +655,7 @@ fn quote(text: &str) -> String {
 
 // Rendering.
 
-/// A Field path, by its names.
+/// A Field Path, by its names.
 type Path = Vec<String>;
 
 /// What the Fields of a structure, or a Field, offer to the rest of the description.

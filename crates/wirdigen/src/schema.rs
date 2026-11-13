@@ -103,7 +103,7 @@ struct Description {
     framing: Option<Framing>,
     /// Default byte order of the protocol.
     endian: Option<ByteOrder>,
-    /// Info column template, such as `"{msg_type} id={id}"`: Field paths in braces, `{{` and `}}`
+    /// Info column template, such as `"{msg_type} id={id}"`: Field Paths in braces, `{{` and `}}`
     /// for literal braces. Without it, the Info column shows the outermost `switch` Field's case.
     info: Option<String>,
     /// The top-level layout: the Fields of a Message, read one after another.
@@ -194,7 +194,7 @@ struct Padding {
 #[schemars(deny_unknown_fields)]
 struct Field {
     /// The Field's name: lowercase letters, digits and `_`, starting with a letter. It is part of
-    /// its filter name and of the Field paths of Expressions.
+    /// its filter name and of the Field Paths of Expressions.
     #[schemars(regex(pattern = FIELD_NAME))]
     name: String,
     /// A built-in type, or the name of a Type.

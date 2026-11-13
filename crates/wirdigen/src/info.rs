@@ -105,7 +105,7 @@ impl SyntaxError {
 }
 
 /// The note of every pair of braces that does not hold a bare Field Path.
-const PATH_ONLY: &str = "write a Field path in braces, such as `{msg_type}` or `{header.id}`: \
+const PATH_ONLY: &str = "write a Field Path in braces, such as `{msg_type}` or `{header.id}`: \
                          no Expression, no format specifier";
 
 /// Parses a template, with spans into `text`.
@@ -135,7 +135,7 @@ fn parse(text: &str) -> Result<Vec<Piece>, SyntaxError> {
                 }
                 let segments: Vec<String> = inside.split('.').map(str::to_owned).collect();
                 if !segments.iter().all(|s| is_field_name(s)) {
-                    return Err(SyntaxError::new(span, format!("`{inside}` is not a Field path"), PATH_ONLY));
+                    return Err(SyntaxError::new(span, format!("`{inside}` is not a Field Path"), PATH_ONLY));
                 }
                 if !literal.is_empty() {
                     pieces.push(Piece::Text(std::mem::take(&mut literal)));
@@ -209,7 +209,7 @@ impl Unresolved {
         match self {
             Self::Unknown(names) => {
                 let candidates: Vec<&str> = names.iter().map(String::as_str).collect();
-                let otherwise = "a Field path starts from a Field of the top-level `fields`";
+                let otherwise = "a Field Path starts from a Field of the top-level `fields`";
                 scope::unknown_top_level(&segments[0], &candidates, otherwise, span)
             }
             Self::Miss(miss) => scope::miss_diagnostic(&miss, segments, span),
@@ -327,11 +327,11 @@ mod tests {
 
     #[test]
     fn a_reference_is_a_bare_field_path() {
-        assert_eq!(error("x {a:08}"), (2..8, "`a:08` is not a Field path".to_owned()));
-        assert_eq!(error("{a + 1}"), (0..7, "`a + 1` is not a Field path".to_owned()));
-        assert_eq!(error("{ a }"), (0..5, "` a ` is not a Field path".to_owned()));
-        assert_eq!(error("{_offset}"), (0..9, "`_offset` is not a Field path".to_owned()));
-        assert_eq!(error("{a..b}"), (0..6, "`a..b` is not a Field path".to_owned()));
+        assert_eq!(error("x {a:08}"), (2..8, "`a:08` is not a Field Path".to_owned()));
+        assert_eq!(error("{a + 1}"), (0..7, "`a + 1` is not a Field Path".to_owned()));
+        assert_eq!(error("{ a }"), (0..5, "` a ` is not a Field Path".to_owned()));
+        assert_eq!(error("{_offset}"), (0..9, "`_offset` is not a Field Path".to_owned()));
+        assert_eq!(error("{a..b}"), (0..6, "`a..b` is not a Field Path".to_owned()));
         assert_eq!(error("{}"), (0..2, "these braces name no Field".to_owned()));
     }
 

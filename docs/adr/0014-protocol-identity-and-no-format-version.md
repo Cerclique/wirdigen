@@ -2,7 +2,7 @@
 
 A Protocol Description states its identity with a required `name:`, which is the protocol's display filter name: the `<protocol>` prefix of every filter name (ADR 0009). Wireshark needs three names for a protocol (filter name `dns`, short name `DNS` in the Protocol column, full name `Domain Name System` at the tree root); Wirdigen asks for one and derives the rest:
 
-- **Filter name**: `name:` itself, matching `[a-z][a-z0-9_-]+`, 2 to 32 characters. The minimum of two is Wireshark's: from 4.4 on, protocol registration refuses a shorter filter name, so a one-character name would pass here and then fail to load. Uppercase is an error, never lowercased silently as Lua's `Proto.new` would, so the filter written in the file is the one users type. A `.` is excluded because `my.proto.len` would not say where the protocol ends and the Field path begins. Violations are the error `invalid-protocol-name`.
+- **Filter name**: `name:` itself, matching `[a-z][a-z0-9_-]+`, 2 to 32 characters. The minimum of two is Wireshark's: from 4.4 on, protocol registration refuses a shorter filter name, so a one-character name would pass here and then fail to load. Uppercase is an error, never lowercased silently as Lua's `Proto.new` would, so the filter written in the file is the one users type. A `.` is excluded because `my.proto.len` would not say where the protocol ends and the Field Path begins. Violations are the error `invalid-protocol-name`.
 - **Short name**: always the uppercase of `name:`, Wireshark's own convention.
 - **Full name**: the optional `title:`, non-empty and on one line (error `invalid-protocol-title`), defaulting to the short name.
 

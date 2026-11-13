@@ -24,7 +24,7 @@ wd_check_version()
 
 --@chunk malformed
 -- Reporting of packets that end too early. Always included.
--- The `_` segment is reserved: no Field path can reach it (spec §3.4.2, §5.2).
+-- The `_` segment is reserved: no Field Path can reach it (spec §3.4.2, §5.2).
 local function wd_expert_truncated(filter_name)
     return ProtoExpert.new(
         filter_name .. "._malformed.truncated",
@@ -198,7 +198,7 @@ end
 --@chunk unmatched
 -- Showing what a `switch` with no case for its subject's value, and no `default`, leaves
 -- unread (spec §3.9): the rest of the message, raw, with an expert info note. The `_` segment
--- is reserved: no Field path can reach it (spec §3.4.2, §5.2).
+-- is reserved: no Field Path can reach it (spec §3.4.2, §5.2).
 local function wd_field_unmatched(filter_name)
     return ProtoField.bytes(filter_name .. "._unmatched", "Unmatched bytes")
 end
@@ -219,7 +219,7 @@ end
 
 --@chunk unexpected
 -- Reporting of a value outside a Field's `expect:` (spec §3.10, §5.3): a warning, after which
--- the dissection goes on. The `_` segment is reserved: no Field path can reach it (spec §3.4.2,
+-- the dissection goes on. The `_` segment is reserved: no Field Path can reach it (spec §3.4.2,
 -- §5.2).
 local function wd_expert_unexpected(filter_name)
     return ProtoExpert.new(
@@ -241,7 +241,7 @@ end
 
 --@chunk handoff
 -- Handing a `bytes` Field's bytes to a Wireshark dissector by name (spec §3.10). The `_`
--- segment is reserved: no Field path can reach it (spec §3.4.2, §5.2).
+-- segment is reserved: no Field Path can reach it (spec §3.4.2, §5.2).
 local function wd_expert_dissector(filter_name)
     return ProtoExpert.new(
         filter_name .. "._undecoded.dissector",
