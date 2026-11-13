@@ -13,8 +13,8 @@ the same make targets, so CI and local runs share one environment:
 
 Each image also has the Rust toolchain pinned by `rust-toolchain.toml`. `tshark-stable-26.04`
 runs the same Wireshark as `tshark-stable`, built against the newer LTS's libraries, so a
-difference between the two builds shows up; `tshark-stable` stays the image every other
-target uses.
+difference between the two builds shows up. Besides the aggregates, only
+`docker-refresh-protocols` also uses it; every other target uses `tshark-stable`.
 
 ## Use
 
@@ -29,7 +29,7 @@ make docker-test-tshark-stable-26.04   # make test-tshark in tshark-stable-26.04
 make docker-test-tshark-random-4.4     # random descriptions x packets (weekly), in tshark-4.4
 make docker-test-tshark-random-stable  # the same in tshark-stable
 make docker-bless-tshark         # rewrite dissected.json in tshark-4.4, then check both stables
-make docker-refresh-protocols    # rewrite the built-in protocols snapshot in tshark-stable
+make docker-refresh-protocols    # rewrite the built-in protocols snapshot from both stables
 ```
 
 Each target builds the images it needs first; an unchanged image builds from Docker's cache
@@ -59,9 +59,10 @@ log, which holds the smallest failing packet as text2pcap hex. The make targets 
 variables into the container when they are set.
 
 The `Refresh protocols` workflow (`.github/workflows/refresh-protocols.yml`) runs early each
-Monday UTC, just after the stable image's weekly cache scope rolls over, and on demand. It
-builds the `tshark-stable` image as the `tshark-stable` job does, sharing its cache, and runs
-`make docker-refresh-protocols DOCKER_PREBUILT=1`. When the snapshot changed, it force-pushes
+Monday UTC, just after the stable images' weekly cache scopes roll over, and on demand. It
+builds the `tshark-stable` and `tshark-stable-26.04` images as their jobs do, sharing their
+caches, and runs `make docker-refresh-protocols DOCKER_PREBUILT=1`, which writes the union of
+the two builds' protocols: they differ even at one version. When the snapshot changed, it force-pushes
 one commit on `main` to the branch `chore/refresh-protocols` and opens a PR from it, titled
 `chore: refresh built-in protocols for Wireshark <version>`, or updates the PR already open.
 Otherwise it pushes nothing.

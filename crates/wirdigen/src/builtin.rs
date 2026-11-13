@@ -1,8 +1,9 @@
 //! The protocols built into Wireshark, behind the warning `protocol-name-taken` (spec §3.3).
 //!
-//! `builtin_protocols.tsv` is a `tshark -G protocols` snapshot from the latest stable Wireshark:
-//! a `#` header naming the version, then the full name, short name and filter name of each
-//! protocol, tab-separated. The `tshark-stable` CI job fails when it is out of date (spec §10.9);
+//! `builtin_protocols.tsv` is a `tshark -G protocols` snapshot from the latest stable Wireshark,
+//! the union of its builds on Ubuntu 24.04 and 26.04: a `#` header naming the version, then the
+//! full name, short name and filter name of each protocol, tab-separated and sorted. The
+//! `tshark-stable` and `tshark-stable-26.04` CI jobs fail when it is out of date (spec §10.9);
 //! `make docker-refresh-protocols` rewrites it.
 
 use crate::diagnostic::{Diagnostic, Name};

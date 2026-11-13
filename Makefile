@@ -34,8 +34,9 @@ test-tshark:
 test-tshark-random:
 	WIRDIGEN_TSHARK=1 cargo test -p wirdigen --locked --lib tshark_random::
 
-# Rewrites src/builtin_protocols.tsv, the snapshot behind `protocol-name-taken`, from the tshark
-# on PATH, which must be the latest stable Wireshark (spec §3.3, §10.9).
+# Adds the protocols of the tshark on PATH, which must be the latest stable Wireshark, to
+# src/builtin_protocols.tsv, the snapshot behind `protocol-name-taken` (spec §3.3, §10.9); a
+# newer Wireshark than the snapshot's replaces it instead.
 refresh-protocols:
 	WIRDIGEN_TSHARK=1 WIRDIGEN_BLESS=1 cargo test -p wirdigen --locked --test tshark builtin_protocols::
 
@@ -81,7 +82,10 @@ docker-bless-tshark: docker-image-tshark-4.4 docker-image-tshark-stable docker-i
 	$(call docker_run,tshark-stable,make test-tshark)
 	$(call docker_run,tshark-stable-26.04,make test-tshark)
 
-# Rewrites the built-in protocols snapshot from the tshark-stable image.
-docker-refresh-protocols: docker-image-tshark-stable
+# Rewrites the built-in protocols snapshot from the latest stable, as the union of its builds on
+# Ubuntu 24.04 and 26.04.
+docker-refresh-protocols: docker-image-tshark-stable docker-image-tshark-stable-26.04
 	$(call docker_run,tshark-stable,tshark --version)
 	$(call docker_run,tshark-stable,make refresh-protocols)
+	$(call docker_run,tshark-stable-26.04,tshark --version)
+	$(call docker_run,tshark-stable-26.04,make refresh-protocols)
