@@ -402,16 +402,10 @@ fn write(output: &Output, lua: &str) -> Result<WriteOutcome, InputError> {
 }
 
 /// Replaces `path` atomically with `bytes`, through a temporary file in the same directory, unless
-/// it already holds them. A replaced file keeps its permissions, and a symlink is followed so the
-/// link itself stays in place.
+/// it already holds them. A replaced file keeps its permissions, and a symlink is followed, to a
+/// target that need not exist yet, so the link itself stays in place.
 fn write_file(path: &Path, bytes: &[u8]) -> io::Result<WriteOutcome> {
-    let resolved;
-    let path = if path.is_symlink() {
-        resolved = fs::canonicalize(path)?;
-        resolved.as_path()
-    } else {
-        path
-    };
+    let path = &follow_symlinks(path)?;
     let existing = read_existing(path)?;
     if existing.as_deref() == Some(bytes) {
         return Ok(WriteOutcome::Unchanged);
@@ -437,4 +431,26 @@ fn write_file(path: &Path, bytes: &[u8]) -> io::Result<WriteOutcome> {
     }
     temp.persist(path).map_err(|err| err.error)?;
     Ok(WriteOutcome::Written)
+}
+
+/// The most symlinks followed from an output before it is taken for a loop, as Linux's
+/// `MAXSYMLINKS`.
+const MAX_SYMLINK_HOPS: usize = 40;
+
+/// The first path that is not a symlink along the chain of links starting at `path`. Unlike
+/// [`fs::canonicalize`], the last path need not exist; a relative link target resolves against the
+/// link's own directory.
+fn follow_symlinks(path: &Path) -> io::Result<PathBuf> {
+    let mut path = path.to_path_buf();
+    for _ in 0..=MAX_SYMLINK_HOPS {
+        if !path.is_symlink() {
+            return Ok(path);
+        }
+        let target = fs::read_link(&path)?;
+        path = match path.parent() {
+            Some(parent) => parent.join(target),
+            None => target,
+        };
+    }
+    Err(io::Error::new(io::ErrorKind::InvalidInput, "too many levels of symbolic links"))
 }
