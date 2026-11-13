@@ -153,6 +153,7 @@ enum Level {
     Left(&'static str),
 }
 
+/// Any one kind of level, with its operator.
 fn level() -> impl Strategy<Value = Level> {
     let binary = prop::sample::select(&["+", "-", "*", "<<", "&", "==", "&&", "||"][..]);
     prop_oneof![

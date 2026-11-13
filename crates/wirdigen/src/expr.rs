@@ -234,7 +234,7 @@ pub(crate) fn parse_text(text: &str) -> Result<Expr, SyntaxError> {
     if tokens.is_empty() {
         return Err(SyntaxError::new(0..text.len(), "the Expression is empty"));
     }
-    let (expr, _) = parser.binary(1)?;
+    let Parsed { expr, .. } = parser.binary(1)?;
     match parser.peek() {
         None => Ok(expr),
         Some(Token { kind: TokenKind::Close, span }) => {
@@ -515,8 +515,12 @@ struct Parser<'t> {
     depth: usize,
 }
 
-/// A parsed sub-Expression and how many levels it spans, its parentheses included.
-type Parsed = (Expr, usize);
+/// A parsed sub-Expression and how many levels it spans.
+struct Parsed {
+    expr: Expr,
+    /// Its depth, its parentheses included: 1 for a value.
+    levels: usize,
+}
 
 impl Parser<'_> {
     /// The next token, without reading it.
@@ -524,8 +528,8 @@ impl Parser<'_> {
         self.tokens.get(self.next)
     }
 
-    /// Fails at `span` if a sub-Expression spanning `levels` here would be too deep.
-    fn reach(&self, levels: usize, span: &Range<usize>) -> Result<(), SyntaxError> {
+    /// Fails at `span` if a sub-Expression spanning `levels` here would be too deep (ADR 0018).
+    fn ensure_depth(&self, levels: usize, span: &Range<usize>) -> Result<(), SyntaxError> {
         if self.depth + levels <= MAX_DEPTH {
             return Ok(());
         }
@@ -545,7 +549,7 @@ impl Parser<'_> {
         span: &Range<usize>,
         read: impl FnOnce(&mut Self) -> Result<Parsed, SyntaxError>,
     ) -> Result<Parsed, SyntaxError> {
-        self.reach(1, span)?;
+        self.ensure_depth(1, span)?;
         self.depth += 1;
         let parsed = read(self);
         self.depth -= 1;
@@ -554,7 +558,7 @@ impl Parser<'_> {
 
     /// An Expression whose binary operators bind at least as tightly as `min`.
     fn binary(&mut self, min: u8) -> Result<Parsed, SyntaxError> {
-        let (mut left, mut levels) = self.unary()?;
+        let Parsed { expr: mut left, mut levels } = self.unary()?;
         // Whether `left` is a comparison this loop built, so another one chains it.
         let mut compared = false;
         while let Some(Token { kind: TokenKind::Binary(op), span }) = self.peek().cloned() {
@@ -566,9 +570,10 @@ impl Parser<'_> {
                     .with_note("join two comparisons with `&&`, as in `a < b && b < c`, or add parentheses"));
             }
             // The operator pushes everything read so far one level down.
-            self.reach(levels + 1, &span)?;
+            self.ensure_depth(levels + 1, &span)?;
             self.next += 1;
-            let (right, right_levels) = self.nested(&span, |parser| parser.binary(op.precedence() + 1))?;
+            let Parsed { expr: right, levels: right_levels } =
+                self.nested(&span, |parser| parser.binary(op.precedence() + 1))?;
             levels = 1 + levels.max(right_levels);
             compared = op.is_comparison();
             let whole = left.span.start..right.span.end;
@@ -581,7 +586,7 @@ impl Parser<'_> {
                 span: whole,
             };
         }
-        Ok((left, levels))
+        Ok(Parsed { expr: left, levels })
     }
 
     /// A unary operator applied to an operand, or an operand.
@@ -593,11 +598,11 @@ impl Parser<'_> {
         };
         let span = self.peek().expect("just peeked").span.clone();
         self.next += 1;
-        let (operand, levels) = self.nested(&span, Self::unary)?;
+        let Parsed { expr: operand, levels } = self.nested(&span, Self::unary)?;
         let whole = span.start..operand.span.end;
         let expr =
             Expr { kind: ExprKind::Unary { op: Spanned { value: op, span }, operand: Box::new(operand) }, span: whole };
-        Ok((expr, levels + 1))
+        Ok(Parsed { expr, levels: levels + 1 })
     }
 
     /// A literal, a Field Path, a built-in or a parenthesized Expression.
@@ -606,7 +611,7 @@ impl Parser<'_> {
             return Err(SyntaxError::new(self.end..self.end, "the Expression ends early: expected a value"));
         };
         if matches!(token.kind, TokenKind::Int(_) | TokenKind::Path(_) | TokenKind::Builtin(_)) {
-            self.reach(1, &token.span)?;
+            self.ensure_depth(1, &token.span)?;
         }
         self.next += 1;
         let kind = match token.kind {
@@ -614,11 +619,11 @@ impl Parser<'_> {
             TokenKind::Path(segments) => ExprKind::Path(segments),
             TokenKind::Builtin(builtin) => ExprKind::Builtin(builtin),
             TokenKind::Open => {
-                let (inner, levels) = self.nested(&token.span, |parser| parser.binary(1))?;
+                let Parsed { expr: inner, levels } = self.nested(&token.span, |parser| parser.binary(1))?;
                 return match self.peek() {
                     Some(Token { kind: TokenKind::Close, .. }) => {
                         self.next += 1;
-                        Ok((inner, levels + 1))
+                        Ok(Parsed { expr: inner, levels: levels + 1 })
                     }
                     Some(other) => {
                         Err(SyntaxError::new(other.span.clone(), format!("expected `)`, found {}", other.kind)))
@@ -629,7 +634,7 @@ impl Parser<'_> {
             }
             other => return Err(SyntaxError::new(token.span, format!("expected a value, found {other}"))),
         };
-        Ok((Expr { kind, span: token.span }, 1))
+        Ok(Parsed { expr: Expr { kind, span: token.span }, levels: 1 })
     }
 }
 

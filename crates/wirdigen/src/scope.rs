@@ -413,7 +413,7 @@ fn with_notes(diagnostic: Diagnostic, notes: Notes) -> Diagnostic {
 ///
 /// The Types `ty` uses are worked out first, depth-first with an explicit stack and each after
 /// the Types it uses, so the walk of a body finds them memoized and never recurses once per Type
-/// of a chain (ADR 0018). A Type still being worked out reads as declaring no free name.
+/// of a chain (ADR 0018).
 fn free_refs<'a>(types: &mut Types<'a>, ty: &str) -> Vec<FreeRef> {
     if let Some(known) = types.free.get(ty) {
         return known.clone().unwrap_or_default();
