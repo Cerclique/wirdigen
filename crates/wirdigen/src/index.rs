@@ -1,7 +1,10 @@
-//! The identity of Field and sub-Field declarations, and the index lowering finds them through.
+//! The identity of Field, sub-Field and Type declarations, and the index lowering finds Fields
+//! and sub-Fields through.
 //!
 //! Validation resolves every Field Path once and records the id of the declaration it reaches
 //! (ADR 0016). Lowering looks the declaration up by that id instead of resolving the path again.
+//! A `type:` naming a Type is resolved once too, to the [`TypeId`] the validated Types are looked
+//! up by.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -36,6 +39,22 @@ impl SubFieldId {
     }
 }
 
+/// The identity of a Type: its position among the Types validation checks, in source order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct TypeId(usize);
+
+impl TypeId {
+    /// The id of the Type declared at `position`.
+    pub(crate) fn at(position: usize) -> Self {
+        Self(position)
+    }
+
+    /// Where the Type is declared among the Types, in source order.
+    pub(crate) fn position(self) -> usize {
+        self.0
+    }
+}
+
 /// Every Field and sub-Field declaration of a checked Protocol, by id: those of the top-level
 /// layout and of every Type body, inline structures and `switch` cases included.
 #[derive(Debug)]
@@ -49,7 +68,7 @@ impl<'p> FieldIndex<'p> {
     pub(crate) fn new(protocol: &'p Protocol) -> Self {
         let mut index = Self { fields: BTreeMap::new(), sub_fields: BTreeMap::new() };
         index.add(&protocol.fields);
-        for ty in &protocol.types {
+        for ty in protocol.types.iter() {
             index.add(&ty.fields);
         }
         index
@@ -148,8 +167,28 @@ mod tests {
         };
         assert_eq!(target("x.a"), target("y.a"));
         let index = FieldIndex::new(&protocol);
-        let declared = protocol.types[0].fields[0].field().expect("a Field");
+        let declared = protocol.types.iter().next().expect("a Type").fields[0].field().expect("a Field");
         assert!(std::ptr::eq(index.field(target("x.a")), declared));
+    }
+
+    #[test]
+    fn a_type_id_resolves_to_the_type_whatever_the_order() {
+        // `Outer` is declared first and lowered last: an id is not a place in the order.
+        let protocol = protocol(
+            "name: demo\ntypes:\n  Outer: { fields: [ { name: in, type: Inner } ] }\n\
+             \x20 Inner: { fields: [ { name: a, type: uint8 } ] }\nfields:\n  - { name: x, type: Outer }\n",
+        );
+        let order: Vec<&str> = protocol.types.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(order, ["Inner", "Outer"]);
+        let used = |entries: &[Entry]| match &entries[0].field().expect("a Field").kind {
+            FieldKind::Type { id, name, .. } => (*id, name.clone()),
+            other => panic!("a Field of a Type, not {other:?}"),
+        };
+        let (outer, name) = used(&protocol.fields);
+        assert_eq!((protocol.types.get(outer).name.as_str(), name.as_str()), ("Outer", "Outer"));
+        let (inner, _) = used(&protocol.types.get(outer).fields);
+        assert_eq!(protocol.types.get(inner).name, "Inner");
+        assert!(protocol.types.iter().all(|t| std::ptr::eq(protocol.types.get(t.id), t)));
     }
 
     #[test]
@@ -178,7 +217,7 @@ mod tests {
     fn stored(protocol: &Protocol) -> Vec<Stored> {
         let mut found = Vec::new();
         stored_in(&protocol.fields, &mut found);
-        for ty in &protocol.types {
+        for ty in protocol.types.iter() {
             stored_in(&ty.fields, &mut found);
         }
         for part in protocol.info.iter().flat_map(|t| &t.parts) {

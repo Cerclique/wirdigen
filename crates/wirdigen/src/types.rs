@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expr::Expr;
 use crate::field::{self, Endian, Entry, Parse, RawEntry};
+use crate::index::TypeId;
 use crate::keys::{Spanned, closest, duplicate_key, expect_string, is_type_name, read_keys, wrong_type};
 use crate::mapping::Enums;
 use crate::scope::{FreeRef, Scope};
@@ -33,8 +34,32 @@ impl RawType<Parse> {
 /// A validated Type: its Fields, read in the Type's own byte order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NamedType {
+    pub(crate) id: TypeId,
+    /// The name as declared, for Lua names and messages: a Type is looked up by its id.
     pub(crate) name: String,
     pub(crate) fields: Vec<Entry>,
+}
+
+/// The validated Types of a description.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NamedTypes {
+    /// In source order: each Type at the position its id holds.
+    declared: Vec<NamedType>,
+    /// Every Type once, each after the Types it uses.
+    order: Vec<TypeId>,
+}
+
+impl NamedTypes {
+    /// The Type a resolved `type:` names.
+    pub(crate) fn get(&self, id: TypeId) -> &NamedType {
+        &self.declared[id.position()]
+    }
+
+    /// The Types in dependency order, each after the Types it uses, so lowering can define each
+    /// one before its callers (spec §7.3).
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &NamedType> {
+        self.order.iter().map(|&id| self.get(id))
+    }
 }
 
 /// Stage 2: reads the top-level `types:`, a mapping from Type names to Type bodies.
@@ -123,13 +148,13 @@ impl<'a> Types<'a> {
         self.position(name).is_some()
     }
 
-    /// Looks up the Type a Field's `type:` names, marking it as used. An unknown name marks the
-    /// Type it most likely misspells instead, so a typo is not also an `unused-type`, and is
-    /// reported the first time only.
-    pub(crate) fn resolve(&mut self, name: &Spanned<String>) -> Option<String> {
+    /// Looks up the Type a Field's `type:` names, marking it as used, and returns its id. An
+    /// unknown name marks the Type it most likely misspells instead, so a typo is not also an
+    /// `unused-type`, and is reported the first time only.
+    pub(crate) fn resolve(&mut self, name: &Spanned<String>) -> Option<TypeId> {
         if let Some(index) = self.position(&name.value) {
             self.used[index] = true;
-            return Some(name.value.clone());
+            return Some(TypeId::at(index));
         }
         let names: Vec<&str> = self.raw.iter().map(|t| t.name.value.as_str()).collect();
         let guess = closest(&name.value, &names);
@@ -155,15 +180,14 @@ impl<'a> Types<'a> {
 /// Stage 4: checks every Type's name and body, the top-level layout `top`, which uses Types too,
 /// and the uses between Types.
 ///
-/// Returns the checked layout, and the Types in dependency order, each after the Types it uses,
-/// so lowering can define each one before its callers.
+/// Returns the checked layout and the checked Types, which know their dependency order.
 pub(crate) fn check<'a>(
     raw: &'a [RawType],
     top: &'a [RawEntry],
     endian: Endian,
     enums: &mut Enums<'_>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> (Vec<Entry>, Vec<NamedType>) {
+) -> (Vec<Entry>, NamedTypes) {
     let mut types = Types::new(raw);
     let mut bodies = Vec::new();
     for t in raw {
@@ -179,7 +203,7 @@ pub(crate) fn check<'a>(
         }
         let endian = Endian::resolve(t.endian.as_ref(), endian, diagnostics);
         let scope = Scope { ty: Some(&t.name.value), levels: &[] };
-        bodies.push(Some(field::check(&t.fields, endian, enums, &mut types, scope, diagnostics)));
+        bodies.push(field::check(&t.fields, endian, enums, &mut types, scope, diagnostics));
     }
     let layout = field::check(top, endian, enums, &mut types, Scope { ty: None, levels: &[] }, diagnostics);
     diagnostics.extend(types.unknown.into_iter().map(|(_, d)| d));
@@ -195,11 +219,14 @@ pub(crate) fn check<'a>(
             );
         }
     }
-    let named = Walk::new(raw).dependency_order(diagnostics).into_iter().map(|i| NamedType {
-        name: raw[i].name.value.clone(),
-        fields: bodies[i].take().expect("each Type comes once in the order"),
-    });
-    (layout, named.collect())
+    let order = Walk::new(raw).dependency_order(diagnostics).into_iter().map(TypeId::at).collect();
+    let declared = raw
+        .iter()
+        .zip(bodies)
+        .enumerate()
+        .map(|(position, (t, fields))| NamedType { id: TypeId::at(position), name: t.name.value.clone(), fields })
+        .collect();
+    (layout, NamedTypes { declared, order })
 }
 
 /// Where a depth-first walk over the uses between Types stands with one Type.

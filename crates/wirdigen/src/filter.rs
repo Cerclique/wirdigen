@@ -12,9 +12,10 @@ use std::ops::Range;
 use crate::bits::Bit;
 use crate::diagnostic::{Diagnostic, Name};
 use crate::field::{self, Builtin, Display, Entry, Field, FieldKind, Length};
+use crate::index::TypeId;
 use crate::mapping::Mapping;
 use crate::switch::Body;
-use crate::types::NamedType;
+use crate::types::NamedTypes;
 
 /// What a `ProtoField` is declared as, past its filter name: what must match for two Fields to
 /// share it (spec §3.4.9).
@@ -65,14 +66,14 @@ type Seen<'a> = BTreeMap<String, (Declaration<'a>, Range<usize>)>;
 
 /// Stage 4: reports each Field reaching the filter name of an earlier one with a `ProtoField`
 /// that does not match, given the checked layout and Types of a description without errors.
-pub(crate) fn check(layout: &[Entry], types: &[NamedType], diagnostics: &mut Vec<Diagnostic>) {
+pub(crate) fn check(layout: &[Entry], types: &NamedTypes, diagnostics: &mut Vec<Diagnostic>) {
     let mut walk = Walk { types, seen: Seen::new(), reported: BTreeSet::new(), diagnostics };
     walk.fields(layout, "");
 }
 
 /// A walk over the filter paths of a layout, in the order lowering registers them.
 struct Walk<'a, 'd> {
-    types: &'a [NamedType],
+    types: &'a NamedTypes,
     seen: Seen<'a>,
     /// The pairs of spans reported already: a Type used twice would report its conflict twice.
     reported: BTreeSet<(usize, usize)>,
@@ -111,22 +112,22 @@ impl<'a> Walk<'a, '_> {
                 }
             }
             FieldKind::Structure(children) => self.fields(children, path),
-            FieldKind::Type { name, .. } => self.type_fields(name, path),
+            FieldKind::Type { id, .. } => self.type_fields(*id, path),
             FieldKind::Switch(switch) => {
                 for body in switch.bodies() {
                     match body {
                         Body::Fields(children) => self.fields(children, path),
-                        Body::Type { name, .. } => self.type_fields(name, path),
+                        Body::Type { id, .. } => self.type_fields(*id, path),
                     }
                 }
             }
         }
     }
 
-    /// Walks the Fields of the Type `name` used at `path`.
-    fn type_fields(&mut self, name: &str, path: &str) {
-        let ty = self.types.iter().find(|t| t.name == name).expect("validation resolved every Type");
-        self.fields(&ty.fields, path);
+    /// Walks the Fields of the Type `id` used at `path`.
+    fn type_fields(&mut self, id: TypeId, path: &str) {
+        let types: &'a NamedTypes = self.types;
+        self.fields(&types.get(id).fields, path);
     }
 
     /// Records the first declaration at `path`; a later one that differs is reported once.
