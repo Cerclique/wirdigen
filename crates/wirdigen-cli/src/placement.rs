@@ -209,7 +209,7 @@ fn normalize(cwd: &Path, path: &Path) -> PathBuf {
                     normal.pop();
                 }
                 Some(Component::RootDir | Component::Prefix(_)) => {}
-                _ => normal.push(component),
+                None | Some(Component::ParentDir | Component::CurDir) => normal.push(component),
             },
             other => normal.push(other),
         }
