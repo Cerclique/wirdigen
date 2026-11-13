@@ -1420,6 +1420,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "trycmd",
  "wirdigen",
 ]
