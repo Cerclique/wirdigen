@@ -201,13 +201,13 @@ impl Run {
                 return FileStatus::Failed;
             }
         };
-        let source = Source::new(name.as_ref(), text.as_str());
+        let source = Source::new(name.as_ref(), text);
         let valid = wirdigen::validate(&source);
         let diagnostics = match &valid {
             Ok(valid) => valid.warnings(),
             Err(diagnostics) => diagnostics.iter().as_slice(),
         };
-        self.report(&source, &text, diagnostics);
+        self.report(&source, diagnostics);
         match valid {
             Err(_) => FileStatus::Failed,
             Ok(valid) if self.options.deny_warnings && !valid.warnings().is_empty() => FileStatus::Failed,
@@ -253,7 +253,7 @@ impl Run {
 
     /// Reports one input's Diagnostics: rendered to stderr, each block separated from the previous
     /// one, or as `diagnostic` records on stdout.
-    fn report(&mut self, source: &Source, text: &str, diagnostics: &[Diagnostic]) {
+    fn report(&mut self, source: &Source, diagnostics: &[Diagnostic]) {
         if diagnostics.is_empty() {
             return;
         }
@@ -265,7 +265,7 @@ impl Run {
                     plain.color = false;
                     let rendered = diagnostic.render(source, &plain);
                     let denied = self.options.deny_warnings && diagnostic.severity() == Severity::Warning;
-                    println!("{}", json::diagnostic(source.name(), text, diagnostic, &rendered, denied));
+                    println!("{}", json::diagnostic(source, diagnostic, &rendered, denied));
                 }
                 MessageFormat::Human if is_error || self.verbosity.shows_warnings() => {
                     if self.rendered_any {

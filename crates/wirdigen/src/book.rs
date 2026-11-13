@@ -171,10 +171,7 @@ fn the_index_has_one_entry_per_diagnostic_name() {
         let name =
             Name::from_token(&entry.anchor).unwrap_or_else(|| panic!("no Diagnostic is named `{}`", entry.anchor));
         let token = name.as_str();
-        let severity = match name.severity() {
-            Severity::Error => "error",
-            Severity::Warning => "warning",
-        };
+        let severity = name.severity().as_str();
         let has_line = |prefix: &str| entry.body.lines().any(|l| l.starts_with(prefix));
         assert!(has_line(&format!("**Severity**: {severity}")), "`{token}` must say `**Severity**: {severity}`");
         assert!(has_line("**Fix**: "), "`{token}` must say how to fix it in a `**Fix**: ` paragraph");

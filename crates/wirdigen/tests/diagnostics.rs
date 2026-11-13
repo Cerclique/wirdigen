@@ -4,33 +4,22 @@
 use std::fs;
 use std::path::Path;
 
-use wirdigen::{Severity, Source};
-
-/// 1-based line and column (in characters) of a byte offset.
-fn line_col(text: &str, offset: usize) -> (usize, usize) {
-    let before = &text[..offset];
-    let line = before.matches('\n').count() + 1;
-    let col = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
-    (line, col)
-}
+use wirdigen::Source;
 
 fn actual(text: &str) -> Vec<String> {
-    let diagnostics = match wirdigen::validate(&Source::new("case", text)) {
-        Ok(valid) => return valid.warnings().iter().map(|d| line_of(text, d)).collect(),
+    let source = Source::new("case", text);
+    let diagnostics = match wirdigen::validate(&source) {
+        Ok(valid) => return valid.warnings().iter().map(|d| line_of(&source, d)).collect(),
         Err(diagnostics) => diagnostics,
     };
-    diagnostics.iter().map(|d| line_of(text, d)).collect()
+    diagnostics.iter().map(|d| line_of(&source, d)).collect()
 }
 
-fn line_of(text: &str, d: &wirdigen::Diagnostic) -> String {
-    let severity = match d.severity() {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-    };
+fn line_of(source: &Source, d: &wirdigen::Diagnostic) -> String {
     let span = d.span();
-    let (l1, c1) = line_col(text, span.start);
-    let (l2, c2) = line_col(text, span.end);
-    format!("{severity} {} {l1}:{c1}-{l2}:{c2}", d.name())
+    let (l1, c1) = source.line_column(span.start);
+    let (l2, c2) = source.line_column(span.end);
+    format!("{} {} {l1}:{c1}-{l2}:{c2}", d.severity().as_str(), d.name())
 }
 
 #[test]

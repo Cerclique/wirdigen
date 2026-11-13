@@ -60,3 +60,22 @@ fn json_schema_is_pretty_deterministic_json_listing_top_level_keys_in_documentat
         ["name", "title", "registration", "framing", "endian", "info", "fields", "types", "enums", "allow"]
     );
 }
+
+#[test]
+fn source_line_column_counts_characters_from_one() {
+    let source = Source::new("x", "é: x\nab");
+    assert_eq!(source.line_column(0), (1, 1));
+    assert_eq!(source.line_column(4), (1, 4));
+    assert_eq!(source.line_column(7), (2, 2));
+}
+
+#[test]
+fn source_line_column_after_a_trailing_newline_starts_the_next_line() {
+    assert_eq!(Source::new("x", "a\n").line_column(2), (2, 1));
+}
+
+#[test]
+fn severity_tokens_are_error_and_warning() {
+    assert_eq!(Severity::Error.as_str(), "error");
+    assert_eq!(Severity::Warning.as_str(), "warning");
+}

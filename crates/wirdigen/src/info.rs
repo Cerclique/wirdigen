@@ -13,7 +13,7 @@ use std::ops::Range;
 use crate::diagnostic::{Diagnostic, Name};
 use crate::field::{Entry, FieldKind, is_field_name};
 use crate::index::{FieldId, SubFieldId};
-use crate::keys::{closest, expect_string, is_single_line};
+use crate::keys::{expect_string, is_single_line};
 use crate::scope::{self, Miss};
 use crate::switch::Body;
 use crate::types::NamedType;
@@ -195,8 +195,8 @@ pub(crate) enum Target {
 /// Why a template's Field Path shows nothing.
 #[derive(Debug)]
 pub(crate) enum Unresolved {
-    /// No top-level Field has the path's first name; the closest name, if any is close.
-    Unknown(Option<String>),
+    /// No top-level Field has the path's first name; the names of the top-level Fields.
+    Unknown(Vec<String>),
     /// The path finds no Field on the way.
     Miss(Miss),
     /// The path ends on a Field with no value of its own (`what`), declared at `declared`.
@@ -207,13 +207,10 @@ impl Unresolved {
     /// The Diagnostic of the path `segments`, written at `span`.
     fn diagnostic(self, segments: &[String], span: Range<usize>) -> Diagnostic {
         match self {
-            Self::Unknown(guess) => {
-                let message = format!("no top-level Field is named `{}`", segments[0]);
-                let unknown = Diagnostic::new(Name::UnknownField, span, message);
-                match guess {
-                    Some(guess) => unknown.with_note(format!("did you mean `{guess}`?"), None),
-                    None => unknown.with_note("a Field path starts from a Field of the top-level `fields`", None),
-                }
+            Self::Unknown(names) => {
+                let candidates: Vec<&str> = names.iter().map(String::as_str).collect();
+                let otherwise = "a Field path starts from a Field of the top-level `fields`";
+                scope::unknown_top_level(&segments[0], &candidates, otherwise, span)
             }
             Self::Miss(miss) => scope::miss_diagnostic(&miss, segments, span),
             Self::NoValue { what, declared } => {
@@ -237,8 +234,7 @@ impl Unresolved {
 fn find<'p>(top: &'p [Entry], types: &'p [NamedType], path: &[String]) -> Result<Target, Unresolved> {
     let names = |entries: &'p [Entry]| entries.iter().filter_map(Entry::field);
     let Some(mut field) = names(top).find(|f| f.name == path[0]) else {
-        let candidates: Vec<&str> = names(top).map(|f| f.name.as_str()).collect();
-        return Err(Unresolved::Unknown(closest(&path[0], &candidates).map(str::to_owned)));
+        return Err(Unresolved::Unknown(names(top).map(|f| f.name.clone()).collect()));
     };
     let body = |name: &str| &types.iter().find(|t| t.name == name).expect("validation resolved the Type").fields;
     // The Type the Field is in, and the Field's path from the Type's body or the top level.
