@@ -481,12 +481,17 @@ mod registration {
 }
 
 /// The snapshot of Wireshark's built-in protocols behind `protocol-name-taken` (spec §3.3,
-/// §10.9), `src/builtin_protocols.tsv`, must match the latest stable tshark.
+/// §10.9), `src/builtin_protocols.tsv`, must cover every stable tshark build CI runs.
 ///
-/// A tshark older than the snapshot's (the 4.4 floor) is not compared. The same version must
-/// list the same protocols; a newer one means the snapshot is out of date. `WIRDIGEN_BLESS=1`
-/// rewrites it (`make docker-refresh-protocols`).
+/// Builds of one version differ by distribution: Ubuntu 26.04's has the Falco plugin's
+/// protocols, 24.04's does not. So the snapshot holds the union of the builds at its version,
+/// sorted. A tshark older than the snapshot's (the 4.4 floor) is not compared. The same version
+/// must list no protocol the snapshot lacks; a newer one means the snapshot is out of date.
+/// `WIRDIGEN_BLESS=1` adds this build's protocols at the same version and starts over at a newer
+/// one (`make docker-refresh-protocols` blesses in each stable image).
 mod builtin_protocols {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     fn snapshot_path() -> PathBuf {
@@ -509,17 +514,43 @@ mod builtin_protocols {
         rest.split(':').next().unwrap_or_default()
     }
 
-    /// The snapshot `tshark -G protocols` gives: a header with the version, then the full name,
-    /// short name and filter name of each protocol.
-    fn render(version: &str, protocols: &str) -> String {
+    /// The full name, short name and filter name of each protocol `tshark -G protocols` lists,
+    /// as tab-separated rows.
+    fn rows(protocols: &str) -> BTreeSet<String> {
+        protocols
+            .lines()
+            .map(|line| {
+                let columns: Vec<&str> = line.split('\t').take(3).collect();
+                assert_eq!(columns.len(), 3, "unexpected `tshark -G protocols` line {line:?}");
+                columns.join("\t")
+            })
+            .collect()
+    }
+
+    /// The rows of a snapshot, after its header.
+    fn snapshot_rows(snapshot: &str) -> BTreeSet<String> {
+        snapshot.lines().skip(1).map(str::to_owned).collect()
+    }
+
+    /// A snapshot: a header with the version, then the rows in byte order, so that the union
+    /// of several builds does not depend on which was blessed first.
+    fn render(version: &str, rows: &BTreeSet<String>) -> String {
         let mut snapshot = format!("{HEADER}{version}: full name, short name, filter name\n");
-        for line in protocols.lines() {
-            let columns: Vec<&str> = line.split('\t').take(3).collect();
-            assert_eq!(columns.len(), 3, "unexpected `tshark -G protocols` line {line:?}");
-            snapshot.push_str(&columns.join("\t"));
+        for row in rows {
+            snapshot.push_str(row);
             snapshot.push('\n');
         }
         snapshot
+    }
+
+    /// The snapshot blessing `build` (one tshark's rows at `version`) makes of `committed`: the
+    /// union at the same version, `build` alone at a newer one.
+    fn bless(committed: &str, version: &str, build: BTreeSet<String>) -> String {
+        if snapshot_version(committed) == version {
+            render(version, &snapshot_rows(committed).into_iter().chain(build).collect())
+        } else {
+            render(version, &build)
+        }
     }
 
     #[test]
@@ -531,21 +562,24 @@ mod builtin_protocols {
         let version = scratch.tshark_full_version();
         let path = snapshot_path();
         let committed = fs::read_to_string(&path).unwrap();
-        if parse_version(&version) < parse_version(snapshot_version(&committed)) {
+        let committed_version = snapshot_version(&committed);
+        if parse_version(&version) < parse_version(committed_version) {
             return;
         }
         let output = scratch.run("tshark", &["-G", "protocols"]);
         assert!(output.status.success(), "tshark -G protocols failed: {}", String::from_utf8_lossy(&output.stderr));
-        let actual = render(&version, &String::from_utf8(output.stdout).unwrap());
+        let build = rows(&String::from_utf8(output.stdout).unwrap());
         if blessing() {
-            fs::write(&path, &actual).unwrap();
+            fs::write(&path, bless(&committed, &version, build)).unwrap();
             return;
         }
-        // Not assert_eq!, which would print both 3000-line snapshots.
+        let out_of_date = format!("{} is out of date for Wireshark {version}", path.display());
+        assert!(version == committed_version, "{out_of_date}: run `make docker-refresh-protocols`");
+        let missing: Vec<String> = build.difference(&snapshot_rows(&committed)).cloned().collect();
         assert!(
-            actual == committed,
-            "{} is out of date for Wireshark {version}: run `make docker-refresh-protocols`",
-            path.display()
+            missing.is_empty(),
+            "{out_of_date}, which also has:\n{}\nrun `make docker-refresh-protocols`",
+            missing.join("\n")
         );
     }
 
@@ -558,14 +592,39 @@ mod builtin_protocols {
     #[test]
     fn the_snapshot_keeps_three_columns_under_a_versioned_header() {
         let protocols = "29West Protocol\t29West\t29west\tT\tT\tT\n";
-        let snapshot = render("4.6.9", protocols);
+        let snapshot = render("4.6.9", &rows(protocols));
         assert_eq!(snapshot_version(&snapshot), "4.6.9");
         assert_eq!(snapshot.lines().nth(1), Some("29West Protocol\t29West\t29west"));
     }
 
     #[test]
-    fn the_committed_snapshot_has_a_version() {
-        parse_version(snapshot_version(&fs::read_to_string(snapshot_path()).unwrap()));
+    fn blessing_unions_builds_of_one_version_and_starts_over_at_a_newer_one() {
+        let noble = rows("UDP\tUDP\tudp\nTCP\tTCP\ttcp\n");
+        let resolute = rows("Falco Events\tFalco Events\tfalcoevents\nUDP\tUDP\tudp\n");
+        let union = bless(&render("4.6.9", &noble), "4.6.9", resolute.clone());
+        let expected = "Falco Events\tFalco Events\tfalcoevents\nTCP\tTCP\ttcp\nUDP\tUDP\tudp\n";
+        assert_eq!(union.split_once('\n').map(|(_, rows)| rows), Some(expected));
+        assert_eq!(
+            bless(&render("4.6.9", &resolute), "4.6.9", noble),
+            union,
+            "the union depends on the blessing order"
+        );
+
+        let newer = bless(&union, "4.6.10", rows("TCP\tTCP\ttcp\n"));
+        assert_eq!(snapshot_version(&newer), "4.6.10");
+        assert_eq!(newer.lines().skip(1).collect::<Vec<_>>(), ["TCP\tTCP\ttcp"]);
+    }
+
+    #[test]
+    fn the_committed_snapshot_has_a_version_and_sorted_unique_rows() {
+        // A blessing rewrites the snapshot concurrently.
+        if blessing() {
+            return;
+        }
+        let snapshot = fs::read_to_string(snapshot_path()).unwrap();
+        parse_version(snapshot_version(&snapshot));
+        let rows: Vec<&str> = snapshot.lines().skip(1).collect();
+        assert!(rows.is_sorted_by(|a, b| a < b), "the snapshot's rows are not sorted and unique");
     }
 }
 

@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ["4.4", stable]
+        version: ["4.4", "stable-24.04"]
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -160,8 +160,8 @@ jobs:
             echo "Seed: \`$SEED\`. Replay on a tshark version with:"
             echo
             echo '```sh'
-            echo "PROPTEST_RNG_SEED=$SEED PROPTEST_CASES=5000 WIRDIGEN_RANDOM_PACKETS=64 make docker-test-tshark-random-stable"
-            echo "WIRDIGEN_BAD_SEED=$SEED WIRDIGEN_BAD_MUTATIONS=1000 WIRDIGEN_BAD_RANDOM=1000 make docker-test-tshark-stable"
+            echo "PROPTEST_RNG_SEED=$SEED PROPTEST_CASES=5000 WIRDIGEN_RANDOM_PACKETS=64 make docker-test-tshark-random-stable-24.04"
+            echo "WIRDIGEN_BAD_SEED=$SEED WIRDIGEN_BAD_MUTATIONS=1000 WIRDIGEN_BAD_RANDOM=1000 make docker-test-tshark-stable-24.04"
             echo '```'
             echo
             echo "A bad packet found by the bad-input harness, or by the random descriptions, becomes a \`packets.txt\` regression, or a corpus case (spec §10.6, §10.7)."
