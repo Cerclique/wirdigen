@@ -749,7 +749,7 @@ Both Wireshark versions must produce the same `dissected.json`; a per-version fi
 
 - Two versions:
   - the 4.4 floor, from a `debian:trixie` container, run as a non-root user because tshark skips `-X lua_script` as root;
-  - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04.
+  - the latest stable, from `ppa:wireshark-dev/stable` on ubuntu-24.04, and again on ubuntu-26.04 so a difference in the newer LTS's build shows up.
 - No source builds and no RC or nightly job. Lua 5.3 is covered only by the load check.
 - The harness sets `LC_ALL=C`, `TZ=UTC` and a temporary `WIRESHARK_CONFIG_DIR`.
 - The corpus covers every `encoding:` value of `abs_time` and `rel_time` (§3.4.5) in both byte orders. Because tshark exits 0 on a Lua load error, it checks stderr, `_ws.lua.error` and the packet count rather than the exit code.
@@ -791,6 +791,7 @@ Shrunk failures become corpus cases.
 | `lua` (`WIRDIGEN_LUA=1`) | ubuntu-24.04 with `lua5.2`/`5.3`/`5.4` | yes |
 | `tshark-4.4` (`WIRDIGEN_TSHARK=1`): `dissected.json` + fixed-seed bad packets | `debian:trixie` container, non-root | yes |
 | `tshark-stable` | ubuntu-24.04 + PPA | yes |
+| `tshark-stable-26.04` | `ubuntu:26.04` container + PPA, non-root | yes |
 | weekly `Refresh protocols` (separate workflow): refreshes the `protocol-name-taken` snapshot | ubuntu-24.04, `tshark-stable` image | n/a; a changed snapshot opens or updates one PR |
 | weekly `Weekly` (separate workflow): large-count bad packets, high `PROPTEST_CASES`, random descriptions × packets on both versions, the beta toolchain and `cargo deny check advisories` | ubuntu, `tshark-4.4` and `tshark-stable` images | n/a; a failure opens or updates one issue with the seed |
 
@@ -850,7 +851,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 - `deny` (advisories, licenses, bans, sources) plus `cargo machete`.
 - `typos`, `links` (lychee, offline), `workflows` (actionlint, zizmor) and `pr-title`.
 - A `cargo publish --dry-run --locked` packaging check.
-- The `lua`, `tshark-4.4` and `tshark-stable` jobs of §10.9.
+- The `lua`, `tshark-4.4`, `tshark-stable` and `tshark-stable-26.04` jobs of §10.9.
 - The book build and snippet checks.
 
 `semver` (cargo-semver-checks, not required) is added once 1.0.0 is published. There is no coverage job.

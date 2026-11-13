@@ -38,7 +38,7 @@ details:
 
 ```sh
 make docker-test-lua      # Lua 5.2, 5.3 and 5.4
-make docker-test-tshark   # Wireshark 4.4, then the latest stable
+make docker-test-tshark   # Wireshark 4.4, then the latest stable on Ubuntu 24.04 and 26.04
 ```
 
 CI runs these three layers on every pull request, plus a weekly run with random seeds and
@@ -84,7 +84,8 @@ make docker-bless-tshark                                # dissected.json and inf
 TRYCMD=overwrite cargo test -p wirdigen-cli --test cli  # CLI cases in tests/cli/
 ```
 
-`make docker-bless-tshark` writes from Wireshark 4.4, then checks that the latest stable agrees.
+`make docker-bless-tshark` writes from Wireshark 4.4, then checks that the latest stable agrees,
+on Ubuntu 24.04 and 26.04.
 Both versions must produce the same `dissected.json`. When they can't, a
 `dissected-<major>.<minor>.json` next to it is a documented exception: say why in the pull
 request.

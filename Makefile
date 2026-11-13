@@ -3,7 +3,8 @@ export RUSTFLAGS := -D warnings
 export RUSTDOCFLAGS := -D warnings
 
 .PHONY: lint test test-lua test-tshark test-tshark-random book docker-test-lua docker-test-tshark \
-	docker-test-tshark-4.4 docker-test-tshark-stable docker-test-tshark-random-4.4 \
+	docker-test-tshark-4.4 docker-test-tshark-stable docker-test-tshark-stable-26.04 \
+	docker-test-tshark-random-4.4 \
 	docker-test-tshark-random-stable docker-bless-tshark \
 	refresh-protocols docker-refresh-protocols
 
@@ -61,9 +62,10 @@ docker_run = mkdir -p target/docker/$(1) target/docker/cargo-home && \
 docker-test-lua: docker-image-tshark-stable
 	$(call docker_run,tshark-stable,make test-lua)
 
-docker-test-tshark: docker-test-tshark-4.4 docker-test-tshark-stable
+docker-test-tshark: docker-test-tshark-4.4 docker-test-tshark-stable docker-test-tshark-stable-26.04
 
-docker-test-tshark-4.4 docker-test-tshark-stable: docker-test-tshark-%: docker-image-tshark-%
+# stable-26.04 is the latest stable again, from the same PPA on Ubuntu 26.04.
+docker-test-tshark-4.4 docker-test-tshark-stable docker-test-tshark-stable-26.04: docker-test-tshark-%: docker-image-tshark-%
 	$(call docker_run,tshark-$*,tshark --version)
 	$(call docker_run,tshark-$*,make test-tshark)
 
@@ -72,10 +74,12 @@ docker-test-tshark-random-4.4 docker-test-tshark-random-stable: docker-test-tsha
 	$(call docker_run,tshark-$*,tshark --version)
 	$(call docker_run,tshark-$*,make test-tshark-random)
 
-# Rewrites the dissected.json goldens from the 4.4 floor, then checks the latest stable agrees.
-docker-bless-tshark: docker-image-tshark-4.4 docker-image-tshark-stable
+# Rewrites the dissected.json goldens from the 4.4 floor, then checks the latest stable agrees,
+# on Ubuntu 24.04 and 26.04.
+docker-bless-tshark: docker-image-tshark-4.4 docker-image-tshark-stable docker-image-tshark-stable-26.04
 	$(call docker_run,tshark-4.4,env WIRDIGEN_BLESS=1 make test-tshark)
 	$(call docker_run,tshark-stable,make test-tshark)
+	$(call docker_run,tshark-stable-26.04,make test-tshark)
 
 # Rewrites the built-in protocols snapshot from the tshark-stable image.
 docker-refresh-protocols: docker-image-tshark-stable

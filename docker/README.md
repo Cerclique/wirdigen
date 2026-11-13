@@ -9,8 +9,12 @@ the same make targets, so CI and local runs share one environment:
 |---|---|---|---|
 | `tshark-4.4` | `debian:trixie` | tshark 4.4 | `tshark-4.4` |
 | `tshark-stable` | `ubuntu:24.04` | tshark from `ppa:wireshark-dev/stable`, Lua 5.2, 5.3, 5.4 | `tshark-stable`, `lua` |
+| `tshark-stable-26.04` | `ubuntu:26.04` | tshark from `ppa:wireshark-dev/stable` | `tshark-stable-26.04` |
 
-Each image also has the Rust toolchain pinned by `rust-toolchain.toml`.
+Each image also has the Rust toolchain pinned by `rust-toolchain.toml`. `tshark-stable-26.04`
+runs the same Wireshark as `tshark-stable`, built against the newer LTS's libraries, so a
+difference between the two builds shows up; `tshark-stable` stays the image every other
+target uses.
 
 ## Use
 
@@ -18,12 +22,13 @@ With Docker installed and running:
 
 ```sh
 make docker-test-lua             # make test-lua in tshark-stable
-make docker-test-tshark          # make test-tshark in tshark-4.4, then in tshark-stable
+make docker-test-tshark          # make test-tshark in tshark-4.4, tshark-stable, tshark-stable-26.04
 make docker-test-tshark-4.4      # make test-tshark in tshark-4.4 only
 make docker-test-tshark-stable   # make test-tshark in tshark-stable only
+make docker-test-tshark-stable-26.04   # make test-tshark in tshark-stable-26.04 only
 make docker-test-tshark-random-4.4     # random descriptions x packets (weekly), in tshark-4.4
 make docker-test-tshark-random-stable  # the same in tshark-stable
-make docker-bless-tshark         # rewrite dissected.json in tshark-4.4, then check tshark-stable
+make docker-bless-tshark         # rewrite dissected.json in tshark-4.4, then check both stables
 make docker-refresh-protocols    # rewrite the built-in protocols snapshot in tshark-stable
 ```
 
@@ -34,15 +39,16 @@ downloaded crates go to `target/docker/`.
 
 ## CI
 
-The `lua`, `tshark-4.4` and `tshark-stable` jobs run `make docker-test-lua`,
-`make docker-test-tshark-4.4` and `make docker-test-tshark-stable`. Each job first builds its
+The `lua`, `tshark-4.4`, `tshark-stable` and `tshark-stable-26.04` jobs run
+`make docker-test-lua`, `make docker-test-tshark-4.4`, `make docker-test-tshark-stable` and
+`make docker-test-tshark-stable-26.04`. Each job first builds its
 image with `docker/build-push-action`, caching the layers across workflow runs, then passes
 `DOCKER_PREBUILT=1`, which skips the target's own `docker build` and uses the loaded
 `wirdigen-<image>` image: the layer cache lives in a buildx builder that a plain
 `docker build` would not use.
 
 The `Weekly` workflow (`.github/workflows/weekly.yml`) runs on Sunday and on demand, with one
-random seed for all its jobs. In both tshark images it runs the bad-input harness with large
+random seed for all its jobs. In `tshark-4.4` and `tshark-stable` it runs the bad-input harness with large
 counts (`WIRDIGEN_BAD_SEED`, `WIRDIGEN_BAD_MUTATIONS`, `WIRDIGEN_BAD_RANDOM`) and
 `make docker-test-tshark-random-<version>`: `PROPTEST_CASES` random descriptions (seeded by
 `PROPTEST_RNG_SEED`), each with `WIRDIGEN_RANDOM_PACKETS` random packets and their truncations.
