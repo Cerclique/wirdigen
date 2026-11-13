@@ -53,7 +53,8 @@ pub(crate) struct TypeUse {
 
 impl TypeUse {
     /// Resolves the use of the Type `name`, written in `scope`: the Type it names, marked as
-    /// used, and the context table it passes. `None` after pushing why either does not resolve.
+    /// used, and the context table it passes. `None` when no Type has that name, which `types`
+    /// reports, or after pushing why the context table does not resolve.
     pub(crate) fn resolve<'a>(
         name: &Spanned<String>,
         scope: Scope<'a, '_>,
