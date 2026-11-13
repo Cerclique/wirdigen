@@ -318,7 +318,7 @@ impl Display {
         }
         let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
         Err(match allowed {
-            [] => error(format!("`{}` takes no `display`", ty.value)).with_note("remove `display`", None),
+            [] => Self::takes_none(value, ty),
             [only] => error(format!("`{}` is shown only as `{}`", ty.value, only.as_str()))
                 .with_note("remove `display`: it is the default", None),
             _ => {
@@ -327,6 +327,13 @@ impl Display {
                     .with_note(format!("`display` is one of: {}", names.join(", ")), None)
             }
         })
+    }
+
+    /// The `incompatible-display` error for the `display:` value `value` of a Field of a type,
+    /// written `ty`, that takes no `display`.
+    fn takes_none(value: &Spanned<String>, ty: &Spanned<String>) -> Diagnostic {
+        Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), format!("`{}` takes no `display`", ty.value))
+            .with_note("remove `display`", None)
     }
 }
 
@@ -435,17 +442,25 @@ impl Encoding {
         if let Some(encoding) = allowed.iter().copied().find(|e| e.as_str() == value.value) {
             return Ok(encoding);
         }
-        let error = |message: String| Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), message);
-        Err(if allowed.is_empty() {
-            let takers: Vec<String> =
-                BUILTINS.iter().filter(|(_, b)| !b.encodings().is_empty()).map(|(n, _)| format!("`{n}`")).collect();
-            error(format!("`{}` takes no `encoding`", ty.value))
-                .with_note(format!("only {} take `encoding`", takers.join(", ")), None)
-        } else {
-            let names: Vec<&str> = allowed.iter().map(|e| e.as_str()).collect();
-            error(format!("`{}` is not an encoding of `{}`", value.value, ty.value))
-                .with_note(format!("`encoding` is one of: {}", names.join(", ")), None)
-        })
+        if allowed.is_empty() {
+            return Err(Self::takes_none(value, ty));
+        }
+        let names: Vec<&str> = allowed.iter().map(|e| e.as_str()).collect();
+        Err(Diagnostic::new(
+            Name::IncompatibleDisplay,
+            value.span.clone(),
+            format!("`{}` is not an encoding of `{}`", value.value, ty.value),
+        )
+        .with_note(format!("`encoding` is one of: {}", names.join(", ")), None))
+    }
+
+    /// The `incompatible-display` error for the `encoding:` value `value` of a Field of a type,
+    /// written `ty`, that takes no `encoding`.
+    fn takes_none(value: &Spanned<String>, ty: &Spanned<String>) -> Diagnostic {
+        let takers: Vec<String> =
+            BUILTINS.iter().filter(|(_, b)| !b.encodings().is_empty()).map(|(n, _)| format!("`{n}`")).collect();
+        Diagnostic::new(Name::IncompatibleDisplay, value.span.clone(), format!("`{}` takes no `encoding`", ty.value))
+            .with_note(format!("only {} take `encoding`", takers.join(", ")), None)
     }
 }
 
@@ -1821,10 +1836,9 @@ impl BuiltinKeys<'_, '_, '_> {
 
     /// Reports the `encoding:` of a type that takes none.
     fn no_encoding(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
-        match &self.field.encoding {
-            Some(value) => record(Encoding::check(value, self.ty_name, self.ty).map(drop), diagnostics),
-            None => Some(()),
-        }
+        let Some(value) = &self.field.encoding else { return Some(()) };
+        diagnostics.push(Encoding::takes_none(value, self.ty_name));
+        None
     }
 
     /// The `display:` value of a type that takes one, `default` when it is left out.
@@ -1837,10 +1851,9 @@ impl BuiltinKeys<'_, '_, '_> {
 
     /// Reports the `display:` of a type that takes none.
     fn no_display(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
-        match &self.field.display {
-            Some(value) => record(Display::check(value, self.ty_name, self.ty).map(drop), diagnostics),
-            None => Some(()),
-        }
+        let Some(value) = &self.field.display else { return Some(()) };
+        diagnostics.push(Display::takes_none(value, self.ty_name));
+        None
     }
 
     /// Reports the value mappings of a type that takes none.
@@ -1857,10 +1870,9 @@ impl BuiltinKeys<'_, '_, '_> {
 
     /// Reports the `expect:` of a type that takes none.
     fn no_expect(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
-        match &self.field.expect {
-            Some(raw) => record(expect::Subject::builtin(raw, self.ty_name, self.ty).map(drop), diagnostics),
-            None => Some(()),
-        }
+        let Some(raw) = &self.field.expect else { return Some(()) };
+        diagnostics.push(expect::takes_none(raw, self.ty_name));
+        None
     }
 
     /// Reports the `bits:` of a type that is not an unsigned integer.
@@ -2094,4 +2106,62 @@ pub(crate) fn default_label(name: &str) -> String {
     let spaced = name.replace('_', " ");
     let mut chars = spaced.chars();
     chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{description, yaml};
+
+    /// A Diagnostic as the tests compare it: its name, the text at its span and its notes.
+    type Shown = (String, String, Vec<String>);
+
+    /// What the `no_*` check of `key` reports for the Field `key: value` of type `uint8`, checked
+    /// as the type `ty` whatever that type's own tables say it takes.
+    fn reported(key: &str, value: &str, ty: &str) -> (Option<()>, Vec<Shown>) {
+        let text = format!("name: p\nfields:\n  - name: a\n    type: uint8\n    {key}: {value}\n");
+        let root = yaml::parse(&text).unwrap();
+        let description = description::deserialize(root.as_ref()).unwrap().parsed().unwrap();
+        let [RawEntry::Field(field)] = description.fields.as_slice() else { panic!("one Field") };
+        let RawKind::Type { name: ty_name, .. } = &field.kind else { panic!("a typed Field") };
+        let types = Types::new(&[]);
+        let scope = Scope { ty: None, levels: &[] };
+        let keys = BuiltinKeys { field, ty_name, ty: Builtin::from_name(ty).unwrap(), types: &types, scope };
+        let mut diagnostics = Vec::new();
+        let result = match key {
+            "display" => keys.no_display(&mut diagnostics),
+            "encoding" => keys.no_encoding(&mut diagnostics),
+            "expect" => keys.no_expect(&mut diagnostics),
+            _ => panic!("no check for `{key}`"),
+        };
+        let shown = diagnostics
+            .iter()
+            .map(|d| {
+                let notes = d.notes().iter().map(|n| n.message().to_owned()).collect();
+                (d.name().to_owned(), text[d.span()].to_owned(), notes)
+            })
+            .collect();
+        (result, shown)
+    }
+
+    fn shown(span: &str, note: &str) -> Vec<Shown> {
+        vec![("incompatible-display".to_owned(), span.to_owned(), vec![note.to_owned()])]
+    }
+
+    #[test]
+    fn a_display_on_a_type_that_takes_none_is_reported_whatever_the_table_says() {
+        assert_eq!(reported("display", "hex", "uint8"), (None, shown("hex", "remove `display`")));
+    }
+
+    #[test]
+    fn an_encoding_on_a_type_that_takes_none_is_reported_whatever_the_table_says() {
+        let note = "only `string`, `abs_time`, `rel_time` take `encoding`";
+        assert_eq!(reported("encoding", "utf8", "string"), (None, shown("utf8", note)));
+    }
+
+    #[test]
+    fn an_expect_on_a_type_that_takes_none_is_reported_whatever_the_rule_says() {
+        let note = "only integer types, `bool` and sub-Fields take `expect`";
+        assert_eq!(reported("expect", "1", "uint8"), (None, shown("expect", note)));
+    }
 }
