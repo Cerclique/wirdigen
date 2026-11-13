@@ -154,7 +154,7 @@ pub(crate) struct Types<'a> {
 }
 
 impl<'a> Types<'a> {
-    fn new(raw: &'a [RawType]) -> Self {
+    pub(crate) fn new(raw: &'a [RawType]) -> Self {
         Self { raw, used: vec![false; raw.len()], unknown: Vec::new(), free: BTreeMap::new() }
     }
 

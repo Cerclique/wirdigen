@@ -59,10 +59,7 @@ impl Subject {
         };
         match range {
             Some(range) => Ok(Self { what, span: ty.span.clone(), range }),
-            None => {
-                Err(Diagnostic::new(Name::IncompatibleDisplay, raw.key.clone(), format!("{what} takes no `expect`"))
-                    .with_note("only integer types, `bool` and sub-Fields take `expect`", None))
-            }
+            None => Err(takes_none(raw, ty)),
         }
     }
 
@@ -70,6 +67,13 @@ impl Subject {
     pub(crate) fn sub_field(name: &Range<usize>, width: u32) -> Self {
         Self { what: format!("a {width}-bit sub-Field"), span: name.clone(), range: 0..=(1_i128 << width) - 1 }
     }
+}
+
+/// The `incompatible-display` error for the `expect:` `raw` of a Field of a built-in type,
+/// written `ty`, that takes no `expect`.
+pub(crate) fn takes_none(raw: &RawExpect, ty: &Spanned<String>) -> Diagnostic {
+    Diagnostic::new(Name::IncompatibleDisplay, raw.key.clone(), format!("`{}` takes no `expect`", ty.value))
+        .with_note("only integer types, `bool` and sub-Fields take `expect`", None)
 }
 
 /// Stage 2: reads the `expect:` of a Field or a sub-Field, if it has one, pushing its error.
