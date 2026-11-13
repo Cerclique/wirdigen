@@ -68,7 +68,7 @@ impl<'p> FieldIndex<'p> {
     pub(crate) fn new(protocol: &'p Protocol) -> Self {
         let mut index = Self { fields: BTreeMap::new(), sub_fields: BTreeMap::new() };
         index.add(&protocol.fields);
-        for ty in protocol.types.iter() {
+        for ty in protocol.types.in_dependency_order() {
             index.add(&ty.fields);
         }
         index
@@ -90,7 +90,7 @@ impl<'p> FieldIndex<'p> {
                     }
                 }
                 // The Type's body is indexed on its own, once.
-                FieldKind::Type { .. } => {}
+                FieldKind::Type(_) => {}
             }
         }
     }
@@ -137,6 +137,7 @@ mod tests {
     use crate::info::{Part, Target};
     use crate::scope::Reference;
     use crate::source::Source;
+    use crate::types::TypeUse;
 
     fn protocol(text: &str) -> Protocol {
         crate::validate(&Source::new("case", text)).expect("a valid description").protocol
@@ -169,7 +170,7 @@ mod tests {
         };
         assert_eq!(target("x.a"), target("y.a"));
         let index = FieldIndex::new(&protocol);
-        let declared = protocol.types.iter().next().expect("a Type").fields[0].field().expect("a Field");
+        let declared = protocol.types.in_dependency_order().next().expect("a Type").fields[0].field().expect("a Field");
         assert!(std::ptr::eq(index.field(target("x.a")), declared));
     }
 
@@ -180,17 +181,17 @@ mod tests {
             "name: demo\ntypes:\n  Outer: { fields: [ { name: in, type: Inner } ] }\n\
              \x20 Inner: { fields: [ { name: a, type: uint8 } ] }\nfields:\n  - { name: x, type: Outer }\n",
         );
-        let order: Vec<&str> = protocol.types.iter().map(|t| t.name.as_str()).collect();
+        let order: Vec<&str> = protocol.types.in_dependency_order().map(|t| t.name.as_str()).collect();
         assert_eq!(order, ["Inner", "Outer"]);
         let used = |entries: &[Entry]| match &entries[0].field().expect("a Field").kind {
-            FieldKind::Type { id, name, .. } => (*id, name.clone()),
+            FieldKind::Type(TypeUse { id, name, .. }) => (*id, name.clone()),
             other => panic!("a Field of a Type, not {other:?}"),
         };
         let (outer, name) = used(&protocol.fields);
         assert_eq!((protocol.types.get(outer).name.as_str(), name.as_str()), ("Outer", "Outer"));
         let (inner, _) = used(&protocol.types.get(outer).fields);
         assert_eq!(protocol.types.get(inner).name, "Inner");
-        assert!(protocol.types.iter().all(|t| std::ptr::eq(protocol.types.get(t.id), t)));
+        assert!(protocol.types.in_dependency_order().all(|t| std::ptr::eq(protocol.types.get(t.id), t)));
     }
 
     #[test]
@@ -219,7 +220,7 @@ mod tests {
     fn stored(protocol: &Protocol) -> Vec<Stored> {
         let mut found = Vec::new();
         stored_in(&protocol.fields, &mut found);
-        for ty in protocol.types.iter() {
+        for ty in protocol.types.in_dependency_order() {
             stored_in(&ty.fields, &mut found);
         }
         for part in protocol.info.iter().flat_map(|t| &t.parts) {
@@ -261,13 +262,13 @@ mod tests {
                 }
                 FieldKind::Builtin(_) => {}
                 FieldKind::Structure(children) => stored_in(children, found),
-                FieldKind::Type { context, .. } => context_table(context, found),
+                FieldKind::Type(TypeUse { context, .. }) => context_table(context, found),
                 FieldKind::Switch(switch) => {
                     operand(&switch.subject, found);
                     for body in switch.bodies() {
                         match body {
                             Body::Fields(children) => stored_in(children, found),
-                            Body::Type { context, .. } => context_table(context, found),
+                            Body::Type(TypeUse { context, .. }) => context_table(context, found),
                         }
                     }
                 }

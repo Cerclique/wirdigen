@@ -13,7 +13,7 @@ use crate::field::{Amount, Array, Builtin, Entry, Field, FieldKind, Length, Pars
 use crate::index::FieldId;
 use crate::keys::{Spanned, expect_integer, read_keys, wrong_type};
 use crate::scope::{self, Reference};
-use crate::types::NamedTypes;
+use crate::types::{NamedTypes, TypeUse};
 use crate::yaml::{Node, Value};
 
 /// The keys of `framing:`, both required.
@@ -331,7 +331,7 @@ fn field_size(field: &Field, types: &NamedTypes) -> Option<usize> {
             _ => None,
         },
         FieldKind::Structure(entries) => structure_size(entries, types),
-        FieldKind::Type { id, .. } => structure_size(&types.get(*id).fields, types),
+        FieldKind::Type(TypeUse { id, .. }) => structure_size(&types.get(*id).fields, types),
         FieldKind::Switch(_) => None,
     }?;
     match &field.array {

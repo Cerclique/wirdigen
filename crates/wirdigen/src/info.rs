@@ -16,7 +16,7 @@ use crate::index::{FieldId, SubFieldId, TypeId};
 use crate::keys::{expect_string, is_single_line};
 use crate::scope::{self, Miss};
 use crate::switch::Body;
-use crate::types::NamedTypes;
+use crate::types::{NamedTypes, TypeUse};
 use crate::yaml::Node;
 
 /// `info:` as written, after stage 2.
@@ -251,12 +251,12 @@ fn find<'p>(top: &'p [Entry], types: &'p NamedTypes, path: &[String]) -> Result<
         // holds it.
         let places: Vec<(&'p [Entry], Option<TypeId>, Vec<String>)> = match &field.kind {
             FieldKind::Structure(children) => vec![(children.as_slice(), ty, at.clone())],
-            FieldKind::Type { id, .. } => vec![(body(*id), Some(*id), Vec::new())],
+            FieldKind::Type(TypeUse { id, .. }) => vec![(body(*id), Some(*id), Vec::new())],
             FieldKind::Switch(switch) => switch
                 .bodies()
                 .map(|case| match case {
                     Body::Fields(children) => (children.as_slice(), ty, at.clone()),
-                    Body::Type { id, .. } => (body(*id), Some(*id), Vec::new()),
+                    Body::Type(TypeUse { id, .. }) => (body(*id), Some(*id), Vec::new()),
                 })
                 .collect(),
             FieldKind::Builtin(value) => {
@@ -286,7 +286,7 @@ fn find<'p>(top: &'p [Entry], types: &'p NamedTypes, path: &[String]) -> Result<
         FieldKind::Builtin(_) => return Ok(Target::Value(field.id)),
         FieldKind::Switch(_) => return Ok(Target::Switch { ty, path: at }),
         FieldKind::Structure(_) => "a structure",
-        FieldKind::Type { .. } => "a Field of a Type",
+        FieldKind::Type(_) => "a Field of a Type",
     };
     Err(Unresolved::NoValue { what, declared: field.span.clone() })
 }

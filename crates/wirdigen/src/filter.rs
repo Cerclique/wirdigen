@@ -15,7 +15,7 @@ use crate::field::{self, Builtin, BuiltinKind, Display, Entry, Field, FieldKind,
 use crate::index::TypeId;
 use crate::mapping::{IntegerLabels, StateLabels, Unit};
 use crate::switch::Body;
-use crate::types::NamedTypes;
+use crate::types::{NamedTypes, TypeUse};
 
 /// What a `ProtoField` is declared as, past its filter name: what must match for two Fields to
 /// share it (spec §3.4.9).
@@ -109,7 +109,7 @@ impl<'a> Walk<'a, '_> {
                 (ProtoKind::Value { ty, stringz }, display, labels)
             }
             FieldKind::Structure(_) => (ProtoKind::Structure, None, None),
-            FieldKind::Type { name, .. } => (ProtoKind::Type(name), None, None),
+            FieldKind::Type(TypeUse { name, .. }) => (ProtoKind::Type(name), None, None),
             FieldKind::Switch(_) => (ProtoKind::Switch, None, None),
         };
         let label = field.label.clone().unwrap_or_else(|| field::default_label(&field.name));
@@ -123,12 +123,12 @@ impl<'a> Walk<'a, '_> {
                 }
             }
             FieldKind::Structure(children) => self.fields(children, path),
-            FieldKind::Type { id, .. } => self.type_fields(*id, path),
+            FieldKind::Type(TypeUse { id, .. }) => self.type_fields(*id, path),
             FieldKind::Switch(switch) => {
                 for body in switch.bodies() {
                     match body {
                         Body::Fields(children) => self.fields(children, path),
-                        Body::Type { id, .. } => self.type_fields(*id, path),
+                        Body::Type(TypeUse { id, .. }) => self.type_fields(*id, path),
                     }
                 }
             }

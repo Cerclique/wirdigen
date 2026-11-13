@@ -21,7 +21,7 @@ use crate::mapping::{self, Entry, IntegerLabels, StateLabels, Table, Unit, Value
 use crate::registration::Ports;
 use crate::scope::Reference;
 use crate::switch::{Body, Switch, wire_ranges};
-use crate::types::NamedTypes;
+use crate::types::{NamedType, NamedTypes, TypeUse};
 
 /// The model the emitter prints.
 #[derive(Debug, PartialEq, Eq)]
@@ -606,7 +606,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     let info = lowering.info(protocol);
     // Every Type's slots are known before any use of it builds a site table.
     let mut types = Vec::new();
-    for (t, plan) in protocol.types.iter().zip(plans) {
+    for (t, plan) in plans {
         let mut slots = Vec::new();
         lowering.plan = plan;
         lowering.current_type = Some(t.id);
@@ -661,17 +661,17 @@ struct Plan {
 /// The paths callers read inside each Type, which it returns.
 type Demands = BTreeMap<TypeId, BTreeSet<Vec<String>>>;
 
-/// The plans of the top-level layout and of each Type, in the order of `protocol.types`. A
+/// The plan of the top-level layout, and each Type with its plan, in dependency order. A
 /// caller's Expressions decide what a Type returns, so callers are planned first: the layout,
 /// then the Types from the last one, which no other Type uses.
-fn plans(protocol: &Protocol) -> (Plan, Vec<Plan>) {
+fn plans(protocol: &Protocol) -> (Plan, Vec<(&NamedType, Plan)>) {
     let mut demands = Demands::new();
     let top = Plan::new(&protocol.fields, BTreeSet::new(), &mut demands);
-    let mut plans: Vec<Plan> = protocol
+    let mut plans: Vec<(&NamedType, Plan)> = protocol
         .types
-        .iter()
+        .in_dependency_order()
         .rev()
-        .map(|t| Plan::new(&t.fields, demands.remove(&t.id).unwrap_or_default(), &mut demands))
+        .map(|t| (t, Plan::new(&t.fields, demands.remove(&t.id).unwrap_or_default(), &mut demands)))
         .collect();
     plans.reverse();
     (top, plans)
@@ -785,7 +785,7 @@ fn type_uses(entries: &[field::Entry], parent: &[String], uses: &mut Vec<(Vec<St
     for field in entries.iter().filter_map(field::Entry::field) {
         let path = [parent, std::slice::from_ref(&field.name)].concat();
         match &field.kind {
-            FieldKind::Type { id, .. } => uses.push((path, *id)),
+            FieldKind::Type(TypeUse { id, .. }) => uses.push((path, *id)),
             FieldKind::Structure(children) => type_uses(children, &path, uses),
             FieldKind::Switch(switch) => {
                 for body in switch.bodies() {
@@ -824,7 +824,7 @@ fn references(entries: &[field::Entry], f: &mut impl FnMut(&Reference)) {
             }
             FieldKind::Builtin(_) => {}
             FieldKind::Structure(children) => references(children, f),
-            FieldKind::Type { context, .. } => context.iter().for_each(|(_, r)| f(r)),
+            FieldKind::Type(TypeUse { context, .. }) => context.iter().for_each(|(_, r)| f(r)),
             FieldKind::Switch(switch) => {
                 if let Operand::Expression { references, .. } = &switch.subject {
                     references.values().for_each(&mut *f);
@@ -832,7 +832,7 @@ fn references(entries: &[field::Entry], f: &mut impl FnMut(&Reference)) {
                 for body in switch.bodies() {
                     match body {
                         Body::Fields(children) => references(children, f),
-                        Body::Type { context, .. } => context.iter().for_each(|(_, r)| f(r)),
+                        Body::Type(TypeUse { context, .. }) => context.iter().for_each(|(_, r)| f(r)),
                     }
                 }
             }
@@ -988,7 +988,7 @@ impl<'p> Lowering<'p> {
                 let body = self.structure(fields, &segments);
                 Stmt::Structure { field: Ref::Local(index), body, path, hidden: field.hidden }
             }
-            FieldKind::Type { id, .. } => {
+            FieldKind::Type(TypeUse { id, .. }) => {
                 let site = self.site(*id, &segments);
                 let local =
                     unique(&format!("site_{}", segments.join("__")), |n| self.sites.iter().any(|s| s.local == n));
@@ -1033,7 +1033,7 @@ impl<'p> Lowering<'p> {
                 Some(slots) => self.type_structure(fields, segments, slots),
                 None => self.structure(fields, segments),
             }),
-            Body::Type { id, name, context } => {
+            Body::Type(TypeUse { id, name, context }) => {
                 let site = if let Some(slots) = slots {
                     let key = format!("t_{}__{name}", segments.join("__"));
                     if !slots.iter().any(|s| s.key == key) {
@@ -1165,7 +1165,7 @@ impl<'p> Lowering<'p> {
                         let body = self.type_structure(fields, &segments, slots);
                         Stmt::Structure { field: field_ref, path, body, hidden: field.hidden }
                     }
-                    FieldKind::Type { id, .. } => {
+                    FieldKind::Type(TypeUse { id, .. }) => {
                         let site = slot(slots, "t_", segments.clone(), SlotKind::Site(*id));
                         self.call(field_ref, field, &segments, site)
                     }
@@ -1199,7 +1199,7 @@ impl<'p> Lowering<'p> {
     /// The statement calling the dissect function of the Type of `field`, a Field of a Type at
     /// `segments` whose `ProtoField` is `proto_field`, with the site table `site`.
     fn call(&mut self, proto_field: Ref, field: &Field, segments: &[&str], site: Ref) -> Stmt {
-        let FieldKind::Type { name, context, .. } = &field.kind else {
+        let FieldKind::Type(TypeUse { name, context, .. }) = &field.kind else {
             unreachable!("only a Field of a Type is called")
         };
         let context = context.iter().map(|(key, reference)| (key.clone(), self.reference(reference))).collect();
@@ -1321,7 +1321,7 @@ impl<'p> Lowering<'p> {
         }
         let (field_type, strings) = match &field.kind {
             FieldKind::Builtin(value) => (field_type(value), self.strings(&value.kind)),
-            FieldKind::Structure(_) | FieldKind::Type { .. } | FieldKind::Switch(_) => {
+            FieldKind::Structure(_) | FieldKind::Type(_) | FieldKind::Switch(_) => {
                 (FieldType::new("none", Args::Plain), None)
             }
         };
@@ -1412,7 +1412,7 @@ fn outermost_switch(fields: &[field::Entry], types: &NamedTypes) -> Option<(Swit
                 match &field.kind {
                     FieldKind::Switch(_) => return Some((inside, extend(&absolute))),
                     FieldKind::Structure(children) => next.push((children.as_slice(), inside, extend(&absolute))),
-                    FieldKind::Type { id, .. } => {
+                    FieldKind::Type(TypeUse { id, .. }) => {
                         let site = SwitchSite { ty: Some(*id), path: Vec::new() };
                         next.push((types.get(*id).fields.as_slice(), site, extend(&absolute)));
                     }
@@ -1430,7 +1430,7 @@ fn outermost_switch(fields: &[field::Entry], types: &NamedTypes) -> Option<(Swit
 fn builtin(field: &Field) -> &BuiltinField {
     match &field.kind {
         FieldKind::Builtin(value) => value,
-        FieldKind::Structure(_) | FieldKind::Type { .. } | FieldKind::Switch(_) => {
+        FieldKind::Structure(_) | FieldKind::Type(_) | FieldKind::Switch(_) => {
             unreachable!("a resolved reference reads a Field of a built-in type")
         }
     }
