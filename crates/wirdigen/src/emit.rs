@@ -999,11 +999,10 @@ fn lua_expr(expr: &LuaExpr) -> String {
         LuaExpr::Unary { op, operand } => format!("{}({})", unary_helper(*op), lua_expr(operand)),
         LuaExpr::Binary { op, left, right } => {
             let (left, right) = (lua_expr(left), lua_expr(right));
-            if let Some(helper) = binary_helper(*op) {
-                format!("{helper}({left}, {right})")
-            } else {
-                let keyword = if *op == BinaryOp::And { "and" } else { "or" };
-                format!("wd_bool({left} ~= 0 {keyword} {right} ~= 0)")
+            match (op, binary_helper(*op)) {
+                (_, Some(helper)) => format!("{helper}({left}, {right})"),
+                (BinaryOp::And, None) => format!("wd_bool({left} ~= 0 and {right} ~= 0)"),
+                (_, None) => format!("wd_bool({left} ~= 0 or {right} ~= 0)"),
             }
         }
         LuaExpr::SubField { value, shift, width } => {
@@ -1062,12 +1061,15 @@ mod tests {
         assert_eq!(comment_text("a\nb\rc"), "a?b?c");
     }
 
-    /// Each `wd_` name `lua` uses is defined by a chunk it includes or declared by the emitter.
+    /// Each `wd_` name `lua` uses is defined by a chunk it includes, or is one of the emitter's
+    /// own names and declared at the top level of `lua`.
     fn assert_closed(name: &str, lua: &str) -> Result<(), String> {
         let defined = Chunks::named(&prelude::chunks_in(lua)).defined();
+        let declared: Vec<&str> =
+            lua.lines().flat_map(prelude::definitions).filter(|name| DECLARED.contains(name)).collect();
         let undefined: Vec<&str> = prelude::names_used(lua)
             .into_iter()
-            .filter(|used| !defined.contains(used) && !DECLARED.contains(used))
+            .filter(|used| !defined.contains(used) && !declared.contains(used))
             .collect();
         if undefined.is_empty() { Ok(()) } else { Err(format!("{name} uses undefined {undefined:?}")) }
     }

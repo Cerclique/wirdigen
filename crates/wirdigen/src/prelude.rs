@@ -84,7 +84,7 @@ fn parse(source: &'static str) -> Vec<Chunk> {
 
 /// The `wd_` names a top-level line of a chunk defines: `local function wd_x(...)`,
 /// `local wd_x, wd_y` and `local wd_x = ...`.
-fn definitions(line: &'static str) -> Vec<&'static str> {
+pub(crate) fn definitions(line: &str) -> Vec<&str> {
     let Some(rest) = line.strip_prefix("local ") else { return Vec::new() };
     if let Some(function) = rest.strip_prefix("function ") {
         let name = function.split('(').next().unwrap_or_default().trim();
@@ -187,7 +187,7 @@ impl Chunks {
     /// chunks every Dissector includes.
     pub(crate) fn used_by(lua: &str) -> Self {
         let chunks = chunks();
-        let mut selection = Self { included: vec![false; chunks.len()] };
+        let mut selection = Self::none();
         for name in [VERSION, MALFORMED] {
             selection.include(position(chunks, name));
         }
@@ -202,12 +202,15 @@ impl Chunks {
     /// The chunks named, with the chunks they require.
     #[cfg(test)]
     pub(crate) fn named(names: &[&str]) -> Self {
-        let chunks = chunks();
-        let mut selection = Self { included: vec![false; chunks.len()] };
+        let mut selection = Self::none();
         for name in names {
-            selection.include(position(chunks, name));
+            selection.include(position(chunks(), name));
         }
         selection
+    }
+
+    fn none() -> Self {
+        Self { included: vec![false; chunks().len()] }
     }
 
     fn include(&mut self, index: usize) {
