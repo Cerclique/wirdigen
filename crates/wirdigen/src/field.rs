@@ -261,9 +261,9 @@ pub(crate) enum Display {
     DoyUtc,
 }
 
-// Each family's `display:` and `encoding:` values, the default first. The defaults applied in
-// validation index these arrays in a const, so they are taken when the crate compiles and
-// reordering a table moves its default with it.
+// Each family's `display:` values, the default first; its `encoding:` values follow the same
+// pattern after `Encoding`. Each default is a const taken from its table's first entry, so it is
+// fixed when the crate compiles and reordering a table moves its default with it.
 
 /// The `display:` values of an unsigned integer, the default first.
 const UNSIGNED_DISPLAYS: [Display; 5] = [Display::Dec, Display::Hex, Display::Oct, Display::DecHex, Display::HexDec];
