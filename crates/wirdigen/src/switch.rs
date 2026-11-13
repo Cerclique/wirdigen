@@ -9,12 +9,11 @@ use std::ops::Range;
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expr::Expr;
 use crate::field::{self, Builtin, Endian, Entry, Operand, Parse, RawAmount, RawEntry};
-use crate::index::TypeId;
 use crate::keys::{Keys, Spanned, duplicate_key, wrong_type};
 use crate::mapping::{self, Enums, Key};
 use crate::scalar::{Kind, resolve_plain};
-use crate::scope::{self, Reference, Scope};
-use crate::types::Types;
+use crate::scope::Scope;
+use crate::types::{TypeUse, Types};
 use crate::yaml::{Node, Value};
 
 /// The keys a `switch` Field takes, in documentation order (spec §3.9).
@@ -218,13 +217,7 @@ pub(crate) enum Body {
     /// Inline Fields.
     Fields(Vec<Entry>),
     /// The Fields of a Type, read by its dissect function.
-    Type {
-        id: TypeId,
-        /// The Type's name, for Lua names and messages.
-        name: String,
-        /// The context table this use passes (spec §4.3).
-        context: Vec<(String, Reference)>,
-    },
+    Type(TypeUse),
 }
 
 /// The values of a key as an Expression sees them, signed 64-bit integers (spec §4.4): a key
@@ -283,10 +276,7 @@ fn check_body<'a>(
 ) -> Option<Body> {
     match body {
         RawBody::Fields(fields) => Some(Body::Fields(field::check(fields, endian, enums, types, scope, diagnostics))),
-        RawBody::Type(name) => types.resolve(name).and_then(|id| {
-            let context = scope::resolve_context(&name.value, &name.span, scope, types, diagnostics)?;
-            Some(Body::Type { id, name: name.value.clone(), context })
-        }),
+        RawBody::Type(name) => TypeUse::resolve(name, scope, types, diagnostics).map(Body::Type),
     }
 }
 

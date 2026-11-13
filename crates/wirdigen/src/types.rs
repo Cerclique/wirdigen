@@ -9,7 +9,7 @@ use crate::field::{self, Endian, Entry, Parse, RawEntry};
 use crate::index::TypeId;
 use crate::keys::{Spanned, closest, duplicate_key, expect_string, is_type_name, read_keys, wrong_type};
 use crate::mapping::Enums;
-use crate::scope::{FreeRef, Scope};
+use crate::scope::{self, FreeRef, Reference, Scope};
 use crate::yaml::{Node, Value};
 
 /// The keys of a Type body, in documentation order.
@@ -40,6 +40,32 @@ pub(crate) struct NamedType {
     pub(crate) fields: Vec<Entry>,
 }
 
+/// A use of a Type, by a Field or by a case of a `switch` Field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TypeUse {
+    pub(crate) id: TypeId,
+    /// The Type's name, for Lua names and messages.
+    pub(crate) name: String,
+    /// The context table this use passes: what each name the Type reads but does not declare
+    /// resolves to here, by the name as written (spec §4.3).
+    pub(crate) context: Vec<(String, Reference)>,
+}
+
+impl TypeUse {
+    /// Resolves the use of the Type `name`, written in `scope`: the Type it names, marked as
+    /// used, and the context table it passes. `None` after pushing why either does not resolve.
+    pub(crate) fn resolve<'a>(
+        name: &Spanned<String>,
+        scope: Scope<'a, '_>,
+        types: &mut Types<'a>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<Self> {
+        let id = types.resolve(name)?;
+        let context = scope::resolve_context(&name.value, &name.span, scope, types, diagnostics)?;
+        Some(Self { id, name: name.value.clone(), context })
+    }
+}
+
 /// The validated Types of a description.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NamedTypes {
@@ -61,7 +87,7 @@ impl NamedTypes {
 
     /// The Types in dependency order, each after the Types it uses, so lowering can define each
     /// one before its callers (spec §7.3).
-    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &NamedType> {
+    pub(crate) fn in_dependency_order(&self) -> impl DoubleEndedIterator<Item = &NamedType> {
         self.order.iter().map(|&id| self.get(id))
     }
 }
