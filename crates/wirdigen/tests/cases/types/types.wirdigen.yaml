@@ -1,5 +1,5 @@
 # Named Types: one Type used twice, a Type inside a Type and inside an inline structure, and a
-# Type with its own byte order. Filter names follow Field paths, never Type names.
+# Type with its own byte order. Filter names follow Field Paths, never Type names.
 name: types
 fields:
   - { name: req_hdr, type: Header, label: Request header }

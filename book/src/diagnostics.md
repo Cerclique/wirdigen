@@ -178,7 +178,7 @@ fields: []
 `name:` is not a valid filter name. A name is a lowercase letter, then at least one lowercase
 letter, digit, `_` or `-`, 2 to 32 characters in all: Wireshark refuses one-character filter
 names. Uppercase is never lowercased silently, and a `.` is refused because it would blur
-where the Field path starts in filters such as `demo.id`.
+where the Field Path starts in filters such as `demo.id`.
 
 ```yaml,diagnostic=invalid-protocol-name
 name: Demo
@@ -597,8 +597,8 @@ fields:
 **Severity**: error
 
 The top-level [`info:`](reference/info.md) template cannot be read: it is not a string, it is on
-several lines, a `{` or `}` pairs with nothing, or braces hold something other than a bare Field path, such as
-an Expression or a format specifier. Or a Field path names an inline structure, a Field of a Type
+several lines, a `{` or `}` pairs with nothing, or braces hold something other than a bare Field Path, such as
+an Expression or a format specifier. Or a Field Path names an inline structure, a Field of a Type
 or an array, which have no value of their own to show.
 
 ```yaml,diagnostic=invalid-info
@@ -608,7 +608,7 @@ fields:
   - { name: id, type: uint16 }
 ```
 
-**Fix**: write each Field path in braces, `{id}`, and give the Field the
+**Fix**: write each Field Path in braces, `{id}`, and give the Field the
 [`display:`](reference/fields.md#display) it should show with. Write `{{` and `}}` for literal
 braces, and reference a Field inside a structure rather than the structure.
 
@@ -887,7 +887,7 @@ values of this Field only, write the table inline: `values: { 1: Request }`.
 
 An [Expression](reference/expressions.md) cannot be read: a missing or extra value, operator or
 parenthesis, a character Expressions do not use (such as `=` or a quote), a malformed or
-oversized integer literal, a built-in other than `_offset` and `_remaining`, or a Field path
+oversized integer literal, a built-in other than `_offset` and `_remaining`, or a Field Path
 with an empty segment. The error points at the offending token; in an escaped or multi-line
 YAML string, at the whole value. Only the first error of each Expression is reported.
 
@@ -938,7 +938,7 @@ it: a misspelling, a path into a structure that has no such Field or into a Fiel
 structure, a path into the structure still being read, or a path into an
 [array](reference/arrays.md), whose Fields only its elements can read. Inside a Type, a name
 the Type does not declare is looked up where the Type is used, and the error points at that
-use. A Field path of the [`info:`](reference/info.md) template is checked the same way, from the
+use. A Field Path of the [`info:`](reference/info.md) template is checked the same way, from the
 top-level Fields.
 
 ```yaml,diagnostic=unknown-field

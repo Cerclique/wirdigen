@@ -12,7 +12,7 @@ end
 wd_check_version()
 
 -- Reporting of packets that end too early. Always included.
--- The `_` segment is reserved: no Field path can reach it (spec §3.4.2, §5.2).
+-- The `_` segment is reserved: no Field Path can reach it (spec §3.4.2, §5.2).
 local function wd_expert_truncated(filter_name)
     return ProtoExpert.new(
         filter_name .. "._malformed.truncated",
@@ -75,7 +75,7 @@ local function wd_ge(a, b) return wd_bool(a >= b) end
 local function wd_not(a) return wd_bool(a == 0) end
 
 -- Reporting of a value outside a Field's `expect:` (spec §3.10, §5.3): a warning, after which
--- the dissection goes on. The `_` segment is reserved: no Field path can reach it (spec §3.4.2,
+-- the dissection goes on. The `_` segment is reserved: no Field Path can reach it (spec §3.4.2,
 -- §5.2).
 local function wd_expert_unexpected(filter_name)
     return ProtoExpert.new(

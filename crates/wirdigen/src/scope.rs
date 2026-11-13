@@ -1,4 +1,4 @@
-//! Resolving the Field paths of Expressions (spec §4.3), a semantic check (stage 4).
+//! Resolving the Field Paths of Expressions (spec §4.3), a semantic check (stage 4).
 //!
 //! A path's first name resolves nearest first: the earlier Fields of the structure the
 //! Expression is in, then those of each enclosing structure, out to the top-level layout or the
@@ -315,7 +315,7 @@ fn explain(miss: &Miss, key: &str, segments: &[String]) -> (Name, String, Notes)
     }
 }
 
-/// Resolves the Field paths of an Expression written at a Field of `scope`, given by their
+/// Resolves the Field Paths of an Expression written at a Field of `scope`, given by their
 /// segments and spans. Returns what each path reads, or pushes why it reads nothing.
 pub(crate) fn resolve_paths<'a>(
     paths: &[(&[String], Range<usize>)],

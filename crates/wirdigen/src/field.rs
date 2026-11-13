@@ -411,7 +411,7 @@ pub(crate) enum Length {
     /// one was checked to be a size; any other is checked when the packet is read (spec §4.4).
     Expression {
         expr: Expr,
-        /// What each Field path of the Expression reads, by its segments.
+        /// What each Field Path of the Expression reads, by its segments.
         references: BTreeMap<Vec<String>, Reference>,
     },
     /// The number of bytes is an unsigned integer of this many bytes just before the value
@@ -598,7 +598,7 @@ pub(crate) enum Amount {
     /// more; any other is checked when the packet is read (spec §4.4).
     Expression {
         expr: Expr,
-        /// What each Field path of the Expression reads, by its segments.
+        /// What each Field Path of the Expression reads, by its segments.
         references: BTreeMap<Vec<String>, Reference>,
     },
 }
@@ -674,7 +674,7 @@ fn check_amount<'a>(
     }))
 }
 
-/// The Field paths an Expression reads, by their segments, with their spans.
+/// The Field Paths an Expression reads, by their segments, with their spans.
 fn paths(expression: &Expr) -> Vec<(&[String], Range<usize>)> {
     expression
         .references()
@@ -810,7 +810,7 @@ impl RawEntry {
         }
     }
 
-    /// The Field paths the entry's own Expressions read, by their segments, with their spans.
+    /// The Field Paths the entry's own Expressions read, by their segments, with their spans.
     pub(crate) fn paths(&self) -> Vec<(&[String], Range<usize>)> {
         match self {
             Self::Field(field) => field.paths(),
@@ -896,7 +896,7 @@ impl RawField {
         }
     }
 
-    /// The Field paths the Field's own Expressions read, by their segments, with their spans.
+    /// The Field Paths the Field's own Expressions read, by their segments, with their spans.
     pub(crate) fn paths(&self) -> Vec<(&[String], Range<usize>)> {
         self.expressions().flat_map(paths).collect()
     }
@@ -1067,7 +1067,7 @@ pub(crate) enum Operand {
     /// reported then (spec §4.4).
     Expression {
         expr: Expr,
-        /// What each Field path of the Expression reads, by its segments.
+        /// What each Field Path of the Expression reads, by its segments.
         references: BTreeMap<Vec<String>, Reference>,
     },
 }

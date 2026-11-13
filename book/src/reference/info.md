@@ -17,7 +17,7 @@ name, the uppercase `name:`.
 
 ## Templates {#templates}
 
-A template is text with [Field paths](expressions.md#references) in braces:
+A template is text with [Field Paths](expressions.md#references) in braces:
 
 - **`{path}`** shows a Field. The path is the Field's name, then the names down into
   [inline structures](fields.md#inline-structures), [Types](fields.md#types),
@@ -25,7 +25,7 @@ A template is text with [Field paths](expressions.md#references) in braces:
   `{msg_type}`, `{header.seq}`, `{flags.ack}`, `{body.user_id}`.
 - **`{{` and `}}`** are a literal `{` and `}`: `"{{{id}}}"` shows `{42}`.
 
-Braces hold a Field path and nothing more. An Expression (`{len + 4}`), a format specifier
+Braces hold a Field Path and nothing more. An Expression (`{len + 4}`), a format specifier
 (`{id:04x}`) or an empty `{}` is [`invalid-info`](../diagnostics.md#invalid-info), as is a
 brace that pairs with nothing, and a template on several lines. To change how a number looks,
 give its Field a [`display:`](fields.md#display).
