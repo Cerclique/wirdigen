@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::ops::{Range, RangeInclusive};
 
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
-use crate::field::Builtin;
 use crate::keys::{Keys, Spanned, closest, duplicate_key, expect_string, is_single_line, is_type_name, wrong_type};
 use crate::scalar::{Kind, parse_int, resolve_plain};
 use crate::yaml::{Node, Value};
@@ -59,16 +58,36 @@ pub(crate) fn has_range(table: &[Entry]) -> bool {
     table.iter().any(|e| e.key.range)
 }
 
-/// The labels of a validated Field (spec §3.4.7).
+/// The labels of a validated integer Field or unsigned integer sub-Field (spec §3.4.7).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Mapping {
-    /// Labels for integer values. An Enum is kept by name, so two Fields naming one Enum have
-    /// equal mappings (spec §3.4.9).
+pub(crate) enum IntegerLabels {
+    /// Labels for values. An Enum is kept by name, so two Fields naming one Enum have equal
+    /// labels (spec §3.4.9).
     Values(Values),
-    /// Labels for the two states of a `bool`; a missing one keeps Wireshark's default.
-    Bool { when_true: Option<String>, when_false: Option<String> },
-    /// The unit after the value, in the singular and, if it differs, the plural.
-    Unit { singular: String, plural: Option<String> },
+    /// The unit after the value.
+    Unit(Unit),
+}
+
+/// The labels of the two states of a `bool` Field or a boolean sub-Field; a missing one keeps
+/// the default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StateLabels {
+    pub(crate) when_true: Option<String>,
+    pub(crate) when_false: Option<String>,
+}
+
+impl StateLabels {
+    /// Whether neither state has a label.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.when_true.is_none() && self.when_false.is_none()
+    }
+}
+
+/// The unit after a value, in the singular and, if it differs, the plural.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Unit {
+    pub(crate) singular: String,
+    pub(crate) plural: Option<String>,
 }
 
 /// Where a Field's `values:` table is.
@@ -393,80 +412,70 @@ impl<'a> Enums<'a> {
 #[derive(Debug)]
 pub(crate) struct Invalid;
 
-/// What a Field whose value mappings are checked holds, which says which keys it takes.
+/// What a Field whose value mappings are checked is, for the messages about the keys it does
+/// not take.
 pub(crate) struct Subject {
     /// How messages name it: "`uint8`", "a 3-bit sub-Field".
     what: String,
     /// Where it is written, which the note of `unreachable-value` points at.
     span: Range<usize>,
-    /// Its values, when it is an integer: only integers take `values:`.
-    range: Option<RangeInclusive<i128>>,
-    /// Whether it takes `true:` and `false:`.
-    states: bool,
-    /// Whether it takes `unit:`.
-    unit: bool,
     /// Which Fields take `true:` and `false:`, for the note when this one does not.
     state_takers: &'static str,
 }
 
 impl Subject {
-    /// A Field of the built-in type `builtin`, written `ty`.
-    pub(crate) fn builtin(ty: &Spanned<String>, builtin: Builtin) -> Self {
-        let range = builtin.int_range();
-        Self {
-            what: format!("`{}`", ty.value),
-            span: ty.span.clone(),
-            unit: range.is_some() || matches!(builtin, Builtin::Float32 | Builtin::Float64),
-            range,
-            states: builtin == Builtin::Bool,
-            state_takers: "`bool` Fields",
-        }
+    /// A Field of a built-in type, written `ty`.
+    pub(crate) fn builtin(ty: &Spanned<String>) -> Self {
+        Self { what: format!("`{}`", ty.value), span: ty.span.clone(), state_takers: "`bool` Fields" }
     }
 
-    /// A bitfield sub-Field `width` bits wide whose name is at `name`: a boolean, or an
-    /// unsigned integer of `width` bits (spec §3.8).
-    pub(crate) fn sub_field(name: &Range<usize>, width: u32, boolean: bool) -> Self {
+    /// A bitfield sub-Field `width` bits wide whose name is at `name` (spec §3.8).
+    pub(crate) fn sub_field(name: &Range<usize>, width: u32) -> Self {
         Self {
             what: format!("a {width}-bit sub-Field"),
             span: name.clone(),
-            range: (!boolean).then(|| 0..=(1_i128 << width) - 1),
-            states: boolean,
-            unit: !boolean,
             state_takers: "1-bit sub-Fields without `values`, `unit` or `display`",
         }
     }
 }
 
-/// Stage 4: the labels of a Field holding `subject`.
-///
-/// Returns [`Invalid`] after an error, which is already pushed, and `Ok(None)` for a Field without
-/// value mappings.
-pub(crate) fn check(
+/// Which value-mapping keys a Field takes.
+#[derive(Debug, Clone, Copy)]
+struct Takes {
+    /// `values:`, and so `values:` and `unit:` conflict.
+    values: bool,
+    /// `true:` and `false:`.
+    states: bool,
+    unit: bool,
+}
+
+/// Reports each value-mapping key of `raw` that `subject` does not take, and `values:` with
+/// `unit:`. Returns [`Invalid`] after any.
+fn check_keys(
     raw: &RawMappings,
     subject: &Subject,
-    enums: &mut Enums<'_>,
+    takes: Takes,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Result<Option<Mapping>, Invalid> {
+) -> Result<(), Invalid> {
     let start = diagnostics.len();
-    let range = subject.range.clone();
     let misplaced = |key: &Range<usize>, what: &str, takers: &str| {
         Diagnostic::new(Name::IncompatibleDisplay, key.clone(), format!("{} takes no `{what}`", subject.what))
             .with_note(format!("only {takers} take `{what}`"), None)
     };
-    if let (Some(values), None) = (&raw.values, &range) {
+    if let (Some(values), false) = (&raw.values, takes.values) {
         diagnostics.push(misplaced(&values.key, "values", "integer types"));
     }
-    if !subject.states {
+    if !takes.states {
         for (label, what) in [(&raw.when_true, "true"), (&raw.when_false, "false")] {
             if let Some(label) = label {
                 diagnostics.push(misplaced(&label.key, what, subject.state_takers));
             }
         }
     }
-    if let (Some(unit), false) = (&raw.unit, subject.unit) {
+    if let (Some(unit), false) = (&raw.unit, takes.unit) {
         diagnostics.push(misplaced(&unit.key, "unit", "integer and float types"));
     }
-    if let (Some(values), Some(unit), Some(_)) = (&raw.values, &raw.unit, &range) {
+    if let (Some(values), Some(unit), true) = (&raw.values, &raw.unit, takes.values) {
         diagnostics.push(
             Diagnostic::new(
                 Name::ConflictingMappings,
@@ -476,63 +485,110 @@ pub(crate) fn check(
             .with_note("`values` is here", Some(values.key.clone())),
         );
     }
-    if has_errors(&diagnostics[start..]) {
-        return Err(Invalid);
-    }
+    if has_errors(&diagnostics[start..]) { Err(Invalid) } else { Ok(()) }
+}
 
-    let mapping = match (&raw.values, range) {
-        (Some(values), Some(range)) => {
-            let report = |entry: &RawEntry| {
-                Diagnostic::new(
-                    Name::UnreachableValue,
-                    entry.key.span.clone(),
-                    format!("`{}` is never a value of {}", entry.text, subject.what),
-                )
-                .with_note(
-                    format!("{} holds {} to {}", subject.what, range.start(), range.end()),
-                    Some(subject.span.clone()),
-                )
-            };
-            Some(Mapping::Values(match &values.value {
-                RawValues::Inline(entries) => {
-                    let table = check_table(entries, diagnostics);
-                    diagnostics.extend(entries.iter().filter(|e| e.key.value.outside(&range)).map(report));
-                    Values::Inline(table)
-                }
-                RawValues::Enum(name) => {
-                    let names: Vec<String> = enums.names().into_iter().map(str::to_owned).collect();
-                    let Some(found) = enums.get_mut(&name.value) else {
-                        diagnostics.push(unknown_enum(name, &names));
-                        return Err(Invalid);
-                    };
-                    for (entry, reported) in found.raw.entries.iter().zip(&mut found.unreachable_reported) {
-                        if !*reported && entry.key.value.outside(&range) {
-                            *reported = true;
-                            diagnostics.push(report(entry));
-                        }
-                    }
-                    Values::Enum(name.value.clone())
-                }
-            }))
-        }
-        _ if raw.when_true.is_some() || raw.when_false.is_some() => {
-            let mut label = |label: &Option<MappingKey<Spanned<String>>>| {
-                label.as_ref().map(|l| {
-                    check_label(&l.value, diagnostics);
-                    l.value.value.clone()
-                })
-            };
-            Some(Mapping::Bool { when_true: label(&raw.when_true), when_false: label(&raw.when_false) })
-        }
-        _ => raw.unit.as_ref().map(|unit| {
-            let RawUnit { singular, plural } = &unit.value;
-            for form in std::iter::once(singular).chain(plural) {
-                check_unit(form, diagnostics);
-            }
-            Mapping::Unit { singular: singular.value.clone(), plural: plural.as_ref().map(|p| p.value.clone()) }
-        }),
+/// Stage 4: the labels of an integer `subject` holding the values of `range`, which takes
+/// `values:` or `unit:`.
+///
+/// Returns [`Invalid`] after an error, which is already pushed, and `Ok(None)` for a Field without
+/// value mappings.
+pub(crate) fn check_integer(
+    raw: &RawMappings,
+    subject: &Subject,
+    range: &RangeInclusive<i128>,
+    enums: &mut Enums<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Option<IntegerLabels>, Invalid> {
+    let start = diagnostics.len();
+    check_keys(raw, subject, Takes { values: true, states: false, unit: true }, diagnostics)?;
+    let Some(values) = &raw.values else {
+        return check_raw_unit(raw, start, diagnostics).map(|unit| unit.map(IntegerLabels::Unit));
     };
-    if has_errors(&diagnostics[start..]) { Err(Invalid) } else { Ok(mapping) }
+    let report = |entry: &RawEntry| {
+        Diagnostic::new(
+            Name::UnreachableValue,
+            entry.key.span.clone(),
+            format!("`{}` is never a value of {}", entry.text, subject.what),
+        )
+        .with_note(format!("{} holds {} to {}", subject.what, range.start(), range.end()), Some(subject.span.clone()))
+    };
+    let values = match &values.value {
+        RawValues::Inline(entries) => {
+            let table = check_table(entries, diagnostics);
+            diagnostics.extend(entries.iter().filter(|e| e.key.value.outside(range)).map(report));
+            Values::Inline(table)
+        }
+        RawValues::Enum(name) => {
+            let names: Vec<String> = enums.names().into_iter().map(str::to_owned).collect();
+            let Some(found) = enums.get_mut(&name.value) else {
+                diagnostics.push(unknown_enum(name, &names));
+                return Err(Invalid);
+            };
+            for (entry, reported) in found.raw.entries.iter().zip(&mut found.unreachable_reported) {
+                if !*reported && entry.key.value.outside(range) {
+                    *reported = true;
+                    diagnostics.push(report(entry));
+                }
+            }
+            Values::Enum(name.value.clone())
+        }
+    };
+    if has_errors(&diagnostics[start..]) { Err(Invalid) } else { Ok(Some(IntegerLabels::Values(values))) }
+}
+
+/// Stage 4: the labels of a `bool` or a boolean sub-Field, which takes `true:` and `false:`.
+/// Returns [`Invalid`] after an error, which is already pushed.
+pub(crate) fn check_states(
+    raw: &RawMappings,
+    subject: &Subject,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<StateLabels, Invalid> {
+    let start = diagnostics.len();
+    check_keys(raw, subject, Takes { values: false, states: true, unit: false }, diagnostics)?;
+    let mut label = |label: &Option<MappingKey<Spanned<String>>>| {
+        label.as_ref().map(|l| {
+            check_label(&l.value, diagnostics);
+            l.value.value.clone()
+        })
+    };
+    let states = StateLabels { when_true: label(&raw.when_true), when_false: label(&raw.when_false) };
+    if has_errors(&diagnostics[start..]) { Err(Invalid) } else { Ok(states) }
+}
+
+/// Stage 4: the unit of a float, which takes only `unit:`. Returns [`Invalid`] after an error,
+/// which is already pushed, and `Ok(None)` for a Field without one.
+pub(crate) fn check_unit(
+    raw: &RawMappings,
+    subject: &Subject,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Option<Unit>, Invalid> {
+    let start = diagnostics.len();
+    check_keys(raw, subject, Takes { values: false, states: false, unit: true }, diagnostics)?;
+    check_raw_unit(raw, start, diagnostics)
+}
+
+/// Stage 4: reports the value-mapping keys of a `subject` that takes none. Returns [`Invalid`]
+/// after any.
+pub(crate) fn check_none(
+    raw: &RawMappings,
+    subject: &Subject,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<(), Invalid> {
+    check_keys(raw, subject, Takes { values: false, states: false, unit: false }, diagnostics)
+}
+
+/// The `unit:` of a Field that takes one, if it has one. Returns [`Invalid`] when the Field's
+/// value mappings, checked from `diagnostics[start]` on, have an error.
+fn check_raw_unit(raw: &RawMappings, start: usize, diagnostics: &mut Vec<Diagnostic>) -> Result<Option<Unit>, Invalid> {
+    let unit = raw.unit.as_ref().map(|unit| {
+        let RawUnit { singular, plural } = &unit.value;
+        for form in std::iter::once(singular).chain(plural) {
+            check_unit_form(form, diagnostics);
+        }
+        Unit { singular: singular.value.clone(), plural: plural.as_ref().map(|p| p.value.clone()) }
+    });
+    if has_errors(&diagnostics[start..]) { Err(Invalid) } else { Ok(unit) }
 }
 
 impl Enums<'_> {
@@ -603,7 +659,7 @@ fn check_label(label: &Spanned<String>, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// A unit form is a non-empty single line: it is printed in the tree right after the value.
-fn check_unit(form: &Spanned<String>, diagnostics: &mut Vec<Diagnostic>) {
+fn check_unit_form(form: &Spanned<String>, diagnostics: &mut Vec<Diagnostic>) {
     if form.value.trim().is_empty() || !is_single_line(&form.value) {
         diagnostics.push(Diagnostic::new(
             Name::InvalidUnit,

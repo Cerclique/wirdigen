@@ -78,7 +78,9 @@ impl<'p> FieldIndex<'p> {
         for field in entries.iter().filter_map(Entry::field) {
             self.fields.insert(field.id, field);
             match &field.kind {
-                FieldKind::Builtin(value) => self.sub_fields.extend(value.bits.iter().map(|bit| (bit.id, bit))),
+                FieldKind::Builtin(value) => {
+                    self.sub_fields.extend(value.kind.sub_fields().iter().map(|bit| (bit.id, bit)));
+                }
                 FieldKind::Structure(children) => self.add(children),
                 FieldKind::Switch(switch) => {
                     for body in switch.bodies() {

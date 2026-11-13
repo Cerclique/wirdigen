@@ -231,18 +231,21 @@ fn resolve<'e>(
         .with_note(format!("`{}` is declared here", field.name), Some(field.span.clone())));
     };
     let resolved = match &segments[1..] {
-        [] if matches!(builtin.ty, Builtin::Int { .. } | Builtin::Bool) => {
+        [] if matches!(builtin.kind.builtin(), Builtin::Int { .. } | Builtin::Bool) => {
             Reference::Field { path: segments.clone(), target: field.id }
         }
         [] => {
             return Err(Diagnostic::new(
                 Name::NonNumericReference,
                 span,
-                format!("`{key}` is a `{}`, not an integer, a bitfield sub-Field or a `bool`", builtin.ty.name()),
+                format!(
+                    "`{key}` is a `{}`, not an integer, a bitfield sub-Field or a `bool`",
+                    builtin.kind.builtin().name()
+                ),
             )
             .with_note(format!("`{key}` is declared here"), Some(field.span.clone())));
         }
-        [sub] => match builtin.bits.iter().find(|b| &b.name == sub) {
+        [sub] => match builtin.kind.sub_fields().iter().find(|b| &b.name == sub) {
             Some(bit) => Reference::Bits { path: segments[..1].to_vec(), target: bit.id },
             None => {
                 return Err(Diagnostic::new(

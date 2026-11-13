@@ -14,7 +14,7 @@ use crate::index::{FieldId, TypeId};
 use crate::keys::{
     Keys, Spanned, closest, expect_bool, expect_integer, expect_string, is_single_line, read_keys, wrong_type,
 };
-use crate::mapping::{self, Enums, Mapping, Subject};
+use crate::mapping::{self, Enums, IntegerLabels, StateLabels, Subject, Unit};
 use crate::scalar::{Kind, resolve_plain};
 use crate::scope::{self, Level, Reference, Scope};
 use crate::switch::{self, RawBody, RawSwitch, Switch};
@@ -127,6 +127,16 @@ const fn int(bytes: usize) -> Builtin {
     Builtin::Int { signed: true, bytes }
 }
 
+/// The values of an integer of `bytes` bytes, from 1 to 8.
+pub(crate) fn int_range(signed: bool, bytes: usize) -> RangeInclusive<i128> {
+    if signed {
+        let half = 1_i128 << (8 * bytes - 1);
+        -half..=half - 1
+    } else {
+        0..=(1_i128 << (8 * bytes)) - 1
+    }
+}
+
 impl Builtin {
     /// The width of an unsigned integer type, the only types a `prefix:` takes.
     fn unsigned_bytes(self) -> Option<usize> {
@@ -139,11 +149,7 @@ impl Builtin {
     /// The values of an integer type, or `None` for any other type.
     pub(crate) fn int_range(self) -> Option<RangeInclusive<i128>> {
         match self {
-            Self::Int { signed: false, bytes } => Some(0..=(1_i128 << (8 * bytes)) - 1),
-            Self::Int { signed: true, bytes } => {
-                let half = 1_i128 << (8 * bytes - 1);
-                Some(-half..=half - 1)
-            }
+            Self::Int { signed, bytes } => Some(int_range(signed, bytes)),
             _ => None,
         }
     }
@@ -1175,24 +1181,139 @@ pub(crate) enum FieldKind {
 /// How a Field of a built-in type is read and shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BuiltinField {
-    pub(crate) ty: Builtin,
     /// The byte order in effect: the Field's own, else the top level's.
     pub(crate) endian: Endian,
     /// How many bytes the Field reads.
     pub(crate) length: Length,
-    /// The `encoding:` value, or the default; `None` for a type that takes none.
-    pub(crate) encoding: Option<Encoding>,
-    /// The `display:` value, or the type's default; `None` for a type that takes none.
-    pub(crate) display: Option<Display>,
-    /// The labels of values, states or the unit, when the Field has any (spec §3.4.7).
-    pub(crate) mapping: Option<Mapping>,
-    /// The values the Field should hold, when it has `expect:` (spec §3.10).
-    pub(crate) expect: Option<Expect>,
-    /// The name of the dissector a `bytes` Field's bytes are handed to, when it has
-    /// `dissector:` (spec §3.10).
-    pub(crate) dissector: Option<String>,
-    /// The sub-Fields of a bitfield, most significant first; empty for any other Field.
-    pub(crate) bits: Vec<Bit>,
+    /// What the Field holds, with the keys only such a value takes.
+    pub(crate) kind: BuiltinKind,
+}
+
+/// What a validated Field of a built-in type holds: one variant per family of built-in types,
+/// each with the data only that family has (ADR 0017).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BuiltinKind {
+    /// `uint8` to `uint64`.
+    Unsigned {
+        /// The width, from 1 to 8 bytes.
+        bytes: usize,
+        /// The `display:` value, or the default.
+        display: Display,
+        /// The labels of values or the unit, when the Field has any (spec §3.4.7).
+        labels: Option<IntegerLabels>,
+        /// The values the Field should hold, when it has `expect:` (spec §3.10).
+        expect: Option<Expect>,
+        /// The sub-Fields, most significant first, when the Field is a bitfield; empty when it
+        /// is not.
+        bits: Vec<Bit>,
+    },
+    /// `int8` to `int64`.
+    Signed {
+        /// The width, from 1 to 8 bytes.
+        bytes: usize,
+        /// The `display:` value, or the default.
+        display: Display,
+        /// The labels of values or the unit, when the Field has any (spec §3.4.7).
+        labels: Option<IntegerLabels>,
+        /// The values the Field should hold, when it has `expect:` (spec §3.10).
+        expect: Option<Expect>,
+    },
+    /// `bool`.
+    Bool {
+        /// The labels of its two states (spec §3.4.7).
+        states: StateLabels,
+        /// The values the Field should hold, when it has `expect:` (spec §3.10).
+        expect: Option<Expect>,
+    },
+    /// `float32` or `float64`.
+    Float {
+        float: Float,
+        /// The unit after the value, when the Field has one (spec §3.4.7).
+        unit: Option<Unit>,
+    },
+    /// `bytes`.
+    Bytes {
+        /// The `display:` value, or the default.
+        display: Display,
+        /// The name of the dissector the bytes are handed to, when the Field has `dissector:`
+        /// (spec §3.10).
+        dissector: Option<String>,
+    },
+    /// `string`.
+    String {
+        /// The `encoding:` value, or the default.
+        encoding: Encoding,
+    },
+    /// `abs_time`.
+    AbsTime {
+        /// The `encoding:` value, or the default.
+        encoding: Encoding,
+        /// The `display:` value, or the default.
+        display: Display,
+    },
+    /// `rel_time`.
+    RelTime {
+        /// The `encoding:` value, or the default.
+        encoding: Encoding,
+    },
+    /// A built-in type that takes no key of its own.
+    Plain(Plain),
+}
+
+/// The two float types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Float {
+    /// `float32`.
+    Single,
+    /// `float64`.
+    Double,
+}
+
+/// The built-in types that take no key of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Plain {
+    Ipv4,
+    Ipv6,
+    Ether,
+    Eui64,
+    Guid,
+}
+
+impl BuiltinKind {
+    /// The built-in type of the Field.
+    pub(crate) fn builtin(&self) -> Builtin {
+        match *self {
+            Self::Unsigned { bytes, .. } => Builtin::Int { signed: false, bytes },
+            Self::Signed { bytes, .. } => Builtin::Int { signed: true, bytes },
+            Self::Bool { .. } => Builtin::Bool,
+            Self::Float { float: Float::Single, .. } => Builtin::Float32,
+            Self::Float { float: Float::Double, .. } => Builtin::Float64,
+            Self::Bytes { .. } => Builtin::Bytes,
+            Self::String { .. } => Builtin::String,
+            Self::AbsTime { .. } => Builtin::AbsTime,
+            Self::RelTime { .. } => Builtin::RelTime,
+            Self::Plain(Plain::Ipv4) => Builtin::Ipv4,
+            Self::Plain(Plain::Ipv6) => Builtin::Ipv6,
+            Self::Plain(Plain::Ether) => Builtin::Ether,
+            Self::Plain(Plain::Eui64) => Builtin::Eui64,
+            Self::Plain(Plain::Guid) => Builtin::Guid,
+        }
+    }
+
+    /// The sub-Fields, most significant first; empty unless the Field is a bitfield.
+    pub(crate) fn sub_fields(&self) -> &[Bit] {
+        match self {
+            Self::Unsigned { bits, .. } => bits,
+            Self::Signed { .. }
+            | Self::Bool { .. }
+            | Self::Float { .. }
+            | Self::Bytes { .. }
+            | Self::String { .. }
+            | Self::AbsTime { .. }
+            | Self::RelTime { .. }
+            | Self::Plain(_) => &[],
+        }
+    }
 }
 
 /// Stage 2: reads one entry of a structure, a Field or `{ padding: n }`, pushing its errors.
@@ -1529,59 +1650,224 @@ fn check_builtin<'a>(
     scope: Scope<'a, '_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<BuiltinField> {
-    let ty = Builtin::from_name(&ty_name.value);
-    if ty.is_none() {
+    let Some(ty) = Builtin::from_name(&ty_name.value) else {
         diagnostics.push(unresolved_type(ty_name));
+        return None;
+    };
+    let keys = BuiltinKeys { field, ty_name, ty, types, scope };
+    let (length, kind) = match ty {
+        Builtin::Int { signed, bytes } => (keys.sized(diagnostics), keys.integer(signed, bytes, enums, diagnostics)),
+        Builtin::Bool => (keys.sized(diagnostics), keys.bool(diagnostics)),
+        Builtin::Float32 => (keys.sized(diagnostics), keys.float(Float::Single, diagnostics)),
+        Builtin::Float64 => (keys.sized(diagnostics), keys.float(Float::Double, diagnostics)),
+        Builtin::Bytes => (keys.sized(diagnostics), keys.bytes(diagnostics)),
+        Builtin::String => {
+            let encoding = keys.encoding(Encoding::Utf8, diagnostics);
+            let length = encoding.and_then(|encoding| keys.length(Some(encoding), diagnostics));
+            let rest = keys.nothing_else(diagnostics);
+            (length, encoding.zip(rest).map(|(encoding, ())| BuiltinKind::String { encoding }))
+        }
+        Builtin::AbsTime => {
+            let encoding = keys.encoding(Encoding::Secs, diagnostics);
+            let length = encoding.and_then(|encoding| keys.length(Some(encoding), diagnostics));
+            let display = keys.display(Display::Local, diagnostics);
+            let rest = keys.no_labels(diagnostics).and(keys.no_expect_bits_dissector(diagnostics));
+            let kind = encoding.zip(display).zip(rest);
+            (length, kind.map(|((encoding, display), ())| BuiltinKind::AbsTime { encoding, display }))
+        }
+        Builtin::RelTime => {
+            let encoding = keys.encoding(Encoding::Secs, diagnostics);
+            let length = encoding.and_then(|encoding| keys.length(Some(encoding), diagnostics));
+            let rest = keys.nothing_else(diagnostics);
+            (length, encoding.zip(rest).map(|(encoding, ())| BuiltinKind::RelTime { encoding }))
+        }
+        Builtin::Ipv4 => (keys.sized(diagnostics), keys.plain(Plain::Ipv4, diagnostics)),
+        Builtin::Ipv6 => (keys.sized(diagnostics), keys.plain(Plain::Ipv6, diagnostics)),
+        Builtin::Ether => (keys.sized(diagnostics), keys.plain(Plain::Ether, diagnostics)),
+        Builtin::Eui64 => (keys.sized(diagnostics), keys.plain(Plain::Eui64, diagnostics)),
+        Builtin::Guid => (keys.sized(diagnostics), keys.plain(Plain::Guid, diagnostics)),
+    };
+    Some(BuiltinField { endian: endian?, length: length?, kind: kind? })
+}
+
+/// The keys of a Field of a built-in type, checked one family of types at a time. Each check
+/// pushes its errors and returns `None` after any, so a Field reports every key that is wrong.
+/// The keys are checked in one order for every type: `encoding`, the length, `display`, the
+/// value mappings, `expect`, `bits`, `dissector`.
+struct BuiltinKeys<'r, 'a, 's> {
+    field: &'r RawField,
+    /// The type as written.
+    ty_name: &'r Spanned<String>,
+    ty: Builtin,
+    types: &'r Types<'a>,
+    scope: Scope<'a, 's>,
+}
+
+impl BuiltinKeys<'_, '_, '_> {
+    /// An integer: `display`, `values` or `unit`, `expect`, and `bits` when it is unsigned.
+    fn integer(
+        &self,
+        signed: bool,
+        bytes: usize,
+        enums: &mut Enums<'_>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<BuiltinKind> {
+        let display = self.display(Display::Dec, diagnostics);
+        let (subject, range) = (Subject::builtin(self.ty_name), int_range(signed, bytes));
+        let labels = mapping::check_integer(&self.field.mappings, &subject, &range, enums, diagnostics).ok();
+        let expect = self.expect(diagnostics);
+        let expect = record(expect, diagnostics);
+        if signed {
+            let no_bits = self.no_bits(diagnostics);
+            let no_dissector = self.no_dissector(diagnostics);
+            let (display, labels, expect) = (display?, labels?, expect?);
+            no_bits.and(no_dissector).map(|()| BuiltinKind::Signed { bytes, display, labels, expect })
+        } else {
+            let bits = match &self.field.bits {
+                None => Some(Vec::new()),
+                Some(raw) => bits::check(raw, self.ty_name, bytes, enums, diagnostics),
+            };
+            let no_dissector = self.no_dissector(diagnostics);
+            let (display, labels, expect, bits) = (display?, labels?, expect?, bits?);
+            no_dissector.map(|()| BuiltinKind::Unsigned { bytes, display, labels, expect, bits })
+        }
     }
-    let encoding = match (ty, &field.encoding) {
-        (Some(ty), Some(value)) => record(Encoding::check(value, ty_name, ty), diagnostics).map(Some),
-        (Some(ty), None) => Some(ty.encodings().first().copied()),
-        (None, _) => Some(None),
-    };
-    let length = ty
-        .zip(encoding)
-        .and_then(|(ty, encoding)| check_length(field, ty_name, ty, encoding, types, scope, diagnostics));
-    let display = match (ty, &field.display) {
-        (Some(ty), Some(value)) => record(Display::check(value, ty_name, ty), diagnostics).map(Some),
-        (Some(ty), None) => Some(ty.displays().first().copied()),
-        (None, _) => None,
-    };
-    let mapping =
-        ty.and_then(|ty| mapping::check(&field.mappings, &Subject::builtin(ty_name, ty), enums, diagnostics).ok());
-    let expect = match (ty, &field.expect) {
-        (_, None) | (None, _) => Some(None),
-        (Some(ty), Some(raw)) => record(expect::Subject::builtin(raw, ty_name, ty), diagnostics)
-            .map(|subject| Some(expect::check(raw, &subject, diagnostics))),
-    };
-    let bits = match (&field.bits, ty) {
-        (None, _) => Some(Vec::new()),
-        (Some(raw), Some(Builtin::Int { signed: false, bytes })) => {
-            bits::check(raw, ty_name, bytes, enums, diagnostics)
+
+    /// A `bool`: `true` and `false`, `expect`.
+    fn bool(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<BuiltinKind> {
+        let no_display = self.no_display(diagnostics);
+        let states = mapping::check_states(&self.field.mappings, &Subject::builtin(self.ty_name), diagnostics).ok();
+        let expect = self.expect(diagnostics);
+        let expect = record(expect, diagnostics);
+        let no_bits = self.no_bits(diagnostics);
+        let no_dissector = self.no_dissector(diagnostics);
+        let (states, expect) = (states?, expect?);
+        no_display.and(no_bits).and(no_dissector).map(|()| BuiltinKind::Bool { states, expect })
+    }
+
+    /// A float: `unit`.
+    fn float(&self, float: Float, diagnostics: &mut Vec<Diagnostic>) -> Option<BuiltinKind> {
+        let no_display = self.no_display(diagnostics);
+        let unit = mapping::check_unit(&self.field.mappings, &Subject::builtin(self.ty_name), diagnostics).ok();
+        let rest = self.no_expect_bits_dissector(diagnostics);
+        let unit = unit?;
+        no_display.and(rest).map(|()| BuiltinKind::Float { float, unit })
+    }
+
+    /// A `bytes`: `display`, `dissector`.
+    fn bytes(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<BuiltinKind> {
+        let display = self.display(Display::Plain, diagnostics);
+        let no_labels = self.no_labels(diagnostics);
+        let no_expect = self.no_expect(diagnostics);
+        let no_bits = self.no_bits(diagnostics);
+        let dissector = self.field.dissector.as_ref().map(|raw| raw.name.clone());
+        let display = display?;
+        no_labels.and(no_expect).and(no_bits).map(|()| BuiltinKind::Bytes { display, dissector })
+    }
+
+    /// A type that takes no key of its own.
+    fn plain(&self, plain: Plain, diagnostics: &mut Vec<Diagnostic>) -> Option<BuiltinKind> {
+        self.nothing_else(diagnostics).map(|()| BuiltinKind::Plain(plain))
+    }
+
+    /// The length of a type that takes no `encoding`.
+    fn sized(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<Length> {
+        self.no_encoding(diagnostics).and_then(|()| self.length(None, diagnostics))
+    }
+
+    /// The length of the Field, read as `encoding` when its type takes one.
+    fn length(&self, encoding: Option<Encoding>, diagnostics: &mut Vec<Diagnostic>) -> Option<Length> {
+        check_length(self.field, self.ty_name, self.ty, encoding, self.types, self.scope, diagnostics)
+    }
+
+    /// The `encoding:` value of a type that takes one, `default` when it is left out.
+    fn encoding(&self, default: Encoding, diagnostics: &mut Vec<Diagnostic>) -> Option<Encoding> {
+        match &self.field.encoding {
+            Some(value) => record(Encoding::check(value, self.ty_name, self.ty), diagnostics),
+            None => Some(default),
         }
-        (Some(raw), Some(_)) => {
-            diagnostics.push(invalid_bits(raw, &format!("`{}` is not an unsigned integer", ty_name.value)));
-            None
+    }
+
+    /// Reports the `encoding:` of a type that takes none.
+    fn no_encoding(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        match &self.field.encoding {
+            Some(value) => record(Encoding::check(value, self.ty_name, self.ty).map(drop), diagnostics),
+            None => Some(()),
         }
-        (Some(_), None) => None,
-    };
-    let dissector = match (ty, &field.dissector) {
-        (_, None) | (None, _) => Some(None),
-        (Some(Builtin::Bytes), Some(raw)) => Some(Some(raw.name.clone())),
-        (Some(_), Some(raw)) => {
-            diagnostics.push(
-                Diagnostic::new(
-                    Name::IncompatibleDisplay,
-                    raw.key.clone(),
-                    format!("`{}` takes no `dissector`", ty_name.value),
-                )
-                .with_note("only `bytes` Fields take `dissector`", None),
-            );
-            None
+    }
+
+    /// The `display:` value of a type that takes one, `default` when it is left out.
+    fn display(&self, default: Display, diagnostics: &mut Vec<Diagnostic>) -> Option<Display> {
+        match &self.field.display {
+            Some(value) => record(Display::check(value, self.ty_name, self.ty), diagnostics),
+            None => Some(default),
         }
-    };
-    let (ty, endian, length, encoding, display, mapping, expect, dissector, bits) =
-        (ty?, endian?, length?, encoding?, display?, mapping?, expect?, dissector?, bits?);
-    Some(BuiltinField { ty, endian, length, encoding, display, mapping, expect, dissector, bits })
+    }
+
+    /// Reports the `display:` of a type that takes none.
+    fn no_display(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        match &self.field.display {
+            Some(value) => record(Display::check(value, self.ty_name, self.ty).map(drop), diagnostics),
+            None => Some(()),
+        }
+    }
+
+    /// Reports the value mappings of a type that takes none.
+    fn no_labels(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        mapping::check_none(&self.field.mappings, &Subject::builtin(self.ty_name), diagnostics).ok()
+    }
+
+    /// The `expect:` of an integer or a `bool`, if it has one.
+    fn expect(&self, diagnostics: &mut Vec<Diagnostic>) -> Result<Option<Expect>, Diagnostic> {
+        let Some(raw) = &self.field.expect else { return Ok(None) };
+        let subject = expect::Subject::builtin(raw, self.ty_name, self.ty)?;
+        Ok(Some(expect::check(raw, &subject, diagnostics)))
+    }
+
+    /// Reports the `expect:` of a type that takes none.
+    fn no_expect(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        match &self.field.expect {
+            Some(raw) => record(expect::Subject::builtin(raw, self.ty_name, self.ty).map(drop), diagnostics),
+            None => Some(()),
+        }
+    }
+
+    /// Reports the `bits:` of a type that is not an unsigned integer.
+    fn no_bits(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        let Some(raw) = &self.field.bits else { return Some(()) };
+        diagnostics.push(invalid_bits(raw, &format!("`{}` is not an unsigned integer", self.ty_name.value)));
+        None
+    }
+
+    /// Reports the `dissector:` of a type other than `bytes`.
+    fn no_dissector(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        let Some(raw) = &self.field.dissector else { return Some(()) };
+        diagnostics.push(
+            Diagnostic::new(
+                Name::IncompatibleDisplay,
+                raw.key.clone(),
+                format!("`{}` takes no `dissector`", self.ty_name.value),
+            )
+            .with_note("only `bytes` Fields take `dissector`", None),
+        );
+        None
+    }
+
+    /// Reports the `expect:`, `bits:` and `dissector:` of a type that takes none of them.
+    fn no_expect_bits_dissector(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        let no_expect = self.no_expect(diagnostics);
+        let no_bits = self.no_bits(diagnostics);
+        let no_dissector = self.no_dissector(diagnostics);
+        no_expect.and(no_bits).and(no_dissector)
+    }
+
+    /// Reports every key past the length of a type that takes none of them.
+    fn nothing_else(&self, diagnostics: &mut Vec<Diagnostic>) -> Option<()> {
+        let no_display = self.no_display(diagnostics);
+        let no_labels = self.no_labels(diagnostics);
+        let rest = self.no_expect_bits_dissector(diagnostics);
+        no_display.and(no_labels).and(rest)
+    }
 }
 
 /// Checks how an array Field repeats (spec §3.7): only an inline structure or a Field of a Type

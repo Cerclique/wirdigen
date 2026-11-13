@@ -12,7 +12,7 @@ use crate::expect::{self, Expect, RawExpect};
 use crate::field::{self, Builtin, Display};
 use crate::index::SubFieldId;
 use crate::keys::{Spanned, expect_bool, expect_integer, expect_string, read_keys, wrong_type};
-use crate::mapping::{self, Enums, Mapping, Subject};
+use crate::mapping::{self, Enums, IntegerLabels, StateLabels, Subject};
 use crate::yaml::{Node, Value};
 
 /// The keys of a sub-Field, in documentation order (spec §3.8).
@@ -142,12 +142,23 @@ pub(crate) struct Bit {
     pub(crate) shift: u32,
     /// Its number of bits, from 1 to 64.
     pub(crate) width: u32,
-    /// How an unsigned integer sub-Field is shown, `None` for a boolean one.
-    pub(crate) display: Option<Display>,
-    /// Its labels, when it has any (spec §3.4.7).
-    pub(crate) mapping: Option<Mapping>,
+    /// What it holds, with how that is shown.
+    pub(crate) kind: BitKind,
     /// The values it should hold, when it has `expect:` (spec §3.10).
     pub(crate) expect: Option<Expect>,
+}
+
+/// What a validated sub-Field holds (spec §3.8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BitKind {
+    /// An unsigned integer as wide as the sub-Field.
+    Unsigned {
+        display: Display,
+        /// Its labels, when it has any (spec §3.4.7).
+        labels: Option<IntegerLabels>,
+    },
+    /// One bit given no `values:`, `unit:` or `display:`, with the labels of its two states.
+    Boolean(StateLabels),
 }
 
 impl Bit {
@@ -269,40 +280,44 @@ pub(crate) fn check(
 
     let container = Builtin::Int { signed: false, bytes };
     let subs: Vec<&RawSubField> = raw.sub_fields().collect();
-    let mut checked = Vec::new();
+    // Where each sub-Field lies, when the widths add up.
+    let located: Option<Vec<(u32, u32)>> = raw.shifts(bytes).map(|shifts| {
+        let located = raw.entries.iter().zip(shifts).filter(|(e, _)| matches!(e, RawBit::SubField(_)));
+        located.map(|(_, at)| at).collect()
+    });
+    let mut bits = Vec::new();
     for (index, sub) in subs.iter().enumerate() {
         field::check_name(&sub.name, subs[..index].iter().map(|s| &s.name), diagnostics);
         // A sub-Field naming an Enum uses it, whatever else is wrong with it (spec §3.4.7).
         enums.mark_used(&sub.mappings);
-        let boolean = sub.width.value == 1 && sub.display.is_none() && !sub.mappings.makes_integer();
-        let display = match (&sub.display, boolean) {
-            (_, true) => Some(None),
-            (Some(value), false) => record(Display::check(value, ty, container), diagnostics).map(Some),
-            (None, false) => Some(container.displays().first().copied()),
-        };
         let width = u32::try_from(sub.width.value).ok().filter(|w| (1..=64).contains(w));
-        let mapping = width.and_then(|width| {
-            let subject = Subject::sub_field(&sub.name.span, width, boolean);
-            mapping::check(&sub.mappings, &subject, enums, diagnostics).ok()
-        });
+        let boolean = sub.width.value == 1 && sub.display.is_none() && !sub.mappings.makes_integer();
+        let kind = if boolean {
+            width
+                .and_then(|width| {
+                    let subject = Subject::sub_field(&sub.name.span, width);
+                    mapping::check_states(&sub.mappings, &subject, diagnostics).ok()
+                })
+                .map(BitKind::Boolean)
+        } else {
+            let display = match &sub.display {
+                Some(value) => record(Display::check(value, ty, container), diagnostics),
+                None => Some(Display::Dec),
+            };
+            let labels = width.and_then(|width| {
+                let subject = Subject::sub_field(&sub.name.span, width);
+                let range = 0..=(1_i128 << width) - 1;
+                mapping::check_integer(&sub.mappings, &subject, &range, enums, diagnostics).ok()
+            });
+            display.zip(labels).map(|(display, labels)| BitKind::Unsigned { display, labels })
+        };
         let expect = width.map(|width| {
             let subject = expect::Subject::sub_field(&sub.name.span, width);
             sub.expect.as_ref().map(|raw| expect::check(raw, &subject, diagnostics))
         });
         field::check_text(sub.label.as_ref(), sub.description.as_ref(), diagnostics);
-        checked.push((display, mapping, expect));
-    }
-    if diagnostics[start..].iter().any(|d| d.severity() == Severity::Error) {
-        return None;
-    }
-
-    let shifts = raw.shifts(bytes).expect("the widths were checked");
-    let located = raw.entries.iter().zip(shifts).filter(|(e, _)| matches!(e, RawBit::SubField(_)));
-    let bits = subs
-        .iter()
-        .zip(checked)
-        .zip(located)
-        .map(|((sub, (display, mapping, expect)), (_, (shift, width)))| Bit {
+        let at = located.as_ref().and_then(|located| located.get(index));
+        bits.push(kind.zip(expect).zip(at).map(|((kind, expect), &(shift, width))| Bit {
             id: sub.id,
             name: sub.name.value.clone(),
             label: sub.label.as_ref().map(|l| l.value.clone()),
@@ -310,10 +325,12 @@ pub(crate) fn check(
             hidden: sub.hidden.as_ref().is_some_and(|h| h.value),
             shift,
             width,
-            display: display.expect("a sub-Field without errors has a display"),
-            mapping: mapping.expect("a sub-Field without errors has its mappings"),
-            expect: expect.expect("a sub-Field without errors has a width"),
-        })
-        .collect();
-    Some(bits)
+            kind,
+            expect,
+        }));
+    }
+    if diagnostics[start..].iter().any(|d| d.severity() == Severity::Error) {
+        return None;
+    }
+    bits.into_iter().collect()
 }

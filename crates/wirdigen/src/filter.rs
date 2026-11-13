@@ -9,11 +9,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use crate::bits::Bit;
+use crate::bits::{Bit, BitKind};
 use crate::diagnostic::{Diagnostic, Name};
-use crate::field::{self, Builtin, Display, Entry, Field, FieldKind, Length};
+use crate::field::{self, Builtin, BuiltinKind, Display, Entry, Field, FieldKind, Length};
 use crate::index::TypeId;
-use crate::mapping::Mapping;
+use crate::mapping::{IntegerLabels, StateLabels, Unit};
 use crate::switch::Body;
 use crate::types::NamedTypes;
 
@@ -23,9 +23,17 @@ use crate::types::NamedTypes;
 struct Declaration<'a> {
     kind: ProtoKind<'a>,
     display: Option<Display>,
-    mapping: Option<&'a Mapping>,
+    labels: Option<Labels<'a>>,
     label: String,
     description: Option<&'a str>,
+}
+
+/// The value mappings of a [`Declaration`].
+#[derive(Debug, PartialEq, Eq)]
+enum Labels<'a> {
+    Integer(&'a IntegerLabels),
+    States(&'a StateLabels),
+    Unit(&'a Unit),
 }
 
 /// The type part of a [`Declaration`]: what the `ProtoField` holds.
@@ -93,10 +101,12 @@ impl<'a> Walk<'a, '_> {
     /// Declares the `ProtoField` of `field` at `path`, its sub-Fields', and those of the Fields
     /// it holds: a `switch` case adds no segment to the path.
     fn field(&mut self, field: &'a Field, path: &str) {
-        let (kind, display, mapping) = match &field.kind {
+        let (kind, display, labels) = match &field.kind {
             FieldKind::Builtin(value) => {
-                let stringz = value.ty == Builtin::String && value.length == Length::Terminator(0);
-                (ProtoKind::Value { ty: value.ty, stringz }, value.display, value.mapping.as_ref())
+                let ty = value.kind.builtin();
+                let stringz = ty == Builtin::String && value.length == Length::Terminator(0);
+                let (display, labels) = shown(&value.kind);
+                (ProtoKind::Value { ty, stringz }, display, labels)
             }
             FieldKind::Structure(_) => (ProtoKind::Structure, None, None),
             FieldKind::Type { name, .. } => (ProtoKind::Type(name), None, None),
@@ -104,11 +114,12 @@ impl<'a> Walk<'a, '_> {
         };
         let label = field.label.clone().unwrap_or_else(|| field::default_label(&field.name));
         let description = field.description.as_deref();
-        self.declare(path, Declaration { kind, display, mapping, label, description }, &field.span);
+        self.declare(path, Declaration { kind, display, labels, label, description }, &field.span);
         match &field.kind {
             FieldKind::Builtin(value) => {
-                for bit in &value.bits {
-                    self.declare(&format!("{path}.{}", bit.name), bit_declaration(value.ty, bit), &field.span);
+                let container = value.kind.builtin();
+                for bit in value.kind.sub_fields() {
+                    self.declare(&format!("{path}.{}", bit.name), bit_declaration(container, bit), &field.span);
                 }
             }
             FieldKind::Structure(children) => self.fields(children, path),
@@ -143,7 +154,7 @@ impl<'a> Walk<'a, '_> {
             format!("this one is {}, the other {}", declaration.kind.describe(), first.kind.describe())
         } else if first.display != declaration.display {
             "their `display` differs".to_owned()
-        } else if first.mapping != declaration.mapping {
+        } else if first.labels != declaration.labels {
             "their value mappings differ".to_owned()
         } else if first.label != declaration.label {
             format!("this one is labelled \"{}\", the other \"{}\"", declaration.label, first.label)
@@ -167,12 +178,30 @@ impl<'a> Walk<'a, '_> {
     }
 }
 
+/// The display and the value mappings a Field of a built-in type is declared with: a `bool`
+/// without state labels has no mapping.
+fn shown(kind: &BuiltinKind) -> (Option<Display>, Option<Labels<'_>>) {
+    match kind {
+        BuiltinKind::Unsigned { display, labels, .. } | BuiltinKind::Signed { display, labels, .. } => {
+            (Some(*display), labels.as_ref().map(Labels::Integer))
+        }
+        BuiltinKind::Bool { states, .. } => (None, (!states.is_empty()).then_some(Labels::States(states))),
+        BuiltinKind::Float { unit, .. } => (None, unit.as_ref().map(Labels::Unit)),
+        BuiltinKind::Bytes { display, .. } | BuiltinKind::AbsTime { display, .. } => (Some(*display), None),
+        BuiltinKind::String { .. } | BuiltinKind::RelTime { .. } | BuiltinKind::Plain(_) => (None, None),
+    }
+}
+
 /// The declaration of the sub-Field `bit` of a bitfield of type `container`.
 fn bit_declaration(container: Builtin, bit: &Bit) -> Declaration<'_> {
+    let (display, labels) = match &bit.kind {
+        BitKind::Unsigned { display, labels } => (Some(*display), labels.as_ref().map(Labels::Integer)),
+        BitKind::Boolean(states) => (None, (!states.is_empty()).then_some(Labels::States(states))),
+    };
     Declaration {
         kind: ProtoKind::Bit { container, mask: bit.mask() },
-        display: bit.display,
-        mapping: bit.mapping.as_ref(),
+        display,
+        labels,
         label: bit.label.clone().unwrap_or_else(|| field::default_label(&bit.name)),
         description: bit.description.as_deref(),
     }
