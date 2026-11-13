@@ -138,7 +138,7 @@ mod tests {
     fn prelude_chunks_with_their_dependencies_run_strictly() {
         if enabled() {
             let chunks: Vec<_> = prelude::chunk_sources()
-                .map(|(name, _)| (format!("chunk {name}"), prelude::select(&[name]).join("\n")))
+                .map(|(name, _)| (format!("chunk {name}"), prelude::Chunks::named(&[name]).lines().join("\n")))
                 .collect();
             assert_all(&SUPPORTED_LUA, Mode::Run, &chunks);
         }

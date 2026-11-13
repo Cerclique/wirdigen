@@ -1,9 +1,11 @@
 -- The Lua runtime shared by every generated Dissector (ADR 0010).
 --
--- It is split into chunks. A line `--@chunk <name>` starts one, and an optional
--- `--@requires <name> ...` line right after it declares its dependencies, which
--- must be chunks defined earlier in this file. A Dissector gets only the chunks
--- it uses plus their dependencies, in the order they appear here.
+-- It is split into chunks. A line `--@chunk <name>` starts one. A chunk defines its
+-- names at the top level (`local function wd_x`, `local wd_x, wd_y`), and needs the
+-- chunks whose names its code uses, which must be defined earlier in this file. A
+-- Dissector gets only the chunks whose names its code uses plus the chunks they
+-- need, in the order they appear here: the dependencies are worked out from the
+-- code, outside comments and strings, so none are declared.
 --
 -- Everything here must parse under Lua 5.2: no native bitwise operators, no `//`, except
 -- inside the strings a chunk compiles with `load` once the version guard has run.
@@ -73,7 +75,6 @@ local function wd_mul(a, b) return a * b end
 local function wd_neg(a) return -a end
 
 --@chunk division
---@requires fault
 -- C's `/`, truncating toward zero, and `%`, taking the dividend's sign (ADR 0007): Lua's own
 -- `//` and `%` floor. They use Lua 5.3 operators, which Lua 5.2 cannot parse, so they are
 -- compiled at load: the version guard has already ruled out a Lua older than 5.3. Dividing by
@@ -104,7 +105,6 @@ do
 end
 
 --@chunk bitwise
---@requires fault
 -- 64-bit `& | ^ ~ << >>`, with `>>` arithmetic (ADR 0007). Wireshark's `bit` library works on
 -- 32 bits, so these use Lua 5.3 operators, compiled at load as in the division chunk. A shift
 -- count outside 0..63 fails the Expression.
@@ -278,7 +278,6 @@ local function wd_handoff(name, range, pinfo, tree, expert_info, path)
 end
 
 --@chunk framing
---@requires invalid
 -- Framing (spec §3.13). Under TCP, the Messages of a segment are dissected one after another,
 -- each in a tvb of its own, so that `_offset` and `_remaining` count from its start.
 -- `message_length(tvb, offset)` computes the length of the Message at `offset` from its
@@ -388,7 +387,6 @@ local function wd_info_display(field, before)
 end
 
 --@chunk info_label
---@requires info
 -- The label in `names`, a list of `{ low, high, label }`, of the value `field` extracts, or else
 -- the number; "" when its Field was not read in the Message (`before` as for `wd_info_found`). A
 -- 64-bit value comes as a UInt64 or an Int64, looked up as an Expression reads it, its 64 bits
