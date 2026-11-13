@@ -36,8 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest is disabled for now; re-enable it before release (#106).
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
