@@ -10,6 +10,7 @@ use std::ops::Range;
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::expect::{self, Expect, RawExpect};
 use crate::field::{self, Builtin, Display};
+use crate::index::SubFieldId;
 use crate::keys::{Spanned, expect_bool, expect_integer, expect_string, read_keys, wrong_type};
 use crate::mapping::{self, Enums, Mapping, Subject};
 use crate::yaml::{Node, Value};
@@ -40,6 +41,8 @@ enum RawBit {
 /// A sub-Field as written, after stage 2: its keys are known and of the right kinds.
 #[derive(Debug, Clone)]
 struct RawSubField {
+    /// The declaration's identity, from where its name is written.
+    id: SubFieldId,
     /// The name, not yet checked against the naming rule.
     name: Spanned<String>,
     /// The number of bits, not yet checked to be at least 1.
@@ -72,8 +75,8 @@ impl RawBit {
 pub(crate) enum Lookup {
     /// The bitfield has no sub-Field of that name.
     Missing,
-    /// The sub-Field, at `shift` bits from the least significant bit.
-    Found { shift: u32, width: u32 },
+    /// The sub-Field declared with this id.
+    Found(SubFieldId),
     /// The sub-Field exists, but the bitfield is in error (its widths, its container), which is
     /// reported already.
     Invalid,
@@ -100,16 +103,12 @@ impl RawBits {
 
     /// Where the sub-Field `name` is in a bitfield of type `container`.
     pub(crate) fn lookup(&self, name: &str, container: Builtin) -> Lookup {
-        let Some(index) = self.entries.iter().position(|e| matches!(e, RawBit::SubField(s) if s.name.value == name))
-        else {
+        let Some(sub) = self.sub_fields().find(|s| s.name.value == name) else {
             return Lookup::Missing;
         };
-        let Builtin::Int { signed: false, bytes } = container else {
-            return Lookup::Invalid;
-        };
-        match self.shifts(bytes) {
-            Some(shifts) => Lookup::Found { shift: shifts[index].0, width: shifts[index].1 },
-            None => Lookup::Invalid,
+        match container {
+            Builtin::Int { signed: false, bytes } if self.shifts(bytes).is_some() => Lookup::Found(sub.id),
+            _ => Lookup::Invalid,
         }
     }
 
@@ -130,6 +129,8 @@ impl RawBits {
 /// A validated sub-Field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Bit {
+    /// The declaration's identity, which resolved references name it by.
+    pub(crate) id: SubFieldId,
     pub(crate) name: String,
     /// The tree text, when `label:` gives one (spec §3.4.8).
     pub(crate) label: Option<String>,
@@ -211,7 +212,17 @@ fn read_entry(node: &Node, errors: &mut Vec<Diagnostic>) -> Option<RawBit> {
     let description = string_value("description", Name::InvalidDescription);
     match (name, width) {
         (Some(name), Some(width)) if errors.len() == before => {
-            let sub = RawSubField { name, width, display, hidden, label, description, mappings, expect };
+            let sub = RawSubField {
+                id: SubFieldId::at(&name.span),
+                name,
+                width,
+                display,
+                hidden,
+                label,
+                description,
+                mappings,
+                expect,
+            };
             Some(RawBit::SubField(Box::new(sub)))
         }
         _ => None,
@@ -292,6 +303,7 @@ pub(crate) fn check(
         .zip(checked)
         .zip(located)
         .map(|((sub, (display, mapping, expect)), (_, (shift, width)))| Bit {
+            id: sub.id,
             name: sub.name.value.clone(),
             label: sub.label.as_ref().map(|l| l.value.clone()),
             description: sub.description.as_ref().map(|d| d.value.clone()),

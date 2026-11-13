@@ -84,6 +84,7 @@ mod expr;
 mod field;
 mod filter;
 mod framing;
+mod index;
 mod info;
 mod keys;
 mod lower;

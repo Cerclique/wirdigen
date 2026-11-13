@@ -13,19 +13,23 @@ use std::ops::Range;
 use crate::bits::Lookup;
 use crate::diagnostic::{Diagnostic, Name};
 use crate::field::{self, Builtin, RawEntry, RawField, Shape};
+use crate::index::{FieldId, SubFieldId};
 use crate::keys::closest;
 use crate::switch::{RawBody, RawSwitch};
 use crate::types::Types;
 
 /// What a resolved path reads, from the dissect function the Expression is in (spec §7.3).
+///
+/// The path is how the function reaches the value; the id is which declaration it reads, which
+/// lowering takes the value's type, labels and bits from (ADR 0016).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Reference {
     /// A Field read by the same function: its path from the function's root (the top-level
     /// layout or the Type body), through inline structures and Fields of Types.
-    Field(Vec<String>),
-    /// A bitfield sub-Field (spec §3.8): `width` bits, `shift` bits up from the least significant
-    /// one, of the value of the container Field at `container`, read by the same function.
-    Bits { container: Vec<String>, shift: u32, width: u32 },
+    Field { path: Vec<String>, target: FieldId },
+    /// A bitfield sub-Field (spec §3.8) of the container Field at `path`, read by the same
+    /// function.
+    Bits { path: Vec<String>, target: SubFieldId },
     /// A value the caller passes in the context table, under the path as written in the Type.
     Context(String),
 }
@@ -173,12 +177,8 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
                         member: segment.clone(),
                         candidates: bits.names(),
                     }),
-                    Lookup::Found { .. } if index + 1 < rest.len() => {
-                        Resolution::Miss(Miss::NotStructure(segment.clone()))
-                    }
-                    Lookup::Found { shift, width } => {
-                        Resolution::Found(Reference::Bits { container: path, shift, width })
-                    }
+                    Lookup::Found(_) if index + 1 < rest.len() => Resolution::Miss(Miss::NotStructure(segment.clone())),
+                    Lookup::Found(target) => Resolution::Found(Reference::Bits { path, target }),
                     Lookup::Invalid => Resolution::Suppressed,
                 };
             }
@@ -197,7 +197,9 @@ fn descend<'a>(mut field: &'a RawField, rest: &[String], mut path: Vec<String>, 
     let what = match field.shape(types) {
         Shape::Unknown => return Resolution::Suppressed,
         _ if field.is_array() => "an array".to_owned(),
-        Shape::Value(Builtin::Int { .. } | Builtin::Bool, _) => return Resolution::Found(Reference::Field(path)),
+        Shape::Value(Builtin::Int { .. } | Builtin::Bool, _) => {
+            return Resolution::Found(Reference::Field { path, target: field.id() });
+        }
         Shape::Value(_, written) => format!("a `{written}`"),
         Shape::Structure(_) => "a structure".to_owned(),
         Shape::Type { name, .. } => format!("a Field of the Type `{name}`"),

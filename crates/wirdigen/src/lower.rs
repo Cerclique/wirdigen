@@ -13,8 +13,9 @@ use crate::expr::{self, BinaryOp, Expr, ExprKind, UnaryOp};
 use crate::field::{
     self, Amount, Array, Builtin, BuiltinField, Display, Encoding, Endian, Field, FieldKind, Operand, default_label,
 };
-use crate::framing::{Extent, Framing};
-use crate::info::{self, Template};
+use crate::framing::{Extent, Framing, HeaderField};
+use crate::index::FieldIndex;
+use crate::info::{self, Target, Template};
 use crate::mapping::{self, Entry, Mapping, Table, Values};
 use crate::prelude;
 use crate::registration::Ports;
@@ -577,8 +578,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     let (top, mut plans) = plans(protocol);
     let mut lowering = Lowering {
         plan: Plan::default(),
-        root: &protocol.fields,
-        types: &protocol.types,
+        index: FieldIndex::new(protocol),
         filter_name: &protocol.name,
         enums: &protocol.enums,
         proto_fields: Vec::new(),
@@ -599,7 +599,6 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     for t in &protocol.types {
         let mut slots = Vec::new();
         lowering.plan = plans.remove(&t.name).expect("every Type has a plan");
-        lowering.root = &t.fields;
         lowering.current_type = Some(&t.name);
         let body = lowering.type_structure(&t.fields, &[], &mut slots);
         lowering.slots.insert(&t.name, slots);
@@ -608,7 +607,6 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         types.push(TypeFunction { name: t.name.clone(), body, context: plan.context, locals: plan.locals(), exports });
     }
     lowering.plan = top;
-    lowering.root = &protocol.fields;
     lowering.current_type = None;
     let layout = lowering.structure(&protocol.fields, &[]);
     let locals = lowering.plan.locals();
@@ -679,42 +677,40 @@ impl Plan {
         let mut read = Vec::new();
         let mut context = false;
         references(fields, &mut |reference| match reference {
-            Reference::Field(path) | Reference::Bits { container: path, .. } => read.push(path.clone()),
+            Reference::Field { path, .. } | Reference::Bits { path, .. } => read.push(path.clone()),
             Reference::Context(_) => context = true,
         });
+        let mut uses = Vec::new();
+        type_uses(fields, &[], &mut uses);
         let mut plan = Self { context, ..Self::default() };
         for path in read.iter().chain(&exports) {
-            plan.keep(fields, path, demands);
+            plan.keep(path, &uses, demands);
         }
         plan.exports = exports;
         plan
     }
 
-    /// Gives the value at `path` a local: the Field's own, or the table of the Type it is in.
+    /// Gives the value at `path` a local: the Field's own, or the table of the Field of a Type
+    /// among `uses` the path goes into.
     fn keep(
         &mut self,
-        fields: &[field::Entry],
         path: &[String],
+        uses: &[(Vec<String>, &str)],
         demands: &mut BTreeMap<String, BTreeSet<Vec<String>>>,
     ) {
-        let (depth, field) = find(fields, path).expect("validation resolved the path");
-        match &field.kind {
-            FieldKind::Type { name, .. } => {
-                let prefix = path[..=depth].to_vec();
-                if !self.results.contains_key(&prefix) {
-                    let local = self.local(&prefix);
-                    self.results.insert(prefix, local);
-                }
-                demands.entry(name.clone()).or_default().insert(path[depth + 1..].to_vec());
+        let into = uses.iter().find(|(prefix, _)| prefix.len() < path.len() && path.starts_with(prefix));
+        let Some((prefix, ty)) = into else {
+            if !self.values.contains_key(path) {
+                let local = self.local(path);
+                self.values.insert(path.to_vec(), local);
             }
-            FieldKind::Builtin(_) => {
-                if !self.values.contains_key(path) {
-                    let local = self.local(path);
-                    self.values.insert(path.to_vec(), local);
-                }
-            }
-            FieldKind::Structure(_) | FieldKind::Switch(_) => unreachable!("validation references values only"),
+            return;
+        };
+        if !self.results.contains_key(prefix) {
+            let local = self.local(prefix);
+            self.results.insert(prefix.clone(), local);
         }
+        demands.entry((*ty).to_owned()).or_default().insert(path[prefix.len()..].to_vec());
     }
 
     /// A fresh local for the value at `path`: `v_` then the segments joined by `__`.
@@ -736,18 +732,25 @@ impl Plan {
         self.results.iter().find(|(prefix, _)| path.starts_with(prefix))
     }
 
-    /// How an Expression reads `reference`. A sub-Field is its container's value shifted down and
-    /// masked, which needs the bitwise prelude chunk.
-    fn read(&self, reference: &Reference) -> LuaExpr {
+    /// How an Expression reads `reference`, whose sub-Field `index` holds. A sub-Field is its
+    /// container's value shifted down and masked, which needs the bitwise prelude chunk.
+    fn read(&self, reference: &Reference, index: &FieldIndex<'_>) -> LuaExpr {
         match reference {
             Reference::Context(key) => LuaExpr::Context(key.clone()),
-            Reference::Bits { container, shift, width } => {
-                sub_field_value(self.read(&Reference::Field(container.clone())), *shift, *width)
+            Reference::Bits { path, target } => {
+                let bit = index.sub_field(*target);
+                sub_field_value(self.value(path), bit.shift, bit.width)
             }
-            Reference::Field(path) => match self.result_for(path) {
-                Some((prefix, local)) => LuaExpr::Local { local: local.clone(), keys: path[prefix.len()..].to_vec() },
-                None => LuaExpr::Local { local: self.values[path].clone(), keys: Vec::new() },
-            },
+            Reference::Field { path, .. } => self.value(path),
+        }
+    }
+
+    /// The value of the Field at `path`: its own local, or its key in the table of the Type it
+    /// is in.
+    fn value(&self, path: &[String]) -> LuaExpr {
+        match self.result_for(path) {
+            Some((prefix, local)) => LuaExpr::Local { local: local.clone(), keys: path[prefix.len()..].to_vec() },
+            None => LuaExpr::Local { local: self.values[path].clone(), keys: Vec::new() },
         }
     }
 
@@ -772,27 +775,26 @@ impl Plan {
     }
 }
 
-/// The Field `path` leads to from `fields`, with its index on the path: the Field at the end
-/// of the path, or the Field of a Type the path goes into. Inside a `switch` Field the path goes
-/// on in the case that has the rest of it: cases reaching one path share its `ProtoField`, so
-/// they have the same kind of Field there (spec §3.9).
-fn find<'f>(fields: &'f [field::Entry], path: &[String]) -> Option<(usize, &'f Field)> {
-    fn from<'f>(fields: &'f [field::Entry], path: &[String], depth: usize) -> Option<(usize, &'f Field)> {
-        let field = fields.iter().filter_map(field::Entry::field).find(|f| f.name == path[depth])?;
-        if depth + 1 == path.len() {
-            return Some((depth, field));
-        }
+/// Adds to `uses` the Fields of Types among `entries`, at `parent`, with the Type of each, by
+/// their path from the dissect function's root. Inline structures add a segment, `switch` cases
+/// none: cases reaching one path share its `ProtoField`, so they have the same kind of Field
+/// there (spec §3.9). The bodies of Types are left out: their own functions read them.
+fn type_uses<'f>(entries: &'f [field::Entry], parent: &[String], uses: &mut Vec<(Vec<String>, &'f str)>) {
+    for field in entries.iter().filter_map(field::Entry::field) {
+        let path = [parent, std::slice::from_ref(&field.name)].concat();
         match &field.kind {
-            FieldKind::Type { .. } => Some((depth, field)),
-            FieldKind::Builtin(_) => None,
-            FieldKind::Structure(children) => from(children, path, depth + 1),
-            FieldKind::Switch(switch) => switch.bodies().find_map(|body| match body {
-                Body::Fields(children) => from(children, path, depth + 1),
-                Body::Type { .. } => None,
-            }),
+            FieldKind::Type { name, .. } => uses.push((path, name)),
+            FieldKind::Structure(children) => type_uses(children, &path, uses),
+            FieldKind::Switch(switch) => {
+                for body in switch.bodies() {
+                    if let Body::Fields(children) = body {
+                        type_uses(children, &path, uses);
+                    }
+                }
+            }
+            FieldKind::Builtin(_) => {}
         }
     }
-    from(fields, path, 0)
 }
 
 /// Calls `f` with every reference the Expressions of `entries` and the context tables of their
@@ -860,9 +862,8 @@ enum SlotKind<'p> {
 struct Lowering<'p> {
     /// The plan of the dissect function being lowered.
     plan: Plan,
-    /// The Fields of the dissect function being lowered: the top-level layout or a Type body.
-    root: &'p [field::Entry],
-    types: &'p [NamedType],
+    /// The Fields and sub-Fields resolved references name.
+    index: FieldIndex<'p>,
     /// The protocol's filter name, the first segment of every `ProtoField`'s.
     filter_name: &'p str,
     enums: &'p BTreeMap<String, Table>,
@@ -903,24 +904,29 @@ impl<'p> Lowering<'p> {
         for part in parts {
             lowered.push(match part {
                 info::Part::Text(text) => InfoPart::Text(text.clone()),
-                info::Part::Field(path) => self.info_field(protocol, path),
+                info::Part::Field { path, target } => self.info_field(path, target),
             });
         }
         Some(Info::Template(lowered))
     }
 
     /// How the Info column shows the Field at `path` from the top level, which validation
-    /// resolved: a `switch` Field by its subject value label, a Field with `values:` by the label of its
-    /// value or the number, any other by Wireshark's display of its value.
-    fn info_field(&mut self, protocol: &'p Protocol, path: &[String]) -> InfoPart {
-        let target = info::find(&protocol.fields, &protocol.types, path).expect("validation resolved the path");
+    /// resolved to `target`: a `switch` Field by its subject value label, a Field with `values:`
+    /// by the label of its value or the number, any other by Wireshark's display of its value.
+    fn info_field(&mut self, path: &[String], target: &'p Target) -> InfoPart {
         let (mapping, range) = match target {
-            info::Target::Switch { ty, path: at } => {
-                self.keep_case(SwitchSite { ty, path: at });
+            Target::Switch { ty, path: at } => {
+                self.keep_case(SwitchSite { ty: ty.as_deref(), path: at.clone() });
                 return InfoPart::Case(path.join("."));
             }
-            info::Target::Value(value) => (value.mapping.as_ref(), value.ty.int_range()),
-            info::Target::SubField(bit) => (bit.mapping.as_ref(), Some(0..=(1_i128 << bit.width) - 1)),
+            Target::Value(id) => {
+                let value = builtin(self.index.field(*id));
+                (value.mapping.as_ref(), value.ty.int_range())
+            }
+            Target::SubField(id) => {
+                let bit = self.index.sub_field(*id);
+                (bit.mapping.as_ref(), Some(0..=(1_i128 << bit.width) - 1))
+            }
         };
         let extractor = self.extractor(path);
         if let Some((mapping @ Mapping::Values(_), range)) = mapping.zip(range) {
@@ -1071,14 +1077,13 @@ impl<'p> Lowering<'p> {
         let Operand::Expression { expr, references } = subject else { return None };
         let ExprKind::Path(path) = &expr.kind else { return None };
         let (mapping, range) = match &references[path] {
-            Reference::Field(path) => {
-                let value = self.builtin_at(self.root, path)?;
+            Reference::Field { target, .. } => {
+                let value = builtin(self.index.field(*target));
                 (value.mapping.as_ref()?, value.ty.int_range()?)
             }
-            Reference::Bits { container, shift, width } => {
-                let value = self.builtin_at(self.root, container)?;
-                let bit = value.bits.iter().find(|b| b.shift == *shift && b.width == *width)?;
-                (bit.mapping.as_ref()?, 0..=(1_i128 << width) - 1)
+            Reference::Bits { target, .. } => {
+                let bit = self.index.sub_field(*target);
+                (bit.mapping.as_ref()?, 0..=(1_i128 << bit.width) - 1)
             }
             Reference::Context(_) => return None,
         };
@@ -1106,19 +1111,6 @@ impl<'p> Lowering<'p> {
             self.names.push(NamesTable { local, entries });
             self.names.len() - 1
         }))
-    }
-
-    /// The Field of a built-in type at `path` from `fields`, going into the Types on the way.
-    fn builtin_at(&self, fields: &'p [field::Entry], path: &[String]) -> Option<&'p BuiltinField> {
-        let (depth, field) = find(fields, path)?;
-        match &field.kind {
-            FieldKind::Builtin(value) if depth + 1 == path.len() => Some(value),
-            FieldKind::Type { name, .. } => {
-                let ty = self.types.iter().find(|t| t.name == *name)?;
-                self.builtin_at(&ty.fields, &path[depth + 1..])
-            }
-            _ => None,
-        }
     }
 
     /// The statement of `field`, at `segments`, given the statement `stmt` reading it, array and
@@ -1251,13 +1243,9 @@ impl<'p> Lowering<'p> {
         self.use_chunk(prelude::INVALID);
         let mut plan = Plan::default();
         let mut reads = Vec::new();
-        for (name, &Extent { offset, size }) in &framing.reads {
+        for (name, &HeaderField { target, extent: Extent { offset, size } }) in &framing.reads {
             let local = format!("v_{name}");
-            let field = self.root.iter().filter_map(field::Entry::field).find(|f| &f.name == name);
-            let Some(FieldKind::Builtin(builtin)) = field.map(|f| &f.kind) else {
-                unreachable!("validation reads only Fields of built-in types in the header")
-            };
-            let read = value_read(builtin);
+            let read = value_read(builtin(self.index.field(target)));
             if read == ValueRead::Bool {
                 self.use_chunk(prelude::LOGIC);
             }
@@ -1280,7 +1268,7 @@ impl<'p> Lowering<'p> {
         if matches!(reference, Reference::Bits { .. }) {
             self.use_chunk(prelude::BITWISE);
         }
-        self.plan.read(reference)
+        self.plan.read(reference, &self.index)
     }
 
     /// The statement reading a Field of a built-in type through `field`, at `segments`, hidden or
@@ -1517,6 +1505,17 @@ fn outermost_switch<'p>(fields: &'p [field::Entry], types: &'p [NamedType]) -> O
         level = next;
     }
     None
+}
+
+/// The value of `field`, a Field of a built-in type: the only kind a resolved reference or an
+/// Info Template part ends on, short of a `switch` Field.
+fn builtin(field: &Field) -> &BuiltinField {
+    match &field.kind {
+        FieldKind::Builtin(value) => value,
+        FieldKind::Structure(_) | FieldKind::Type { .. } | FieldKind::Switch(_) => {
+            unreachable!("a resolved reference reads a Field of a built-in type")
+        }
+    }
 }
 
 /// A path as the plans key it.
