@@ -1,0 +1,5 @@
+error invalid-bit-width 6:30-6:31
+warning unreachable-value 7:51-7:52
+error mismatched-bit-widths 11:5-11:9
+warning unreachable-expect 12:41-12:42
+error incompatible-display 13:31-13:35

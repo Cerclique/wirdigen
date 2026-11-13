@@ -107,22 +107,78 @@ impl RawBits {
             return Lookup::Missing;
         };
         match container {
-            Builtin::Int { signed: false, bytes } if self.shifts(bytes).is_some() => Lookup::Found(sub.id),
+            Builtin::Int { signed: false, bytes } if self.layout(bytes).is_ok() => Lookup::Found(sub.id),
             _ => Lookup::Invalid,
         }
     }
 
-    /// The shift and width of each entry in a container of `bytes` bytes, or `None` when a width
-    /// is below 1 or the widths do not add up to the container.
-    fn shifts(&self, bytes: usize) -> Option<Vec<(u32, u32)>> {
-        let mut position = u32::try_from(8 * bytes).ok()?;
-        let mut shifts = Vec::new();
-        for entry in &self.entries {
-            let width = u32::try_from(entry.width().value).ok().filter(|w| *w >= 1)?;
-            position = position.checked_sub(width)?;
-            shifts.push((position, width));
+    /// Where each entry lies in a container of `bytes` bytes: its shift and width, in order. The
+    /// error says why there is no layout: a width below 1, or widths that do not add up.
+    fn layout(&self, bytes: usize) -> Result<Vec<Place>, LayoutError<'_>> {
+        let mut invalid = self.entries.iter().map(RawBit::width).filter(|w| w.value < 1);
+        if let Some(first) = invalid.next() {
+            return Err(LayoutError::InvalidWidths(first, invalid.collect()));
         }
-        (position == 0).then_some(shifts)
+        let mismatched = || {
+            let sum = self.entries.iter().map(|e| i128::from(e.width().value)).sum();
+            LayoutError::MismatchedWidths { sum }
+        };
+        let mut position = u32::try_from(8 * bytes).map_err(|_| mismatched())?;
+        let mut layout = Vec::with_capacity(self.entries.len());
+        for entry in &self.entries {
+            let width = u32::try_from(entry.width().value).map_err(|_| mismatched())?;
+            position = position.checked_sub(width).ok_or_else(mismatched)?;
+            layout.push(Place { shift: position, width });
+        }
+        if position != 0 {
+            return Err(mismatched());
+        }
+        Ok(layout)
+    }
+}
+
+/// Where an entry of a bitfield lies in its container.
+#[derive(Debug, Clone, Copy)]
+struct Place {
+    /// The bits below it.
+    shift: u32,
+    /// Its number of bits, at least 1.
+    width: u32,
+}
+
+/// Why a bitfield has no layout.
+enum LayoutError<'a> {
+    /// These widths are below 1: the first, then the rest, in order.
+    InvalidWidths(&'a Spanned<i64>, Vec<&'a Spanned<i64>>),
+    /// The widths, each at least 1, add up to `sum` bits rather than the container's.
+    MismatchedWidths { sum: i128 },
+}
+
+impl LayoutError<'_> {
+    /// The errors explaining it, at least one, for the bitfield `raw` of the unsigned integer
+    /// type `ty`, `bytes` bytes wide.
+    fn diagnostics(self, raw: &RawBits, ty: &Spanned<String>, bytes: usize) -> Vec<Diagnostic> {
+        match self {
+            Self::InvalidWidths(first, rest) => std::iter::once(first)
+                .chain(rest)
+                .map(|width| {
+                    Diagnostic::new(
+                        Name::InvalidBitWidth,
+                        width.span.clone(),
+                        format!("a width is at least 1 bit, found `{}`", width.value),
+                    )
+                    .with_note("remove an entry that takes no bits", None)
+                })
+                .collect(),
+            Self::MismatchedWidths { sum } => vec![
+                Diagnostic::new(
+                    Name::MismatchedBitWidths,
+                    raw.key.clone(),
+                    format!("these widths add up to {sum} bits, but `{}` has {}", ty.value, 8 * bytes),
+                )
+                .with_note("name every bit, or cover the gaps with `{ padding: <bits> }` entries", None),
+            ],
+        }
     }
 }
 
@@ -250,42 +306,20 @@ pub(crate) fn check(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Vec<Bit>> {
     let start = diagnostics.len();
-    let mut widths_valid = true;
-    for entry in &raw.entries {
-        let width = entry.width();
-        if width.value < 1 {
-            widths_valid = false;
-            diagnostics.push(
-                Diagnostic::new(
-                    Name::InvalidBitWidth,
-                    width.span.clone(),
-                    format!("a width is at least 1 bit, found `{}`", width.value),
-                )
-                .with_note("remove an entry that takes no bits", None),
-            );
+    // With no layout, the errors saying why are pushed here, first.
+    let layout = match raw.layout(bytes) {
+        Ok(layout) => Some(layout),
+        Err(error) => {
+            diagnostics.extend(error.diagnostics(raw, ty, bytes));
+            None
         }
-    }
-    let total = 8 * bytes;
-    if widths_valid && raw.shifts(bytes).is_none() {
-        let sum: i128 = raw.entries.iter().map(|e| i128::from(e.width().value)).sum();
-        diagnostics.push(
-            Diagnostic::new(
-                Name::MismatchedBitWidths,
-                raw.key.clone(),
-                format!("these widths add up to {sum} bits, but `{}` has {total}", ty.value),
-            )
-            .with_note("name every bit, or cover the gaps with `{ padding: <bits> }` entries", None),
-        );
-    }
+    };
 
     let container = Builtin::Int { signed: false, bytes };
     let subs: Vec<&RawSubField> = raw.sub_fields().collect();
-    // Where each sub-Field lies, when the widths add up.
-    let located: Option<Vec<(u32, u32)>> = raw.shifts(bytes).map(|shifts| {
-        let located = raw.entries.iter().zip(shifts).filter(|(e, _)| matches!(e, RawBit::SubField(_)));
-        located.map(|(_, at)| at).collect()
-    });
-    let mut bits = Vec::new();
+    // Each sub-Field's kind and expected values, checked against its own width so that they are
+    // reported even when the bitfield has no layout.
+    let mut checked = Vec::new();
     for (index, sub) in subs.iter().enumerate() {
         field::check_name(&sub.name, subs[..index].iter().map(|s| &s.name), diagnostics);
         // A sub-Field naming an Enum uses it, whatever else is wrong with it (spec §3.4.7).
@@ -316,21 +350,29 @@ pub(crate) fn check(
             sub.expect.as_ref().map(|raw| expect::check(raw, &subject, diagnostics))
         });
         field::check_text(sub.label.as_ref(), sub.description.as_ref(), diagnostics);
-        let at = located.as_ref().and_then(|located| located.get(index));
-        bits.push(kind.zip(expect).zip(at).map(|((kind, expect), &(shift, width))| Bit {
-            id: sub.id,
-            name: sub.name.value.clone(),
-            label: sub.label.as_ref().map(|l| l.value.clone()),
-            description: sub.description.as_ref().map(|d| d.value.clone()),
-            hidden: sub.hidden.as_ref().is_some_and(|h| h.value),
-            shift,
-            width,
-            kind,
-            expect,
-        }));
+        checked.push(kind.zip(expect));
     }
+    let layout = layout?;
     if diagnostics[start..].iter().any(|d| d.severity() == Severity::Error) {
         return None;
     }
-    bits.into_iter().collect()
+    let places = raw.entries.iter().zip(layout).filter(|(e, _)| matches!(e, RawBit::SubField(_))).map(|(_, at)| at);
+    subs.iter()
+        .zip(checked)
+        .zip(places)
+        .map(|((sub, checked), place)| {
+            let (kind, expect) = checked?;
+            Some(Bit {
+                id: sub.id,
+                name: sub.name.value.clone(),
+                label: sub.label.as_ref().map(|l| l.value.clone()),
+                description: sub.description.as_ref().map(|d| d.value.clone()),
+                hidden: sub.hidden.as_ref().is_some_and(|h| h.value),
+                shift: place.shift,
+                width: place.width,
+                kind,
+                expect,
+            })
+        })
+        .collect()
 }
