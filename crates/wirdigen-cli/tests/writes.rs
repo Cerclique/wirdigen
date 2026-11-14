@@ -32,6 +32,13 @@ fn generate_minimal(work: &TempDir) {
     wirdigen().args(["generate", "minimal.wirdigen.yaml"]).current_dir(work.path()).assert().success();
 }
 
+/// The Dissector `generate -o -` prints for `minimal.wirdigen.yaml`.
+fn minimal_dissector(work: &TempDir) -> Vec<u8> {
+    let printed =
+        wirdigen().args(["generate", "minimal.wirdigen.yaml", "-o", "-"]).current_dir(work.path()).assert().success();
+    printed.get_output().stdout.clone()
+}
+
 fn mtime(path: &Path) -> SystemTime {
     fs::metadata(path).and_then(|m| m.modified()).expect("the file exists and the platform records mtimes")
 }
@@ -55,9 +62,7 @@ fn a_different_dissector_is_replaced() {
 
     generate_minimal(&work);
 
-    let printed =
-        wirdigen().args(["generate", "minimal.wirdigen.yaml", "-o", "-"]).current_dir(work.path()).assert().success();
-    assert_eq!(fs::read(&output).unwrap(), printed.get_output().stdout);
+    assert_eq!(fs::read(&output).unwrap(), minimal_dissector(&work));
     let mut left: Vec<_> = fs::read_dir(work.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
     left.sort();
     assert_eq!(left, ["minimal.lua", "minimal.wirdigen.yaml"], "no temporary file is left behind");
@@ -100,6 +105,58 @@ fn a_symlinked_dissector_is_replaced_through_its_link() {
 
     assert!(output.is_symlink(), "the link stays in place");
     assert_ne!(fs::read(&target).unwrap(), b"-- stale\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dangling_symlink_gets_its_target_created() {
+    let (work, output) = work_dir();
+    fs::create_dir(work.path().join("sub")).unwrap();
+    let link = work.path().join("sub/out.lua");
+    std::os::unix::fs::symlink("../gen/target.lua", &link).unwrap();
+
+    wirdigen()
+        .args(["generate", "-o", "sub/out.lua", "minimal.wirdigen.yaml"])
+        .current_dir(work.path())
+        .assert()
+        .success();
+
+    assert!(link.is_symlink(), "the link stays in place");
+    assert_eq!(fs::read(work.path().join("gen/target.lua")).unwrap(), minimal_dissector(&work));
+    assert!(!output.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chain_of_symlinks_is_followed_to_its_missing_end() {
+    let (work, output) = work_dir();
+    let middle = work.path().join("middle.lua");
+    let end = work.path().join("end.lua");
+    std::os::unix::fs::symlink("middle.lua", &output).unwrap();
+    std::os::unix::fs::symlink(&end, &middle).unwrap();
+
+    generate_minimal(&work);
+
+    assert!(output.is_symlink() && middle.is_symlink(), "both links stay in place");
+    assert_eq!(fs::read(&end).unwrap(), minimal_dissector(&work));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_loop_cannot_be_written() {
+    let (work, output) = work_dir();
+    std::os::unix::fs::symlink("other.lua", &output).unwrap();
+    std::os::unix::fs::symlink("minimal.lua", work.path().join("other.lua")).unwrap();
+
+    let failed = wirdigen()
+        .args(["generate", "minimal.wirdigen.yaml"])
+        .current_dir(work.path())
+        .timeout(Duration::from_secs(10))
+        .assert()
+        .code(1);
+
+    let stderr = String::from_utf8_lossy(&failed.get_output().stderr);
+    assert!(stderr.contains("cannot write `minimal.lua`"), "{stderr}");
 }
 
 #[test]
