@@ -65,8 +65,13 @@ profile:
 		echo "make profile needs kernel.perf_event_paranoid at 1 or less, it is $$(cat /proc/sys/kernel/perf_event_paranoid). Lower it until the next reboot with:"; \
 		echo "  sudo sysctl kernel.perf_event_paranoid=1"; exit 1; fi
 	@$(MAKE) --no-print-directory profiling-build
+	@# samply exits 0 whatever the command does: a first run stops on errors, and warms the cache.
+	@$(PROFILE_RUN)
 	@out=$(PROFILE_DIR)/cpu-$$(date +%Y%m%d-%H%M%S).json.gz && \
-		samply record --save-only -o "$$out" -- $(PROFILE_RUN) && \
+		{ samply record --save-only -o "$$out" -- $(PROFILE_RUN) || { \
+			echo "If samply says \"mmap failed\", perf may lock too little memory for one buffer per CPU."; \
+			echo "Raise the limit until the next reboot with:"; \
+			echo "  sudo sysctl kernel.perf_event_mlock_kb=2048"; exit 1; }; } && \
 		if [ -n "$(NO_OPEN)" ]; then echo "Saved $$out. Open it with:"; echo "  samply load $$out"; \
 		else samply load "$$out"; fi
 
