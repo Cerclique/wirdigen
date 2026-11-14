@@ -28,6 +28,10 @@ _Avoid_: Optional field, guarded field
 A Conditional Field or a Case: the Fields inside it have a value only when it was read, so only Expressions inside it can read them.
 _Avoid_: Conditional block, branch
 
+**Depth**:
+How many Fields enclose a Field in the tree, through every Type it is reached by; a Case adds none. A top-level Field has depth 0. It is the number of names in its Filter Name, less the protocol's and its own.
+_Avoid_: Nesting level, level
+
 **Diagnostic**:
 An error or a warning that Wirdigen reports about a Protocol Description, identified by a stable name and pointing at where in the description it applies. An error stops generation; a warning does not.
 _Avoid_: Lint, issue, validation message

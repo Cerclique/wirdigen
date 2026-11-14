@@ -57,7 +57,8 @@ The flow is: **Source** (description text plus a name) → `validate` → **Vali
 - There is one syntax: a **strict subset of YAML 1.2**, read by a YAML 1.2 parser that reports positions (so `no` and `on` stay strings):
   - one Protocol Description per file, no multi-document streams;
   - no custom tags, no merge keys (`<<:`), no anchors or aliases;
-  - unknown keys and duplicate keys are errors with line and column.
+  - unknown keys and duplicate keys are errors with line and column;
+  - YAML nests at most 256 levels; a deeper node is `yaml-too-deep`, at the node that reaches level 257 ([ADR 0020](adr/0020-field-depth-limit.md)).
 - Expressions are YAML strings parsed by Wirdigen's own mini-language (§4).
 - By convention a file is named `<protocol>.wirdigen.yaml`. Nothing enforces it.
 - Keys that take only a constant accept a YAML integer. Any other numeric value is a YAML string holding an Expression. A YAML float or bool where an integer is required is an error.
@@ -135,6 +136,7 @@ fields:
 - A structure is an ordered sequence of Fields read one after another (sequential layout, no absolute offsets). The top-level `fields:`, a Type's body, a Field's inline `fields:` and an inline `switch` case are all structures, spelled the same way.
 - A structure is an **ordered YAML list of maps**, each with a required `name:`. The only entries without a name are `{ padding: … }` (§3.10).
 - Sibling Field names must be unique (error).
+- A Field is at most 64 deep: at most 64 Fields enclose it, counted through every Type it is reached by, a `switch` case adding none, so at most 64 names lie between the protocol's and its own in its filter name (§5.2). A deeper Field is `field-too-deep`, reported once where it is written at each Field that is the first past 64 on its path, naming the filter name that reaches it ([ADR 0020](adr/0020-field-depth-limit.md)).
 
 #### 3.4.2 Names
 
@@ -516,7 +518,7 @@ Errors:
 - `overlapping-values`, `conflicting-mappings`, `unknown-enum` (§3.4.7);
 - `mismatched-bit-widths`: bitfield widths not adding up to the container; `invalid-bit-width`: a width below 1;
 - `forward-reference`: a reference to a Field read later or to itself; `unknown-field`: a reference that resolves to no Field, or that goes into an array from outside its elements; `non-numeric-reference`: a reference to a Field that is not an integer, a bitfield sub-Field or a `bool`; `conditional-reference`: a Field under `if:` or inside a case, or a Field inside one, used outside its conditional scope (§4.3);
-- duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`;
+- duplicate sibling Field names; duplicate or unknown Type names; `recursive-type`; `field-too-deep`: a Field more than 64 deep (§3.4.1);
 - `overlapping-cases`: overlapping `switch` cases (§3.9);
 - mutually exclusive keys together (`size`/`prefix`/`terminator`: `conflicting-length`; `count`/`repeat`: `conflicting-repeat`);
 - `invalid-size`, `invalid-prefix`, `invalid-terminator` (§3.6); `invalid-count`, `invalid-repeat`, `invalid-array` (§3.7); `invalid-padding`, `invalid-dissector` (§3.10); `invalid-info` (§3.14);
@@ -525,7 +527,7 @@ Errors:
 - `invalid-port`, `overlapping-ports`: invalid ports and port ranges (§3.12);
 - `invalid-protocol-name`, `invalid-protocol-title`;
 - `conflicting-filter-name`: two Fields reaching one filter name whose ProtoFields do not match (§3.4.9, §3.9);
-- unknown or duplicate keys, and the YAML subset violations of §3.1.
+- unknown or duplicate keys, and the YAML subset violations of §3.1, `yaml-too-deep` included.
 
 Warnings:
 

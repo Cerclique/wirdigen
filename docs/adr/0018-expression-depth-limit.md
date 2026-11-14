@@ -17,7 +17,7 @@ At 64, an Expression loads under 20 nested Structures. Since ADR 0019, a dissect
 - Raising the limit later is a minor change. Lowering it rejects descriptions that used to be accepted, which is a major change (ADR 0008).
 - Every pass after the parser can stay recursive, because no Expression it receives is deeper than 64.
 - Lua's limits on locals, upvalues and registers were a separate constraint on how large a description could be (#199). ADR 0019 removes it.
-- The Type dependency walk and the walk of the names a Type reads are made iterative. This does not make long chains of Types safe: other passes still recurse once per Type, which is left to #207. The site tables no longer nest in the generated Lua (ADR 0019), so a chain of 500 Types loads.
+- The Type dependency walk and the walk of the names a Type reads are made iterative. This does not make long chains of Types safe: other passes still recurse once per Type. The site tables no longer nest in the generated Lua (ADR 0019), and ADR 0020 limits Fields to depth 64 so those passes can stay recursive too.
 
 ## Considered Options
 
