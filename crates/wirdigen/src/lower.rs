@@ -615,7 +615,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         sites_declared: Declared::default(),
         case_sites: BTreeMap::new(),
         current_type: None,
-        info_cases: BTreeSet::new(),
+        info_cases: BTreeMap::new(),
         extractors: Vec::new(),
         extractors_declared: Declared::default(),
     };
@@ -664,25 +664,26 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
 
 /// What one dissect function keeps in its values table, and for a Type, takes and returns
 /// (spec §7.3).
+/// Paths borrow the Protocol's names, so lowering looks one up by its `&[&str]` without allocating.
 #[derive(Debug, Default)]
-struct Plan {
+struct Plan<'p> {
     /// The keys of values Expressions read, by the path of the Field from the function's root.
-    values: BTreeMap<Vec<String>, String>,
+    values: BTreeMap<Vec<&'p str>, String>,
     /// The keys of the tables Types return, by the path of the Field of the Type.
-    results: BTreeMap<Vec<String>, String>,
+    results: BTreeMap<Vec<&'p str>, String>,
     /// For a Type: the paths inside it its callers read, which it returns.
-    exports: BTreeSet<Vec<String>>,
+    exports: BTreeSet<Vec<&'p str>>,
     /// For a Type: whether it reads its context table.
     context: bool,
 }
 
 /// The paths callers read inside each Type, which it returns.
-type Demands = BTreeMap<TypeId, BTreeSet<Vec<String>>>;
+type Demands<'p> = BTreeMap<TypeId, BTreeSet<Vec<&'p str>>>;
 
 /// The plan of the top-level layout, and each Type with its plan, in dependency order. A
 /// caller's Expressions decide what a Type returns, so callers are planned first: the layout,
 /// then the Types from the last one, which no other Type uses.
-fn plans(protocol: &Protocol) -> (Plan, Vec<(&NamedType, Plan)>) {
+fn plans(protocol: &Protocol) -> (Plan<'_>, Vec<(&NamedType, Plan<'_>)>) {
     let mut demands = Demands::new();
     let top = Plan::new(&protocol.fields, BTreeSet::new(), &mut demands);
     let mut plans: Vec<(&NamedType, Plan)> = protocol
@@ -695,18 +696,20 @@ fn plans(protocol: &Protocol) -> (Plan, Vec<(&NamedType, Plan)>) {
     (top, plans)
 }
 
-impl Plan {
+impl<'p> Plan<'p> {
     /// The plan of a function reading `fields` that returns `exports`, adding to `demands` the
     /// paths it reads inside each Type.
-    fn new(fields: &[field::Entry], exports: BTreeSet<Vec<String>>, demands: &mut Demands) -> Self {
+    fn new(fields: &'p [field::Entry], exports: BTreeSet<Vec<&'p str>>, demands: &mut Demands<'p>) -> Self {
         let mut read = Vec::new();
         let mut context = false;
         references(fields, &mut |reference| match reference {
-            Reference::Field { path, .. } | Reference::Bits { path, .. } => read.push(path.clone()),
+            Reference::Field { path, .. } | Reference::Bits { path, .. } => {
+                read.push(path.iter().map(String::as_str).collect::<Vec<_>>());
+            }
             Reference::Context(_) => context = true,
         });
         let mut uses = Vec::new();
-        type_uses(fields, &[], &mut uses);
+        type_uses(fields, &mut Vec::new(), &mut uses);
         let mut plan = Self { context, ..Self::default() };
         for path in read.iter().chain(&exports) {
             plan.keep(path, &uses, demands);
@@ -717,7 +720,7 @@ impl Plan {
 
     /// Gives the value at `path` a key: the Field's own, or the table of the Field of a Type
     /// among `uses` the path goes into.
-    fn keep(&mut self, path: &[String], uses: &[(Vec<String>, TypeId)], demands: &mut Demands) {
+    fn keep(&mut self, path: &[&'p str], uses: &[(Vec<&'p str>, TypeId)], demands: &mut Demands<'p>) {
         let into = uses.iter().find(|(prefix, _)| prefix.len() < path.len() && path.starts_with(prefix));
         let Some((prefix, ty)) = into else {
             if !self.values.contains_key(path) {
@@ -734,19 +737,19 @@ impl Plan {
     }
 
     /// A fresh key for the value at `path`: the segments joined by `__`.
-    fn key(&self, path: &[String]) -> String {
-        unique(&path.join("__"), |name| self.values.values().chain(self.results.values()).any(|l| l == name))
+    fn key(&self, path: &[&str]) -> String {
+        unique(mangle("", path), |name| self.values.values().chain(self.results.values()).any(|l| l == name))
     }
 
     /// Every key, in path order.
     fn keys(&self) -> Vec<String> {
-        let mut all: Vec<(&Vec<String>, &String)> = self.values.iter().chain(&self.results).collect();
+        let mut all: Vec<(&Vec<&str>, &String)> = self.values.iter().chain(&self.results).collect();
         all.sort();
         all.into_iter().map(|(_, key)| key.clone()).collect()
     }
 
     /// The Field of a Type on `path` whose returned table holds the value, with its key.
-    fn result_for(&self, path: &[String]) -> Option<(&Vec<String>, &String)> {
+    fn result_for(&self, path: &[&str]) -> Option<(&Vec<&'p str>, &String)> {
         self.results.iter().find(|(prefix, _)| path.starts_with(prefix))
     }
 
@@ -766,9 +769,10 @@ impl Plan {
     /// The value of the Field at `path`: its own key, or its key in the table of the Type it
     /// is in.
     fn value(&self, path: &[String]) -> LuaExpr {
-        match self.result_for(path) {
+        let segments: Vec<&str> = path.iter().map(String::as_str).collect();
+        match self.result_for(&segments) {
             Some((prefix, key)) => LuaExpr::Value { key: key.clone(), keys: path[prefix.len()..].to_vec() },
-            None => LuaExpr::Value { key: self.values[path].clone(), keys: Vec::new() },
+            None => LuaExpr::Value { key: self.values[segments.as_slice()].clone(), keys: Vec::new() },
         }
     }
 
@@ -783,41 +787,43 @@ impl Plan {
             let (last, parents) = keys.split_last().expect("an export has a path");
             let mut entries = &mut table;
             for key in parents {
-                let entry = entries.entry(key.clone()).or_insert_with(|| Export::Table(BTreeMap::new()));
+                let entry = entries.entry((*key).to_owned()).or_insert_with(|| Export::Table(BTreeMap::new()));
                 let Export::Table(inner) = entry else { unreachable!("a structure is not a value") };
                 entries = inner;
             }
-            entries.insert(last.clone(), Export::Value(key.clone()));
+            entries.insert((*last).to_owned(), Export::Value(key.clone()));
         }
         table
     }
 }
 
-/// Adds to `uses` the Fields of Types among `entries`, at `parent`, with the Type of each, by
-/// their path from the dissect function's root. Inline structures add a segment, `switch` cases
-/// none: cases reaching one path share its `ProtoField`, so they have the same kind of Field
-/// there (spec §3.9). The bodies of Types are left out: their own functions read them.
-fn type_uses(entries: &[field::Entry], parent: &[String], uses: &mut Vec<(Vec<String>, TypeId)>) {
+/// Adds to `uses` the Fields of Types among `entries`, whose parent is at `path`, with the Type
+/// of each, by their path from the dissect function's root. Inline structures add a segment,
+/// `switch` cases none: cases reaching one path share its `ProtoField`, so they have the same
+/// kind of Field there (spec §3.9). The bodies of Types are left out: their own functions read
+/// them. Each Field's name is pushed on `path` while it is walked.
+fn type_uses<'p>(entries: &'p [field::Entry], path: &mut Vec<&'p str>, uses: &mut Vec<(Vec<&'p str>, TypeId)>) {
     for field in entries.iter().filter_map(field::Entry::field) {
-        let path = [parent, std::slice::from_ref(&field.name)].concat();
+        path.push(&field.name);
         match &field.kind {
-            FieldKind::Type(TypeUse { id, .. }) => uses.push((path, *id)),
-            FieldKind::Structure(children) => type_uses(children, &path, uses),
+            FieldKind::Type(TypeUse { id, .. }) => uses.push((path.clone(), *id)),
+            FieldKind::Structure(children) => type_uses(children, path, uses),
             FieldKind::Switch(switch) => {
                 for body in switch.bodies() {
                     if let Body::Fields(children) = body {
-                        type_uses(children, &path, uses);
+                        type_uses(children, path, uses);
                     }
                 }
             }
             FieldKind::Builtin(_) => {}
         }
+        path.pop();
     }
 }
 
 /// Calls `f` with every reference the Expressions of `entries` and the context tables of their
 /// uses of Types make, inline structures and `switch` cases included.
-fn references(entries: &[field::Entry], f: &mut impl FnMut(&Reference)) {
+fn references<'p>(entries: &'p [field::Entry], f: &mut impl FnMut(&'p Reference)) {
     for entry in entries {
         let field = match entry {
             field::Entry::Field(field) => field,
@@ -879,7 +885,7 @@ enum SlotKind<'p> {
 /// What lowering has built so far, while it walks the layout.
 struct Lowering<'p> {
     /// The plan of the dissect function being lowered.
-    plan: Plan,
+    plan: Plan<'p>,
     /// The Fields and sub-Fields resolved references name.
     index: FieldIndex<'p>,
     /// The protocol's filter name, the first segment of every `ProtoField`'s.
@@ -897,11 +903,12 @@ struct Lowering<'p> {
     sites_declared: Declared,
     /// The site table of each case outside any Type using a Type, by the path of its `switch`
     /// Field and the Type's name: one serves every case using that Type.
-    case_sites: BTreeMap<(Vec<String>, String), usize>,
+    case_sites: BTreeMap<Vec<&'p str>, BTreeMap<&'p str, usize>>,
     /// The Type whose dissect function is being lowered, `None` for the top-level layout.
     current_type: Option<TypeId>,
-    /// The `switch` Fields whose subject value label the Info column shows.
-    info_cases: BTreeSet<SwitchSite>,
+    /// The `switch` Fields whose subject value label the Info column shows, by where they are
+    /// lowered.
+    info_cases: BTreeMap<Option<TypeId>, BTreeSet<Vec<&'p str>>>,
     /// The field extractors of the Fields the Info column shows, each once.
     extractors: Vec<Extractor>,
     /// What [`Self::extractors`] declares, to find one by filter name and keep keys unique.
@@ -929,7 +936,7 @@ impl Declared {
     }
 
     /// Takes a fresh key from `base`, as [`unique`] picks it.
-    fn key(&mut self, base: &str) -> String {
+    fn key(&mut self, base: String) -> String {
         let key = unique(base, |name| self.keys.contains(name));
         self.keys.insert(key.clone());
         key
@@ -940,9 +947,9 @@ impl Declared {
 /// reads it, `None` for the top-level layout, and its path from that Type's body or the top
 /// level. The emitter keeps its subject value label under its whole path (spec §3.14).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct SwitchSite {
+struct SwitchSite<'p> {
     ty: Option<TypeId>,
-    path: Vec<String>,
+    path: Vec<&'p str>,
 }
 
 impl<'p> Lowering<'p> {
@@ -970,7 +977,7 @@ impl<'p> Lowering<'p> {
     fn info_field(&mut self, path: &[String], target: &'p Target) -> InfoPart {
         let table = match target {
             Target::Switch { ty, path: at } => {
-                self.keep_case(SwitchSite { ty: *ty, path: at.clone() });
+                self.keep_case(SwitchSite { ty: *ty, path: at.iter().map(String::as_str).collect() });
                 return InfoPart::Case(path.join("."));
             }
             Target::Value(id) => field_values(builtin(self.index.field(*id))),
@@ -986,8 +993,8 @@ impl<'p> Lowering<'p> {
     }
 
     /// Keeps the subject value label of the `switch` Field at `site` for the Info column.
-    fn keep_case(&mut self, site: SwitchSite) {
-        self.info_cases.insert(site);
+    fn keep_case(&mut self, site: SwitchSite<'p>) {
+        self.info_cases.entry(site.ty).or_default().insert(site.path);
     }
 
     /// The field extractor of the `ProtoField` at `path`, declared once.
@@ -996,7 +1003,7 @@ impl<'p> Lowering<'p> {
         if let Some(index) = self.extractors_declared.find(&abbrev) {
             return index;
         }
-        let key = self.extractors_declared.key(&format!("x_{}", path.join("__")));
+        let key = self.extractors_declared.key(mangle("x_", path));
         self.extractors_declared.declare(&abbrev, self.extractors.len());
         self.extractors.push(Extractor { key, abbrev });
         self.extractors.len() - 1
@@ -1025,54 +1032,51 @@ impl<'p> Lowering<'p> {
     /// Registers the `ProtoField`s of a Field outside any Type whose path starts with `parent`,
     /// and returns the statement that reads it.
     fn field(&mut self, field: &'p Field, parent: &[&'p str]) -> Stmt {
-        let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
-        let path = segments.join(".");
-        let index = self.proto_field(field, &segments);
+        let at = FieldPath::new(parent, &field.name);
+        let index = self.proto_field(field, &at);
         let stmt = match &field.kind {
             FieldKind::Builtin(value) => {
                 let bits = sub_fields(value)
-                    .map(|(bytes, bit)| {
-                        let path: Vec<&str> = segments.iter().copied().chain([bit.name.as_str()]).collect();
-                        (Ref::Local(self.proto_field_bit(bytes, bit, &path)), bit)
-                    })
+                    .map(|(bytes, bit)| (Ref::Local(self.proto_field_bit(bytes, bit, &at.child(&bit.name))), bit))
                     .collect();
-                self.read(value, Ref::Local(index), &segments, field.hidden, bits)
+                self.read(value, Ref::Local(index), &at, field.hidden, bits)
             }
             FieldKind::Structure(fields) => {
-                let body = self.structure(fields, &segments);
-                Stmt::Structure { field: Ref::Local(index), body, path, hidden: field.hidden }
+                let body = self.structure(fields, &at.segments);
+                Stmt::Structure { field: Ref::Local(index), body, path: at.joined.clone(), hidden: field.hidden }
             }
             FieldKind::Type(TypeUse { id, .. }) => {
-                let site = self.site(*id, &segments);
-                let site = Ref::Local(self.share_site(&format!("site_{}", segments.join("__")), site));
-                self.call(Ref::Local(index), field, &segments, site)
+                let site = self.site(*id, &at);
+                let site = Ref::Local(self.share_site(mangle("site_", &at.segments), site));
+                self.call(Ref::Local(index), field, &at, site)
             }
-            FieldKind::Switch(switch) => self.switch(Ref::Local(index), field, switch, &segments, None),
+            FieldKind::Switch(switch) => self.switch(Ref::Local(index), field, switch, &at, None),
         };
-        let stmt = self.array(field, &segments, stmt);
-        self.condition(field, &segments, stmt)
+        let stmt = self.array(field, &at, stmt);
+        self.condition(field, at, stmt)
     }
 
-    /// The statement of the `switch` Field `field` at `segments`, whose `ProtoField` is
+    /// The statement of the `switch` Field `field` at `at`, whose `ProtoField` is
     /// `proto_field`. Inside a Type, its cases add their slots to `slots`.
     fn switch(
         &mut self,
         proto_field: Ref,
         field: &Field,
         switch: &'p Switch,
-        segments: &[&'p str],
+        at: &FieldPath<'p>,
         mut slots: Option<&mut Vec<Slot<'p>>>,
     ) -> Stmt {
+        let segments = at.segments.as_slice();
         let subject = self.operand(&switch.subject);
         let names = self.names(&switch.subject, segments);
-        let info = self.info_cases.contains(&SwitchSite { ty: self.current_type, path: owned(segments) });
+        let info = self.info_cases.get(&self.current_type).is_some_and(|paths| paths.contains(segments));
         let cases = switch
             .cases
             .iter()
             .map(|case| (wire_ranges(case.key.low, case.key.high), self.branch(&case.body, segments, &mut slots)))
             .collect();
         let default = switch.default.as_ref().map(|body| self.branch(body, segments, &mut slots));
-        let path = segments.join(".");
+        let path = at.joined.clone();
         Stmt::Switch { field: proto_field, path, hidden: field.hidden, subject, names, info, cases, default }
     }
 
@@ -1093,13 +1097,13 @@ impl<'p> Lowering<'p> {
                     }
                     Ref::Slot(key)
                 } else {
-                    let key = (owned(segments), name.clone());
-                    if let Some(&index) = self.case_sites.get(&key) {
+                    let shared = self.case_sites.get(segments).and_then(|by_type| by_type.get(name.as_str()));
+                    if let Some(&index) = shared {
                         Ref::Local(index)
                     } else {
-                        let site = self.site(*id, segments);
-                        let index = self.share_site(&format!("site_{}__{name}", segments.join("__")), site);
-                        self.case_sites.insert(key, index);
+                        let site = self.site(*id, &FieldPath::of(segments));
+                        let index = self.share_site(format!("{}__{name}", mangle("site_", segments)), site);
+                        self.case_sites.entry(segments.to_vec()).or_default().insert(name, index);
                         Ref::Local(index)
                     }
                 };
@@ -1137,19 +1141,18 @@ impl<'p> Lowering<'p> {
             return None;
         }
         Some(self.names.iter().position(|n| n.entries == entries).unwrap_or_else(|| {
-            let key =
-                unique(&format!("names_{}", segments.join("__")), |name| self.names.iter().any(|n| n.key == name));
+            let key = unique(mangle("names_", segments), |name| self.names.iter().any(|n| n.key == name));
             self.names.push(NamesTable { key, entries });
             self.names.len() - 1
         }))
     }
 
-    /// The statement of `field`, at `segments`, given the statement `stmt` reading it, array and
+    /// The statement of `field`, at `at`, given the statement `stmt` reading it, array and
     /// all: `stmt` itself, or `stmt` under the Field's `if:`.
-    fn condition(&mut self, field: &Field, segments: &[&str], stmt: Stmt) -> Stmt {
+    fn condition(&mut self, field: &Field, at: FieldPath<'_>, stmt: Stmt) -> Stmt {
         let Some(condition) = field.condition.as_ref() else { return stmt };
         let condition = self.operand(condition);
-        Stmt::If { path: segments.join("."), condition, body: Box::new(stmt) }
+        Stmt::If { path: at.joined, condition, body: Box::new(stmt) }
     }
 
     /// An `if:` or `switch:` value as the Dissector evaluates it: any value is valid, but an
@@ -1166,9 +1169,9 @@ impl<'p> Lowering<'p> {
         }
     }
 
-    /// The statement of `field`, at `segments`, given the statement `stmt` reading it once:
+    /// The statement of `field`, at `at`, given the statement `stmt` reading it once:
     /// `stmt` itself, or `stmt` repeated when the Field is an array.
-    fn array(&mut self, field: &Field, segments: &[&str], stmt: Stmt) -> Stmt {
+    fn array(&mut self, field: &Field, at: &FieldPath<'_>, stmt: Stmt) -> Stmt {
         let Some(array) = &field.array else { return stmt };
         let repeat = match array {
             Array::ToEnd => Repeat::ToEnd,
@@ -1178,7 +1181,7 @@ impl<'p> Lowering<'p> {
             }
             Array::Count(Amount::Expression { expr, references }) => Repeat::Count(self.computed(expr, references)),
         };
-        Stmt::Array { path: segments.join("."), repeat, element: Box::new(stmt) }
+        Stmt::Array { path: at.joined.clone(), repeat, element: Box::new(stmt) }
     }
 
     /// The statements of a structure inside a Type whose Fields' paths, relative to the Type,
@@ -1196,90 +1199,89 @@ impl<'p> Lowering<'p> {
                     field::Entry::Field(field) => field,
                     field::Entry::Padding(amount) => return self.padding(amount, parent),
                 };
-                let segments: Vec<&str> = parent.iter().copied().chain([field.name.as_str()]).collect();
-                let path = segments.join(".");
+                let at = FieldPath::new(parent, &field.name);
                 let slot = |slots: &mut Vec<Slot<'p>>, prefix: &str, segments: Vec<&'p str>, kind: SlotKind<'p>| {
-                    let key = unique(&format!("{prefix}{}", segments.join("__")), |k| slots.iter().any(|s| s.key == k));
+                    let key = unique(mangle(prefix, &segments), |k| slots.iter().any(|s| s.key == k));
                     slots.push(Slot { key: key.clone(), segments, kind });
                     Ref::Slot(key)
                 };
-                let field_ref = slot(slots, "f_", segments.clone(), SlotKind::Field(field));
+                let field_ref = slot(slots, "f_", at.segments.clone(), SlotKind::Field(field));
                 let stmt = match &field.kind {
                     FieldKind::Builtin(value) => {
                         let bits = sub_fields(value)
                             .map(|(bytes, bit)| {
-                                let path = segments.iter().copied().chain([bit.name.as_str()]).collect();
+                                let path = at.segments.iter().copied().chain([bit.name.as_str()]).collect();
                                 (slot(slots, "f_", path, SlotKind::Bit(bytes, bit)), bit)
                             })
                             .collect();
-                        self.read(value, field_ref, &segments, field.hidden, bits)
+                        self.read(value, field_ref, &at, field.hidden, bits)
                     }
                     FieldKind::Structure(fields) => {
-                        let body = self.type_structure(fields, &segments, slots);
-                        Stmt::Structure { field: field_ref, path, body, hidden: field.hidden }
+                        let body = self.type_structure(fields, &at.segments, slots);
+                        Stmt::Structure { field: field_ref, path: at.joined.clone(), body, hidden: field.hidden }
                     }
                     FieldKind::Type(TypeUse { id, .. }) => {
-                        let site = slot(slots, "t_", segments.clone(), SlotKind::Site(*id));
-                        self.call(field_ref, field, &segments, site)
+                        let site = slot(slots, "t_", at.segments.clone(), SlotKind::Site(*id));
+                        self.call(field_ref, field, &at, site)
                     }
-                    FieldKind::Switch(switch) => self.switch(field_ref, field, switch, &segments, Some(slots)),
+                    FieldKind::Switch(switch) => self.switch(field_ref, field, switch, &at, Some(slots)),
                 };
-                let stmt = self.array(field, &segments, stmt);
-                self.condition(field, &segments, stmt)
+                let stmt = self.array(field, &at, stmt);
+                self.condition(field, at, stmt)
             })
             .collect()
     }
 
-    /// The site table of a use of the Type `ty` at the path `segments`, registering the
-    /// `ProtoField`s of that use.
-    fn site(&mut self, ty: TypeId, segments: &[&'p str]) -> Site {
+    /// The site table of a use of the Type `ty` at `at`, registering the `ProtoField`s of that
+    /// use.
+    fn site(&mut self, ty: TypeId, at: &FieldPath<'p>) -> Site {
         let slots = self.slots.get(&ty).expect("every Type is lowered before any use of it").clone();
         let entries = slots
             .into_iter()
             .map(|slot| {
-                let path: Vec<&str> = segments.iter().copied().chain(slot.segments).collect();
+                let inside = FieldPath::of(&[at.segments.as_slice(), &slot.segments].concat());
                 let entry = match slot.kind {
-                    SlotKind::Field(field) => SiteEntry::Field(self.proto_field(field, &path)),
-                    SlotKind::Bit(bytes, bit) => SiteEntry::Field(self.proto_field_bit(bytes, bit, &path)),
+                    SlotKind::Field(field) => SiteEntry::Field(self.proto_field(field, &inside)),
+                    SlotKind::Bit(bytes, bit) => SiteEntry::Field(self.proto_field_bit(bytes, bit, &inside)),
                     SlotKind::Site(ty) => {
-                        let site = self.site(ty, &path);
-                        SiteEntry::Site(self.share_site(&format!("site_{}", path.join("__")), site))
+                        let site = self.site(ty, &inside);
+                        SiteEntry::Site(self.share_site(mangle("site_", &inside.segments), site))
                     }
                 };
                 (slot.key, entry)
             })
             .collect();
-        Site { path: segments.join("."), entries }
+        Site { path: at.joined.clone(), entries }
     }
 
     /// Declares `site` once under a fresh key from `base`, and returns its index in the sites.
-    fn share_site(&mut self, base: &str, site: Site) -> usize {
+    fn share_site(&mut self, base: String, site: Site) -> usize {
         let key = self.sites_declared.key(base);
         self.sites.push(SharedSite { key, site });
         self.sites.len() - 1
     }
 
     /// The statement calling the dissect function of the Type of `field`, a Field of a Type at
-    /// `segments` whose `ProtoField` is `proto_field`, with the site table `site`.
-    fn call(&mut self, proto_field: Ref, field: &Field, segments: &[&str], site: Ref) -> Stmt {
+    /// `at` whose `ProtoField` is `proto_field`, with the site table `site`.
+    fn call(&mut self, proto_field: Ref, field: &Field, at: &FieldPath<'_>, site: Ref) -> Stmt {
         let FieldKind::Type(TypeUse { name, context, .. }) = &field.kind else {
             unreachable!("only a Field of a Type is called")
         };
         let context = context.iter().map(|(key, reference)| (key.clone(), self.reference(reference))).collect();
-        let result = self.plan.results.get(&owned(segments)).cloned();
-        let (path, ty, hidden) = (segments.join("."), name.clone(), field.hidden);
+        let result = self.plan.results.get(at.segments.as_slice()).cloned();
+        let (path, ty, hidden) = (at.joined.clone(), name.clone(), field.hidden);
         Stmt::Call { field: proto_field, path, hidden, ty, site, context, result }
     }
 
     /// The model of `framing:`: its length is computed in a function of its own, which keeps
     /// each header Field it reads in its values table.
-    fn framing(&mut self, framing: &Framing) -> FramedMessages {
+    fn framing(&mut self, framing: &'p Framing) -> FramedMessages {
         let mut plan = Plan::default();
         let mut reads = Vec::new();
         for (name, &HeaderField { target, extent: Extent { offset, size } }) in &framing.reads {
             let key = name.clone();
             let read = value_read(builtin(self.index.field(target)));
-            plan.values.insert(vec![name.clone()], key.clone());
+            plan.values.insert(vec![name.as_str()], key.clone());
             reads.push(HeaderRead { key, offset, size, read });
         }
         let layout = std::mem::replace(&mut self.plan, plan);
@@ -1298,13 +1300,13 @@ impl<'p> Lowering<'p> {
         self.plan.read(reference, &self.index)
     }
 
-    /// The statement reading a Field of a built-in type through `field`, at `segments`, hidden or
+    /// The statement reading a Field of a built-in type through `field`, at `at`, hidden or
     /// not, with the `ProtoField`s of its sub-Fields when it is a bitfield.
     fn read(
         &mut self,
         field_value: &BuiltinField,
         field: Ref,
-        segments: &[&str],
+        at: &FieldPath<'_>,
         hidden: bool,
         bits: Vec<(Ref, &Bit)>,
     ) -> Stmt {
@@ -1312,11 +1314,15 @@ impl<'p> Lowering<'p> {
             field::Length::Expression { expr, references } => Length::Expression(self.computed(expr, references)),
             _ => length(field_value),
         };
-        let value =
-            self.plan.values.get(&owned(segments)).cloned().map(|key| Value { key, read: value_read(field_value) });
+        let value = self
+            .plan
+            .values
+            .get(at.segments.as_slice())
+            .cloned()
+            .map(|key| Value { key, read: value_read(field_value) });
         let little = field_value.endian == Endian::Little && field_value.kind.builtin().has_byte_order();
         let whole = LuaExpr::Checked;
-        let path = segments.join(".");
+        let path = at.joined.clone();
         let (expect, handoff) = match &field_value.kind {
             BuiltinKind::Unsigned { expect, .. }
             | BuiltinKind::Signed { expect, .. }
@@ -1374,11 +1380,10 @@ impl<'p> Lowering<'p> {
         }
     }
 
-    /// Registers the `ProtoField` of a Field at the path `segments`, returning its index. Fields
-    /// reaching one path in several `switch` cases share it: validation checked that they match.
-    fn proto_field(&mut self, field: &Field, segments: &[&str]) -> usize {
-        let path = segments.join(".");
-        let abbrev = format!("{}.{path}", self.filter_name);
+    /// Registers the `ProtoField` of a Field at `at`, returning its index. Fields reaching one
+    /// path in several `switch` cases share it: validation checked that they match.
+    fn proto_field(&mut self, field: &Field, at: &FieldPath<'_>) -> usize {
+        let abbrev = format!("{}.{}", self.filter_name, at.joined);
         if let Some(index) = self.proto_fields_declared.find(&abbrev) {
             return index;
         }
@@ -1388,7 +1393,7 @@ impl<'p> Lowering<'p> {
                 (FieldType::new("none", Args::Plain), None)
             }
         };
-        let key = self.key(segments);
+        let key = self.key(&at.segments);
         self.proto_fields_declared.declare(&abbrev, self.proto_fields.len());
         self.proto_fields.push(ProtoField {
             key,
@@ -1423,11 +1428,11 @@ impl<'p> Lowering<'p> {
     }
 
     /// Registers the `ProtoField` of the sub-Field `bit` of a bitfield `bytes` bytes wide at the path
-    /// `segments`, returning its index. It is masked, and declared as wide as the container, as
+    /// `at`, returning its index. It is masked, and declared as wide as the container, as
     /// Wireshark requires: an unsigned integer, or a boolean whose display is the container's
     /// number of bits.
-    fn proto_field_bit(&mut self, bytes: usize, bit: &Bit, segments: &[&str]) -> usize {
-        let abbrev = format!("{}.{}", self.filter_name, segments.join("."));
+    fn proto_field_bit(&mut self, bytes: usize, bit: &Bit, at: &FieldPath<'_>) -> usize {
+        let abbrev = format!("{}.{}", self.filter_name, at.joined);
         if let Some(index) = self.proto_fields_declared.find(&abbrev) {
             return index;
         }
@@ -1442,7 +1447,7 @@ impl<'p> Lowering<'p> {
                 (FieldType::new("bool", Args::Display(bool_width(bytes))), Some(strings))
             }
         };
-        let key = self.key(segments);
+        let key = self.key(&at.segments);
         self.proto_fields_declared.declare(&abbrev, self.proto_fields.len());
         self.proto_fields.push(ProtoField {
             key,
@@ -1459,7 +1464,7 @@ impl<'p> Lowering<'p> {
     /// The key of the `ProtoField` at a path: `f_` then the segments joined by `__`
     /// (`f_options__ttl`), taken.
     fn key(&mut self, segments: &[&str]) -> String {
-        self.proto_fields_declared.key(&format!("f_{}", segments.join("__")))
+        self.proto_fields_declared.key(mangle("f_", segments))
     }
 }
 
@@ -1467,14 +1472,14 @@ impl<'p> Lowering<'p> {
 /// and Fields of Types away from the top level, the first in layout order among them. Arrays
 /// are not looked into: their Fields are read once per Element. Returns where it is lowered,
 /// and its path from the top level.
-fn outermost_switch(fields: &[field::Entry], types: &NamedTypes) -> Option<(SwitchSite, Vec<String>)> {
+fn outermost_switch<'p>(fields: &'p [field::Entry], types: &'p NamedTypes) -> Option<(SwitchSite<'p>, Vec<&'p str>)> {
     // Each structure of the current depth, with where it is lowered and its path from the top.
     let mut level = vec![(fields, SwitchSite { ty: None, path: Vec::new() }, Vec::new())];
     while !level.is_empty() {
         let mut next = Vec::new();
         for (entries, site, absolute) in level {
             for field in entries.iter().filter_map(field::Entry::field).filter(|f| f.array.is_none()) {
-                let extend = |path: &[String]| [path, std::slice::from_ref(&field.name)].concat();
+                let extend = |path: &[&'p str]| [path, &[field.name.as_str()]].concat();
                 let inside = SwitchSite { ty: site.ty, path: extend(&site.path) };
                 match &field.kind {
                     FieldKind::Switch(_) => return Some((inside, extend(&absolute))),
@@ -1503,9 +1508,36 @@ fn builtin(field: &Field) -> &BuiltinField {
     }
 }
 
-/// A path as the plans key it.
-fn owned(segments: &[&str]) -> Vec<String> {
-    segments.iter().map(|s| (*s).to_owned()).collect()
+/// Where a Field is: the segments of its path, and them joined by `.` as statements and filter
+/// names show it, joined once for every use.
+struct FieldPath<'p> {
+    segments: Vec<&'p str>,
+    joined: String,
+}
+
+impl<'p> FieldPath<'p> {
+    /// The path of the Field `name` in the structure at `parent`.
+    fn new(parent: &[&'p str], name: &'p str) -> Self {
+        let mut segments = Vec::with_capacity(parent.len() + 1);
+        segments.extend_from_slice(parent);
+        segments.push(name);
+        Self::from_segments(segments)
+    }
+
+    /// The path made of `segments`.
+    fn of(segments: &[&'p str]) -> Self {
+        Self::from_segments(segments.to_vec())
+    }
+
+    fn from_segments(segments: Vec<&'p str>) -> Self {
+        let joined = segments.join(".");
+        Self { segments, joined }
+    }
+
+    /// The path of the sub-Field or Field `name` inside this one.
+    fn child(&self, name: &'p str) -> Self {
+        Self::new(&self.segments, name)
+    }
 }
 
 /// Whether an Expression has an operator that can fault at runtime: `/`, `%`, `<<` or `>>`.
@@ -1521,11 +1553,25 @@ fn can_fault(expr: &Expr) -> bool {
     }
 }
 
+/// `prefix` then `segments` joined by `__` (`f_options__ttl`), built in one allocation.
+fn mangle(prefix: &str, segments: &[impl AsRef<str>]) -> String {
+    let len = prefix.len() + segments.iter().map(|s| s.as_ref().len() + 2).sum::<usize>();
+    let mut key = String::with_capacity(len);
+    key.push_str(prefix);
+    for (i, segment) in segments.iter().enumerate() {
+        if i > 0 {
+            key.push_str("__");
+        }
+        key.push_str(segment.as_ref());
+    }
+    key
+}
+
 /// `base`, or when `taken` says it is, `base` with the first free `_<n>` suffix. A Field name
 /// can itself hold `__`, so two paths can mangle alike; filter names are never changed this way.
-fn unique(base: &str, taken: impl Fn(&str) -> bool) -> String {
-    if !taken(base) {
-        return base.to_owned();
+fn unique(base: String, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(&base) {
+        return base;
     }
     (2..=usize::MAX).map(|n| format!("{base}_{n}")).find(|name| !taken(name)).expect("some suffix is free")
 }

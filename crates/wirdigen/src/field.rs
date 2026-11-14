@@ -2104,9 +2104,13 @@ pub(crate) fn is_field_name(name: &str) -> bool {
 
 /// The default tree text of a Field: `msg_type` becomes "Msg type" (spec §3.4.8).
 pub(crate) fn default_label(name: &str) -> String {
-    let spaced = name.replace('_', " ");
-    let mut chars = spaced.chars();
-    chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
+    let mut chars = name.chars().map(|c| if c == '_' { ' ' } else { c });
+    let mut label = String::with_capacity(name.len());
+    if let Some(first) = chars.next() {
+        label.extend(first.to_uppercase());
+        label.extend(chars);
+    }
+    label
 }
 
 /// The name of every built-in type, in documentation order.
