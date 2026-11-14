@@ -1,163 +1,163 @@
 # Diagnostics index
 
-One entry per Diagnostic, under the name Wirdigen prints in brackets (`error[unknown-key]`) and
-links to at the end of each message. See [Diagnostics](reference/diagnostics.md) for how errors,
+One entry per Diagnostic, in alphabetical order, under the name Wirdigen prints in brackets
+(`error[unknown-key]`) and links to at the end of each message. See [Diagnostics](reference/diagnostics.md) for how errors,
 warnings and `allow:` work.
 
 Errors cannot be silenced: fix the description. Warnings can be fixed, or silenced by adding
 their name to the top-level `allow:` list.
 
-## `yaml-syntax` {#yaml-syntax}
+## `chained-comparison` {#chained-comparison}
 
 **Severity**: error
 
-The file is not well-formed YAML, so nothing else can be checked. The message is the YAML
-parser's.
+Two comparisons follow each other without parentheses, as in `a < b < c`. Comparisons do not
+chain: in C, `1 < 3 < 2` compares the 1 of `1 < 3` with 2, which is rarely what was meant. The
+error points at the second comparison.
 
-```yaml,diagnostic=yaml-syntax
-name: [demo
-fields: []
-```
-
-**Fix**: correct the YAML at the position shown, here by closing the `[` list or writing
-`name: demo`.
-
-## `multiple-documents` {#multiple-documents}
-
-**Severity**: error
-
-A Protocol Description is a single YAML document, but the file holds several, separated by
-`---`.
-
-```yaml,diagnostic=multiple-documents
-name: a
-fields: [ {name: a, type: uint8} ]
----
-name: b
-```
-
-**Fix**: put each Protocol Description in its own file.
-
-## `yaml-alias` {#yaml-alias}
-
-**Severity**: error
-
-The file uses a YAML alias (`*name`). Aliases are not part of the YAML subset Wirdigen reads,
-because a description reuses Fields through Types. An alias always comes with the anchor it
-refers to, which is the error [`yaml-anchor`](#yaml-anchor).
-
-```yaml,diagnostic=yaml-alias,diagnostic=yaml-anchor
-x: &a demo
-name: *a
-fields: [ {name: a, type: uint8} ]
-```
-
-**Fix**: write the value out, or move repeated Fields into a Type.
-
-## `yaml-anchor` {#yaml-anchor}
-
-**Severity**: error
-
-The file declares a YAML anchor (`&name`). Anchors are not part of the YAML subset Wirdigen
-reads, because a description reuses Fields through Types.
-
-```yaml,diagnostic=yaml-anchor
-name: &n demo
-fields: [ {name: a, type: uint8} ]
-```
-
-**Fix**: remove the anchor, and move repeated Fields into a Type.
-
-## `yaml-tag` {#yaml-tag}
-
-**Severity**: error
-
-The file uses a YAML tag (`!foo`, `!!str`). Tags are not part of the YAML subset Wirdigen reads.
-
-```yaml,diagnostic=yaml-tag
-name: !foo demo
-fields: [ {name: a, type: uint8} ]
-```
-
-**Fix**: remove the tag. To keep a value as text, quote it.
-
-## `yaml-too-deep` {#yaml-too-deep}
-
-**Severity**: error
-
-The YAML nests more than 256 levels deep, anywhere in the file: the root is the first level, and
-each value inside a list or a mapping is one level deeper. The error points at the first node
-past the limit, and nothing else is checked. A description within the
-[`field-too-deep`](#field-too-deep) limit nests at most about 194 levels.
-
-```yaml,diagnostic=yaml-too-deep
+```yaml,diagnostic=chained-comparison
 name: demo
-info: [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
-fields: [ { name: a, type: uint8 } ]
+fields: [ {name: data, type: bytes, size: "1 < 2 < 3"} ]
 ```
 
-**Fix**: flatten the nesting.
+**Fix**: join the two comparisons with `&&`, as in `a < b && b < c`, or add parentheses to
+compare the 1 or 0 of the first: `(a < b) < c`.
 
-## `merge-key` {#merge-key}
+## `conditional-reference` {#conditional-reference}
 
 **Severity**: error
 
-The file uses a YAML merge key (`<<:`). Merge keys are not part of the YAML subset Wirdigen
-reads, because a description reuses Fields through Types.
+An Expression reads a Field that is read only under an [`if:`](reference/conditionals.md) or
+in a [`switch` case](reference/conditionals.md#switch-scope), or a Field inside one, from
+outside that `if:` or case. When the condition is false, or another case matched, the Field has
+no value. Two `if:` with the same condition still count as different: conditions are never
+compared.
 
-```yaml,diagnostic=merge-key
+```yaml,diagnostic=conditional-reference
 name: demo
-fields: [ {name: a, type: uint8} ]
-<<: {}
+fields:
+  - { name: flags, type: uint8 }
+  - { name: len, type: uint8, if: "flags & 1" }
+  - { name: data, type: bytes, size: len, if: "flags & 1" }
 ```
 
-**Fix**: write the keys out, or move repeated Fields into a Type.
+**Fix**: put the Field and everything that reads it in one inline structure carrying the `if:`:
 
-## `missing-key` {#missing-key}
+```yaml
+name: demo
+fields:
+  - { name: flags, type: uint8 }
+  - name: ext
+    if: "flags & 1"
+    fields:
+      - { name: len, type: uint8 }
+      - { name: data, type: bytes, size: len }
+```
+
+## `conflicting-field-kind` {#conflicting-field-kind}
 
 **Severity**: error
 
-A required key is missing: every description needs `name:` and `fields:`. An empty file is
-missing both.
+A Field has more than one of `type:`, `fields:` and `switch:`, so it has no single meaning.
+A note points at the first of them.
 
-```yaml,diagnostic=missing-key
+```yaml,diagnostic=conflicting-field-kind
 name: demo
+fields:
+  - { name: id, type: uint8, fields: [ {name: low, type: uint8} ] }
 ```
 
-**Fix**: add the key. When the key is only misspelt, Wirdigen reports the
-[`unknown-key`](#unknown-key) instead, with the spelling it expected.
+**Fix**: keep one. To group Fields under a name, use `fields:` alone.
 
-## `wrong-value-type` {#wrong-value-type}
+## `conflicting-filter-name` {#conflicting-filter-name}
 
 **Severity**: error
 
-A value has the wrong kind: a scalar where a list is expected, a list where a mapping is
-expected, a float or a bool where an integer is expected, and so on. The whole description must
-be a mapping.
+Two Fields reach one filter name with ProtoFields that differ in type, `display:`, value
+labels, `label:` or `description:`. The cases of a [`switch`](reference/conditionals.md#switch-tree)
+add no segment to filter names, so a Field of one case and a Field of the same name in another
+reach the same name, and Wireshark can register only one ProtoField under it. Wirdigen never
+renames a Field on its own: filter names are what the description spells.
 
-```yaml,diagnostic=wrong-value-type
+```yaml,diagnostic=conflicting-filter-name
 name: demo
-fields: [ {name: a, type: uint8} ]
-allow: unknown-allow
+fields:
+  - { name: kind, type: uint8 }
+  - name: body
+    switch: kind
+    cases:
+      1: [ { name: id, type: uint32 } ]
+      2: [ { name: id, type: uint16, label: Short id } ]
 ```
 
-**Fix**: write the value in the kind the message asks for, here a list:
-`allow: [unknown-allow]`.
+**Fix**: rename one of the Fields, or make them match so they share the ProtoField.
 
-## `unknown-key` {#unknown-key}
+## `conflicting-length` {#conflicting-length}
 
 **Severity**: error
 
-A key is not part of the format. When it is close to a known key, the message suggests that
-key.
+A Field has more than one of `size:`, `prefix:` and `terminator:`, so its length has no single
+meaning. A note points at the first of them.
 
-```yaml,diagnostic=unknown-key
+```yaml,diagnostic=conflicting-length
 name: demo
-bogus: 1
-fields: [ {name: a, type: uint8} ]
+fields: [ {name: user, type: string, size: 8, terminator: 0} ]
 ```
 
-**Fix**: correct the spelling, or remove the key. Use a YAML comment to document a description.
+**Fix**: keep the one key that says where the value ends.
+
+## `conflicting-mappings` {#conflicting-mappings}
+
+**Severity**: error
+
+A Field has both `values:` and `unit:`. Wireshark shows either a label in place of the value or
+a unit after it, never both.
+
+```yaml,diagnostic=conflicting-mappings
+name: demo
+fields:
+  - name: length
+    type: uint16
+    values: { 0: Empty }
+    unit: [byte, bytes]
+```
+
+**Fix**: keep one of them. A label for a special value can go in the Field's `description:`.
+
+## `conflicting-repeat` {#conflicting-repeat}
+
+**Severity**: error
+
+A Field has both `count:` and `repeat:`, so the number of elements of the
+[array](reference/arrays.md) has no single meaning. A note points at `count:`.
+
+```yaml,diagnostic=conflicting-repeat
+name: demo
+fields:
+  - name: items
+    count: 4
+    repeat: to_end
+    fields: [ {name: id, type: uint8} ]
+```
+
+**Fix**: keep `count:` when the number of elements is known before the array, or
+`repeat: to_end` when the elements fill the rest of the message.
+
+## `duplicate-field-name` {#duplicate-field-name}
+
+**Severity**: error
+
+Two Fields of the same structure share a name, so their filter name and any reference to them
+would be ambiguous. A note points at the first one.
+
+```yaml,diagnostic=duplicate-field-name
+name: demo
+fields:
+  - { name: id, type: uint8 }
+  - { name: id, type: uint16 }
+```
+
+**Fix**: rename one of them.
 
 ## `duplicate-key` {#duplicate-key}
 
@@ -188,184 +188,42 @@ fields: []
 
 **Fix**: declare the Fields of the payload.
 
-## `invalid-protocol-name` {#invalid-protocol-name}
+## `expression-syntax` {#expression-syntax}
 
 **Severity**: error
 
-`name:` is not a valid filter name. A name is a lowercase letter, then at least one lowercase
-letter, digit, `_` or `-`, 2 to 32 characters in all: Wireshark refuses one-character filter
-names. Uppercase is never lowercased silently, and a `.` is refused because it would blur
-where the Field Path starts in filters such as `demo.id`.
+An [Expression](reference/expressions.md) cannot be read: a missing or extra value, operator or
+parenthesis, a character Expressions do not use (such as `=` or a quote), a malformed or
+oversized integer literal, a built-in other than `_offset` and `_remaining`, or a Field Path
+with an empty segment. The error points at the offending token; in an escaped or multi-line
+YAML string, at the whole value. Only the first error of each Expression is reported.
 
-```yaml,diagnostic=invalid-protocol-name
-name: Demo
-fields: [ {name: a, type: uint8} ]
-```
-
-**Fix**: choose a name that follows the rules, here `demo`. The uppercase form is derived for
-the Protocol column, and `title:` sets the full name.
-
-## `invalid-protocol-title` {#invalid-protocol-title}
-
-**Severity**: error
-
-`title:` is empty, blank or spans several lines. A title is shown on one line at the root of
-the protocol tree.
-
-```yaml,diagnostic=invalid-protocol-title
+```yaml,diagnostic=expression-syntax
 name: demo
-title: ""
-fields: [ {name: a, type: uint8} ]
+fields: [ {name: data, type: bytes, size: "(4 + 2"} ]
 ```
 
-**Fix**: write a single-line title, or leave `title:` out to use the uppercase `name:`.
+**Fix**: correct the Expression, here by closing the parenthesis: `"(4 + 2)"`.
 
-## `invalid-endian` {#invalid-endian}
+## `expression-too-deep` {#expression-too-deep}
 
 **Severity**: error
 
-An `endian:` value, at the top level, on a Type or on a Field, is not a byte order. Byte order
-is `big` or `little`, never encoded in a type name.
+An [Expression](reference/expressions.md#operators) nests more than 64 levels deep. Each
+value, parenthesis and unary operator is a level, and so is each binary operator over its
+operands, so a flat chain such as `1+1+…+1` of 65 operands is 65 deep. Lua cannot load the
+Dissector such an Expression would make. The error points at the token that reaches depth 65.
 
-```yaml,diagnostic=invalid-endian
-name: demo
-endian: network
-fields: [ {name: id, type: uint16} ]
-```
-
-**Fix**: write `big` or `little`, or leave `endian:` out for big-endian.
-
-It is also reported for `endian:` on a Field of a Type: a Type is read in its own byte order,
-whichever Field uses it.
-
-```yaml,diagnostic=invalid-endian
+```yaml,diagnostic=expression-too-deep
 name: demo
 fields:
-  - { name: hdr, type: Header, endian: little }
-types:
-  Header:
-    fields: [ {name: length, type: uint16} ]
+  - name: data
+    type: bytes
+    size: "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1"
 ```
 
-**Fix**: set `endian:` on the Type, or on the Fields inside it.
-
-## `missing-field-kind` {#missing-field-kind}
-
-**Severity**: error
-
-A Field says nothing about what it is. A Field needs exactly one of `type:` (a built-in type
-or a Type), `fields:` (an inline structure) or `switch:` (a choice of layout).
-
-```yaml,diagnostic=missing-field-kind
-name: demo
-fields: [ {name: id} ]
-```
-
-**Fix**: add the Field's `type:`, here `{name: id, type: uint8}`.
-
-## `conflicting-field-kind` {#conflicting-field-kind}
-
-**Severity**: error
-
-A Field has more than one of `type:`, `fields:` and `switch:`, so it has no single meaning.
-A note points at the first of them.
-
-```yaml,diagnostic=conflicting-field-kind
-name: demo
-fields:
-  - { name: id, type: uint8, fields: [ {name: low, type: uint8} ] }
-```
-
-**Fix**: keep one. To group Fields under a name, use `fields:` alone.
-
-## `invalid-field-name` {#invalid-field-name}
-
-**Severity**: error
-
-A Field's `name:` is not a lowercase letter followed by lowercase letters, digits or `_`.
-Names appear bare in filters and Expressions, so `-` and `.` are refused, and a leading `_` is
-kept for Wirdigen's built-ins.
-
-```yaml,diagnostic=invalid-field-name
-name: demo
-fields: [ {name: msgType, type: uint8} ]
-```
-
-**Fix**: rename the Field, here `msg_type`. Its tree label is derived from the name
-("Msg type").
-
-## `invalid-type-name` {#invalid-type-name}
-
-**Severity**: error
-
-The name of a Type under `types:` or of an Enum under `enums:` is not an uppercase letter
-followed by letters or digits. Names of Types and Enums start with an uppercase letter so they
-can never be mistaken for a Field or a built-in type, which are lowercase.
-
-```yaml,diagnostic=invalid-type-name
-name: demo
-fields:
-  - { name: kind, type: uint8, values: msg_type }
-enums:
-  msg_type: { 1: Request }
-```
-
-**Fix**: rename the Enum and every `values:` naming it, here `MsgType`. For a Type, rename it
-and every `type:` naming it.
-
-## `duplicate-field-name` {#duplicate-field-name}
-
-**Severity**: error
-
-Two Fields of the same structure share a name, so their filter name and any reference to them
-would be ambiguous. A note points at the first one.
-
-```yaml,diagnostic=duplicate-field-name
-name: demo
-fields:
-  - { name: id, type: uint8 }
-  - { name: id, type: uint16 }
-```
-
-**Fix**: rename one of them.
-
-## `unknown-type` {#unknown-type}
-
-**Severity**: error
-
-A Field's `type:` names no built-in type and no Type. When the name is close to a built-in or
-to a declared Type, the message suggests it. An unknown Type is reported once, at its first
-use, however many Fields use it.
-
-```yaml,diagnostic=unknown-type
-name: demo
-fields: [ {name: id, type: unit8} ]
-```
-
-**Fix**: correct the spelling, here `uint8`, or declare the Type under `types:`. The built-in
-types are listed in [Fields](reference/fields.md#built-in-types).
-
-## `recursive-type` {#recursive-type}
-
-**Severity**: error
-
-A Type contains itself, directly or through other Types, so reading it would never end. Each
-cycle is reported once, at the use the first-declared Type of the cycle makes of the next one,
-and a note spells the whole cycle.
-
-```yaml,diagnostic=recursive-type
-name: demo
-fields:
-  - { name: root, type: Node }
-types:
-  Node:
-    fields:
-      - { name: id, type: uint8 }
-      - { name: child, type: Node }
-```
-
-**Fix**: break the cycle, for example by giving the inner Field a Type of its own that does not
-use the outer one.
+**Fix**: make the Expression shallower. Group a long chain with parentheses, as
+`(1+1+…) + (1+1+…)`, which is about half as deep, and remove parentheses that change nothing.
 
 ## `field-too-deep` {#field-too-deep}
 
@@ -454,99 +312,90 @@ types:
 for example by reading records that each hold the next as an [array](reference/arrays.md) of
 one Type.
 
-## `unexpected-length` {#unexpected-length}
+## `forward-reference` {#forward-reference}
 
 **Severity**: error
 
-A Field of a fixed-size type has a length key (`size:`, `prefix:` or `terminator:`). Its size
-already follows from its type, or for a timestamp (`abs_time`, `rel_time`) from its
-`encoding:`. An inline structure takes no length key either: it is as long as its Fields.
+An Expression reads a Field that is read only after it, or reads its own Field. A Dissector
+reads a packet in order, so the value does not exist yet. A note points at the later Field.
 
-```yaml,diagnostic=unexpected-length
+```yaml,diagnostic=forward-reference
 name: demo
-fields: [ {name: id, type: uint32, size: 4} ]
+fields:
+  - { name: data, type: bytes, size: length }
+  - { name: length, type: uint8 }
 ```
 
-**Fix**: remove the length key.
+**Fix**: move the Field that is read before the Field that reads it.
 
-## `missing-length` {#missing-length}
+## `incompatible-display` {#incompatible-display}
 
 **Severity**: error
 
-A `string` or `bytes` Field does not say how long it is. Its length comes from exactly one of
-`size:`, `prefix:` or `terminator:`.
+A Field's `display:` or `encoding:` is not one its type takes, or the Field has a value-mapping
+key its type does not take. Unsigned integers take `dec`, `hex`, `oct`, `dec_hex` and
+`hex_dec`; signed integers are shown only as `dec`; `bytes` take `plain`, `dot`, `dash`,
+`colon` and `space`; `abs_time` takes `local`, `utc` and `doy_utc`; `string`, `rel_time`,
+`bool`, the floats and the address types take no `display:` at all. Only `string`, `abs_time`
+and `rel_time` take `encoding:`, each its own values: `ntp` is an `abs_time` encoding only.
+Only integers take `values:`, only `bool` takes `true:` and `false:`, only integers and floats
+take `unit:`, and only `bytes` take `dissector:`. An inline structure takes none of these keys:
+they belong on the Fields inside it. A bitfield sub-Field takes the displays of an unsigned integer, and `true:` and
+`false:` only when it is boolean: 1 bit wide, without `values:`, `unit:` or `display:`.
 
-```yaml,diagnostic=missing-length
+```yaml,diagnostic=incompatible-display
 name: demo
-fields: [ {name: user, type: string} ]
+fields: [ {name: offset, type: int16, display: hex} ]
 ```
 
-**Fix**: add the length key that matches the wire: `size: 16` for a constant length,
-`prefix: uint8` when a count comes just before the value, or `terminator: 0` for a
-NUL-terminated string. See [Sizes](reference/sizes.md).
+**Fix**: pick a value from the table in [Fields](reference/fields.md#display), or remove
+`display:` to use the type's default. A signed value shown in hex needs an unsigned type. The
+encodings are listed in [Strings and bytes](reference/fields.md#strings-and-bytes) and
+[Timestamps](reference/fields.md#timestamps), and the value mappings in
+[Value mappings](reference/fields.md#value-mappings).
 
-## `conflicting-length` {#conflicting-length}
+## `invalid-array` {#invalid-array}
 
 **Severity**: error
 
-A Field has more than one of `size:`, `prefix:` and `terminator:`, so its length has no single
-meaning. A note points at the first of them.
+A Field of a built-in type has `count:` or `repeat:`. Only an inline structure or a Field of a
+Type repeats, so that each element is a subtree item of its own.
 
-```yaml,diagnostic=conflicting-length
+```yaml,diagnostic=invalid-array
 name: demo
-fields: [ {name: user, type: string, size: 8, terminator: 0} ]
+fields:
+  - { name: ids, type: uint16, count: 4 }
 ```
 
-**Fix**: keep the one key that says where the value ends.
+**Fix**: put the value in an inline structure that repeats:
 
-## `invalid-size` {#invalid-size}
+```yaml
+name: demo
+fields:
+  - name: ids
+    count: 4
+    fields: [ {name: id, type: uint16} ]
+```
+
+See [Arrays](reference/arrays.md).
+
+## `invalid-bit-width` {#invalid-bit-width}
 
 **Severity**: error
 
-A constant `size:` is a negative number of bytes, or an Expression that has no value: it
-divides by zero, or shifts by a count outside 0 to 63. The error points at the dividing or
-shifting operator.
+A sub-Field or a `{ padding: n }` entry of `bits:` is less than 1 bit wide.
 
-```yaml,diagnostic=invalid-size
+```yaml,diagnostic=invalid-bit-width
 name: demo
-fields: [ {name: data, type: bytes, size: -4} ]
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: version, width: 0 }
+      - { name: rest, width: 8 }
 ```
 
-```yaml,diagnostic=invalid-size
-name: demo
-fields: [ {name: data, type: bytes, size: "16 / (4 - 4)"} ]
-```
-
-**Fix**: write the length in bytes, zero or more.
-
-## `invalid-prefix` {#invalid-prefix}
-
-**Severity**: error
-
-A `prefix:` does not name an unsigned integer type. The prefix is the count of bytes read just
-before the value, so it is one of `uint8` to `uint64`.
-
-```yaml,diagnostic=invalid-prefix
-name: demo
-fields: [ {name: user, type: string, prefix: int16} ]
-```
-
-**Fix**: name the unsigned integer type of the count, here `uint16`.
-
-## `invalid-terminator` {#invalid-terminator}
-
-**Severity**: error
-
-A `terminator:` is not a byte from 0 to 255, or it is not 0 on a `utf16` or `ucs2` string,
-which always ends at a 2-byte zero.
-
-```yaml,diagnostic=invalid-terminator
-name: demo
-fields: [ {name: user, type: string, encoding: utf16, terminator: 10} ]
-```
-
-**Fix**: write the byte value of the terminator, such as `0` or `10` for a line feed. A
-`utf16` or `ucs2` string takes only `terminator: 0`.
+**Fix**: give the width in bits, at least 1, or remove an entry that takes no bits.
 
 ## `invalid-bits` {#invalid-bits}
 
@@ -567,82 +416,6 @@ fields:
 **Fix**: give the bitfield an unsigned integer type as wide as its sub-Fields, here `uint8`.
 See [Bitfields](reference/bitfields.md).
 
-## `invalid-bit-width` {#invalid-bit-width}
-
-**Severity**: error
-
-A sub-Field or a `{ padding: n }` entry of `bits:` is less than 1 bit wide.
-
-```yaml,diagnostic=invalid-bit-width
-name: demo
-fields:
-  - name: flags
-    type: uint8
-    bits:
-      - { name: version, width: 0 }
-      - { name: rest, width: 8 }
-```
-
-**Fix**: give the width in bits, at least 1, or remove an entry that takes no bits.
-
-## `mismatched-bit-widths` {#mismatched-bit-widths}
-
-**Severity**: error
-
-The widths of a bitfield's sub-Fields and padding do not add up to the bits of its container:
-8 for a `uint8`, 16 for a `uint16`, and so on. Every bit must be named or padded, so that the
-masks Wirdigen computes leave no bit ambiguous.
-
-```yaml,diagnostic=mismatched-bit-widths
-name: demo
-fields:
-  - name: flags
-    type: uint8
-    bits:
-      - { name: version, width: 3 }
-      - { name: ext, width: 1 }
-```
-
-**Fix**: cover the bits nothing names with a `{ padding: n }` entry, here `{ padding: 4 }`
-last, or correct a width.
-
-## `conflicting-repeat` {#conflicting-repeat}
-
-**Severity**: error
-
-A Field has both `count:` and `repeat:`, so the number of elements of the
-[array](reference/arrays.md) has no single meaning. A note points at `count:`.
-
-```yaml,diagnostic=conflicting-repeat
-name: demo
-fields:
-  - name: items
-    count: 4
-    repeat: to_end
-    fields: [ {name: id, type: uint8} ]
-```
-
-**Fix**: keep `count:` when the number of elements is known before the array, or
-`repeat: to_end` when the elements fill the rest of the message.
-
-## `invalid-repeat` {#invalid-repeat}
-
-**Severity**: error
-
-A `repeat:` is not `to_end`, the only way to repeat other than `count:` in this version of
-the format.
-
-```yaml,diagnostic=invalid-repeat
-name: demo
-fields:
-  - name: items
-    repeat: forever
-    fields: [ {name: id, type: uint8} ]
-```
-
-**Fix**: write `repeat: to_end` to read elements until the message ends, or give the number of
-elements with `count:`. See [Arrays](reference/arrays.md).
-
 ## `invalid-count` {#invalid-count}
 
 **Severity**: error
@@ -661,22 +434,20 @@ fields:
 
 **Fix**: write the number of elements, zero or more.
 
-## `invalid-padding` {#invalid-padding}
+## `invalid-description` {#invalid-description}
 
 **Severity**: error
 
-A constant [`padding:`](reference/fields.md#padding) is a negative number of bytes, or an
-Expression that has no value: it divides by zero, or shifts by a count outside 0 to 63. The
-error points at the dividing or shifting operator.
+A Field's `description:` spans several lines or is not a string. Wireshark shows it on one
+line, in the status bar and the field reference.
 
-```yaml,diagnostic=invalid-padding
+```yaml,diagnostic=invalid-description
 name: demo
 fields:
-  - { name: kind, type: uint8 }
-  - { padding: -2 }
+  - { name: id, type: uint8, description: "Identifies\nthe request" }
 ```
 
-**Fix**: write the number of bytes to skip, zero or more.
+**Fix**: write the description on one line, or quote a value YAML reads as a number or a bool.
 
 ## `invalid-dissector` {#invalid-dissector}
 
@@ -696,25 +467,50 @@ fields:
 **Fix**: write the name Wireshark registers the dissector under, such as `json` or `data`.
 `tshark -G dissectors` lists them.
 
-## `invalid-info` {#invalid-info}
+## `invalid-endian` {#invalid-endian}
 
 **Severity**: error
 
-The top-level [`info:`](reference/info.md) template cannot be read: it is not a string, it is on
-several lines, a `{` or `}` pairs with nothing, or braces hold something other than a bare Field Path, such as
-an Expression or a format specifier. Or a Field Path names an inline structure, a Field of a Type
-or an array, which have no value of their own to show.
+An `endian:` value, at the top level, on a Type or on a Field, is not a byte order. Byte order
+is `big` or `little`, never encoded in a type name.
 
-```yaml,diagnostic=invalid-info
+```yaml,diagnostic=invalid-endian
 name: demo
-info: "id={id:04x}"
-fields:
-  - { name: id, type: uint16 }
+endian: network
+fields: [ {name: id, type: uint16} ]
 ```
 
-**Fix**: write each Field Path in braces, `{id}`, and give the Field the
-[`display:`](reference/fields.md#display) it should show with. Write `{{` and `}}` for literal
-braces, and reference a Field inside a structure rather than the structure.
+**Fix**: write `big` or `little`, or leave `endian:` out for big-endian.
+
+It is also reported for `endian:` on a Field of a Type: a Type is read in its own byte order,
+whichever Field uses it.
+
+```yaml,diagnostic=invalid-endian
+name: demo
+fields:
+  - { name: hdr, type: Header, endian: little }
+types:
+  Header:
+    fields: [ {name: length, type: uint16} ]
+```
+
+**Fix**: set `endian:` on the Type, or on the Fields inside it.
+
+## `invalid-field-name` {#invalid-field-name}
+
+**Severity**: error
+
+A Field's `name:` is not a lowercase letter followed by lowercase letters, digits or `_`.
+Names appear bare in filters and Expressions, so `-` and `.` are refused, and a leading `_` is
+kept for Wirdigen's built-ins.
+
+```yaml,diagnostic=invalid-field-name
+name: demo
+fields: [ {name: msgType, type: uint8} ]
+```
+
+**Fix**: rename the Field, here `msg_type`. Its tree label is derived from the name
+("Msg type").
 
 ## `invalid-framing` {#invalid-framing}
 
@@ -750,30 +546,57 @@ fields:
   - { name: body, type: bytes, size: len }
 ```
 
-## `invalid-array` {#invalid-array}
+## `invalid-info` {#invalid-info}
 
 **Severity**: error
 
-A Field of a built-in type has `count:` or `repeat:`. Only an inline structure or a Field of a
-Type repeats, so that each element is a subtree item of its own.
+The top-level [`info:`](reference/info.md) template cannot be read: it is not a string, it is on
+several lines, a `{` or `}` pairs with nothing, or braces hold something other than a bare Field Path, such as
+an Expression or a format specifier. Or a Field Path names an inline structure, a Field of a Type
+or an array, which have no value of their own to show.
 
-```yaml,diagnostic=invalid-array
+```yaml,diagnostic=invalid-info
 name: demo
+info: "id={id:04x}"
 fields:
-  - { name: ids, type: uint16, count: 4 }
+  - { name: id, type: uint16 }
 ```
 
-**Fix**: put the value in an inline structure that repeats:
+**Fix**: write each Field Path in braces, `{id}`, and give the Field the
+[`display:`](reference/fields.md#display) it should show with. Write `{{` and `}}` for literal
+braces, and reference a Field inside a structure rather than the structure.
 
-```yaml
+## `invalid-label` {#invalid-label}
+
+**Severity**: error
+
+A label is empty, blank, spans several lines or is not a string: a Field's `label:`, a label
+in a values table, or the `true:` or `false:` label of a `bool`. A label is one line of text
+in the protocol tree.
+
+```yaml,diagnostic=invalid-label
 name: demo
-fields:
-  - name: ids
-    count: 4
-    fields: [ {name: id, type: uint16} ]
+fields: [ {name: id, type: uint8, label: ""} ]
 ```
 
-See [Arrays](reference/arrays.md).
+**Fix**: write a single-line label, or leave `label:` out to derive it from the name ("Id").
+
+## `invalid-padding` {#invalid-padding}
+
+**Severity**: error
+
+A constant [`padding:`](reference/fields.md#padding) is a negative number of bytes, or an
+Expression that has no value: it divides by zero, or shifts by a count outside 0 to 63. The
+error points at the dividing or shifting operator.
+
+```yaml,diagnostic=invalid-padding
+name: demo
+fields:
+  - { name: kind, type: uint8 }
+  - { padding: -2 }
+```
+
+**Fix**: write the number of bytes to skip, zero or more.
 
 ## `invalid-port` {#invalid-port}
 
@@ -793,80 +616,123 @@ fields:
 
 **Fix**: write ports from 1 to 65535, here `udp: ["65000-65535"]`.
 
-## `overlapping-ports` {#overlapping-ports}
+## `invalid-prefix` {#invalid-prefix}
 
 **Severity**: error
 
-A port is declared twice on one transport of
-[`registration: ports:`](reference/registration.md#ports): listed twice, spelt twice (`5000`
-and `0x1388`), or inside a range of the same list. The same port on UDP and on TCP is fine.
+A `prefix:` does not name an unsigned integer type. The prefix is the count of bytes read just
+before the value, so it is one of `uint8` to `uint64`.
 
-```yaml,diagnostic=overlapping-ports
+```yaml,diagnostic=invalid-prefix
 name: demo
-registration:
-  ports:
-    udp: ["5000-5010", 5005]
-fields:
-  - { name: id, type: uint8 }
+fields: [ {name: user, type: string, prefix: int16} ]
 ```
 
-**Fix**: declare each port once, here by removing `5005`.
+**Fix**: name the unsigned integer type of the count, here `uint16`.
 
-## `incompatible-display` {#incompatible-display}
+## `invalid-protocol-name` {#invalid-protocol-name}
 
 **Severity**: error
 
-A Field's `display:` or `encoding:` is not one its type takes, or the Field has a value-mapping
-key its type does not take. Unsigned integers take `dec`, `hex`, `oct`, `dec_hex` and
-`hex_dec`; signed integers are shown only as `dec`; `bytes` take `plain`, `dot`, `dash`,
-`colon` and `space`; `abs_time` takes `local`, `utc` and `doy_utc`; `string`, `rel_time`,
-`bool`, the floats and the address types take no `display:` at all. Only `string`, `abs_time`
-and `rel_time` take `encoding:`, each its own values: `ntp` is an `abs_time` encoding only.
-Only integers take `values:`, only `bool` takes `true:` and `false:`, only integers and floats
-take `unit:`, and only `bytes` take `dissector:`. An inline structure takes none of these keys:
-they belong on the Fields inside it. A bitfield sub-Field takes the displays of an unsigned integer, and `true:` and
-`false:` only when it is boolean: 1 bit wide, without `values:`, `unit:` or `display:`.
+`name:` is not a valid filter name. A name is a lowercase letter, then at least one lowercase
+letter, digit, `_` or `-`, 2 to 32 characters in all: Wireshark refuses one-character filter
+names. Uppercase is never lowercased silently, and a `.` is refused because it would blur
+where the Field Path starts in filters such as `demo.id`.
 
-```yaml,diagnostic=incompatible-display
-name: demo
-fields: [ {name: offset, type: int16, display: hex} ]
+```yaml,diagnostic=invalid-protocol-name
+name: Demo
+fields: [ {name: a, type: uint8} ]
 ```
 
-**Fix**: pick a value from the table in [Fields](reference/fields.md#display), or remove
-`display:` to use the type's default. A signed value shown in hex needs an unsigned type. The
-encodings are listed in [Strings and bytes](reference/fields.md#strings-and-bytes) and
-[Timestamps](reference/fields.md#timestamps), and the value mappings in
-[Value mappings](reference/fields.md#value-mappings).
+**Fix**: choose a name that follows the rules, here `demo`. The uppercase form is derived for
+the Protocol column, and `title:` sets the full name.
 
-## `invalid-label` {#invalid-label}
+## `invalid-protocol-title` {#invalid-protocol-title}
 
 **Severity**: error
 
-A label is empty, blank, spans several lines or is not a string: a Field's `label:`, a label
-in a values table, or the `true:` or `false:` label of a `bool`. A label is one line of text
-in the protocol tree.
+`title:` is empty, blank or spans several lines. A title is shown on one line at the root of
+the protocol tree.
 
-```yaml,diagnostic=invalid-label
+```yaml,diagnostic=invalid-protocol-title
 name: demo
-fields: [ {name: id, type: uint8, label: ""} ]
+title: ""
+fields: [ {name: a, type: uint8} ]
 ```
 
-**Fix**: write a single-line label, or leave `label:` out to derive it from the name ("Id").
+**Fix**: write a single-line title, or leave `title:` out to use the uppercase `name:`.
 
-## `invalid-description` {#invalid-description}
+## `invalid-repeat` {#invalid-repeat}
 
 **Severity**: error
 
-A Field's `description:` spans several lines or is not a string. Wireshark shows it on one
-line, in the status bar and the field reference.
+A `repeat:` is not `to_end`, the only way to repeat other than `count:` in this version of
+the format.
 
-```yaml,diagnostic=invalid-description
+```yaml,diagnostic=invalid-repeat
 name: demo
 fields:
-  - { name: id, type: uint8, description: "Identifies\nthe request" }
+  - name: items
+    repeat: forever
+    fields: [ {name: id, type: uint8} ]
 ```
 
-**Fix**: write the description on one line, or quote a value YAML reads as a number or a bool.
+**Fix**: write `repeat: to_end` to read elements until the message ends, or give the number of
+elements with `count:`. See [Arrays](reference/arrays.md).
+
+## `invalid-size` {#invalid-size}
+
+**Severity**: error
+
+A constant `size:` is a negative number of bytes, or an Expression that has no value: it
+divides by zero, or shifts by a count outside 0 to 63. The error points at the dividing or
+shifting operator.
+
+```yaml,diagnostic=invalid-size
+name: demo
+fields: [ {name: data, type: bytes, size: -4} ]
+```
+
+```yaml,diagnostic=invalid-size
+name: demo
+fields: [ {name: data, type: bytes, size: "16 / (4 - 4)"} ]
+```
+
+**Fix**: write the length in bytes, zero or more.
+
+## `invalid-terminator` {#invalid-terminator}
+
+**Severity**: error
+
+A `terminator:` is not a byte from 0 to 255, or it is not 0 on a `utf16` or `ucs2` string,
+which always ends at a 2-byte zero.
+
+```yaml,diagnostic=invalid-terminator
+name: demo
+fields: [ {name: user, type: string, encoding: utf16, terminator: 10} ]
+```
+
+**Fix**: write the byte value of the terminator, such as `0` or `10` for a line feed. A
+`utf16` or `ucs2` string takes only `terminator: 0`.
+
+## `invalid-type-name` {#invalid-type-name}
+
+**Severity**: error
+
+The name of a Type under `types:` or of an Enum under `enums:` is not an uppercase letter
+followed by letters or digits. Names of Types and Enums start with an uppercase letter so they
+can never be mistaken for a Field or a built-in type, which are lowercase.
+
+```yaml,diagnostic=invalid-type-name
+name: demo
+fields:
+  - { name: kind, type: uint8, values: msg_type }
+enums:
+  msg_type: { 1: Request }
+```
+
+**Fix**: rename the Enum and every `values:` naming it, here `MsgType`. For a Type, rename it
+and every `type:` naming it.
 
 ## `invalid-unit` {#invalid-unit}
 
@@ -884,25 +750,133 @@ fields:
 **Fix**: write each form on one line (`unit: [byte, bytes]`), or remove `unit:`. Quote a unit
 YAML reads as a number or a bool.
 
-## `overlapping-values` {#overlapping-values}
+## `leading-zero-literal` {#leading-zero-literal}
 
 **Severity**: error
 
-Two keys of one values table match a same value: a value inside a range, two ranges that
-share values, or one value spelt twice (`16` and `0x10`). The Dissector could show only one of
-the labels.
+An integer literal in an Expression starts with `0` and has more digits, such as `010`. In C
+that would be octal; Expressions have no octal, so the number is ambiguous.
 
-```yaml,diagnostic=overlapping-values
+```yaml,diagnostic=leading-zero-literal
 name: demo
-fields:
-  - name: kind
-    type: uint8
-    values:
-      "0-9": Low
-      5: Five
+fields: [ {name: data, type: bytes, size: "4 * 010"} ]
 ```
 
-**Fix**: give each value one label, here by splitting the range into `"0-4"` and `"6-9"`.
+**Fix**: write the decimal number without the zeros (`10`), or use `0x` or `0b` for hexadecimal
+or binary (`0x10`, `0b10`).
+
+## `merge-key` {#merge-key}
+
+**Severity**: error
+
+The file uses a YAML merge key (`<<:`). Merge keys are not part of the YAML subset Wirdigen
+reads, because a description reuses Fields through Types.
+
+```yaml,diagnostic=merge-key
+name: demo
+fields: [ {name: a, type: uint8} ]
+<<: {}
+```
+
+**Fix**: write the keys out, or move repeated Fields into a Type.
+
+## `mismatched-bit-widths` {#mismatched-bit-widths}
+
+**Severity**: error
+
+The widths of a bitfield's sub-Fields and padding do not add up to the bits of its container:
+8 for a `uint8`, 16 for a `uint16`, and so on. Every bit must be named or padded, so that the
+masks Wirdigen computes leave no bit ambiguous.
+
+```yaml,diagnostic=mismatched-bit-widths
+name: demo
+fields:
+  - name: flags
+    type: uint8
+    bits:
+      - { name: version, width: 3 }
+      - { name: ext, width: 1 }
+```
+
+**Fix**: cover the bits nothing names with a `{ padding: n }` entry, here `{ padding: 4 }`
+last, or correct a width.
+
+## `missing-field-kind` {#missing-field-kind}
+
+**Severity**: error
+
+A Field says nothing about what it is. A Field needs exactly one of `type:` (a built-in type
+or a Type), `fields:` (an inline structure) or `switch:` (a choice of layout).
+
+```yaml,diagnostic=missing-field-kind
+name: demo
+fields: [ {name: id} ]
+```
+
+**Fix**: add the Field's `type:`, here `{name: id, type: uint8}`.
+
+## `missing-key` {#missing-key}
+
+**Severity**: error
+
+A required key is missing: every description needs `name:` and `fields:`. An empty file is
+missing both.
+
+```yaml,diagnostic=missing-key
+name: demo
+```
+
+**Fix**: add the key. When the key is only misspelt, Wirdigen reports the
+[`unknown-key`](#unknown-key) instead, with the spelling it expected.
+
+## `missing-length` {#missing-length}
+
+**Severity**: error
+
+A `string` or `bytes` Field does not say how long it is. Its length comes from exactly one of
+`size:`, `prefix:` or `terminator:`.
+
+```yaml,diagnostic=missing-length
+name: demo
+fields: [ {name: user, type: string} ]
+```
+
+**Fix**: add the length key that matches the wire: `size: 16` for a constant length,
+`prefix: uint8` when a count comes just before the value, or `terminator: 0` for a
+NUL-terminated string. See [Sizes](reference/sizes.md).
+
+## `multiple-documents` {#multiple-documents}
+
+**Severity**: error
+
+A Protocol Description is a single YAML document, but the file holds several, separated by
+`---`.
+
+```yaml,diagnostic=multiple-documents
+name: a
+fields: [ {name: a, type: uint8} ]
+---
+name: b
+```
+
+**Fix**: put each Protocol Description in its own file.
+
+## `non-numeric-reference` {#non-numeric-reference}
+
+**Severity**: error
+
+An Expression reads a Field that has no number: a `string`, `bytes`, float, address, timestamp,
+inline structure or Field of a Type. Only integer and `bool` Fields can be read.
+
+```yaml,diagnostic=non-numeric-reference
+name: demo
+fields:
+  - { name: tag, type: string, size: 4 }
+  - { name: data, type: bytes, size: tag }
+```
+
+**Fix**: read an integer Field, or go into the structure for one: `header.length` rather than
+`header`.
 
 ## `overlapping-cases` {#overlapping-cases}
 
@@ -927,46 +901,161 @@ fields:
 **Fix**: give each value to a single case, here by splitting the range into `"1-2"` and
 `"4-5"`.
 
-## `conflicting-filter-name` {#conflicting-filter-name}
+## `overlapping-ports` {#overlapping-ports}
 
 **Severity**: error
 
-Two Fields reach one filter name with ProtoFields that differ in type, `display:`, value
-labels, `label:` or `description:`. The cases of a [`switch`](reference/conditionals.md#switch-tree)
-add no segment to filter names, so a Field of one case and a Field of the same name in another
-reach the same name, and Wireshark can register only one ProtoField under it. Wirdigen never
-renames a Field on its own: filter names are what the description spells.
+A port is declared twice on one transport of
+[`registration: ports:`](reference/registration.md#ports): listed twice, spelt twice (`5000`
+and `0x1388`), or inside a range of the same list. The same port on UDP and on TCP is fine.
 
-```yaml,diagnostic=conflicting-filter-name
+```yaml,diagnostic=overlapping-ports
 name: demo
+registration:
+  ports:
+    udp: ["5000-5010", 5005]
 fields:
-  - { name: kind, type: uint8 }
-  - name: body
-    switch: kind
-    cases:
-      1: [ { name: id, type: uint32 } ]
-      2: [ { name: id, type: uint16, label: Short id } ]
+  - { name: id, type: uint8 }
 ```
 
-**Fix**: rename one of the Fields, or make them match so they share the ProtoField.
+**Fix**: declare each port once, here by removing `5005`.
 
-## `conflicting-mappings` {#conflicting-mappings}
+## `overlapping-values` {#overlapping-values}
 
 **Severity**: error
 
-A Field has both `values:` and `unit:`. Wireshark shows either a label in place of the value or
-a unit after it, never both.
+Two keys of one values table match a same value: a value inside a range, two ranges that
+share values, or one value spelt twice (`16` and `0x10`). The Dissector could show only one of
+the labels.
 
-```yaml,diagnostic=conflicting-mappings
+```yaml,diagnostic=overlapping-values
 name: demo
 fields:
-  - name: length
-    type: uint16
-    values: { 0: Empty }
-    unit: [byte, bytes]
+  - name: kind
+    type: uint8
+    values:
+      "0-9": Low
+      5: Five
 ```
 
-**Fix**: keep one of them. A label for a special value can go in the Field's `description:`.
+**Fix**: give each value one label, here by splitting the range into `"0-4"` and `"6-9"`.
+
+## `protocol-name-taken` {#protocol-name-taken}
+
+**Severity**: warning
+
+Wireshark already has a protocol with one of the names the description gives its own: the
+filter name `name:`, the short name (`name:` in uppercase) or the full name (`title:`, or the
+short name without one). Wireshark refuses to load a Dissector whose protocol names are taken.
+
+```yaml,diagnostic=protocol-name-taken
+name: dns
+fields:
+  - { name: id, type: uint16 }
+```
+
+The built-in protocols are those of the latest stable Wireshark when this Wirdigen was
+released. They vary with the Wireshark version and build, which is why this is a warning.
+
+**Fix**: pick a name and a title of your own, such as `name: mydns`. When the Wireshark you
+target lacks the built-in protocol, allow the warning:
+
+```yaml
+name: dns
+fields:
+  - { name: id, type: uint16 }
+allow: [protocol-name-taken]
+```
+
+## `recursive-type` {#recursive-type}
+
+**Severity**: error
+
+A Type contains itself, directly or through other Types, so reading it would never end. Each
+cycle is reported once, at the use the first-declared Type of the cycle makes of the next one,
+and a note spells the whole cycle.
+
+```yaml,diagnostic=recursive-type
+name: demo
+fields:
+  - { name: root, type: Node }
+types:
+  Node:
+    fields:
+      - { name: id, type: uint8 }
+      - { name: child, type: Node }
+```
+
+**Fix**: break the cycle, for example by giving the inner Field a Type of its own that does not
+use the outer one.
+
+## `tcp-without-framing` {#tcp-without-framing}
+
+**Severity**: warning
+
+[`registration: ports:`](reference/registration.md#tcp) declares TCP ports, but the
+description has no `framing:`. Each TCP segment is then dissected as one message, which goes
+wrong when a message is split across segments or a segment holds several messages.
+
+```yaml,diagnostic=tcp-without-framing
+name: demo
+registration:
+  ports:
+    tcp: [5000]
+fields:
+  - { name: id, type: uint8 }
+```
+
+**Fix**: add `framing:` to say where each message ends. When every message travels in a
+segment of its own, allow the warning:
+
+```yaml
+name: demo
+registration:
+  ports:
+    tcp: [5000]
+fields:
+  - { name: id, type: uint8 }
+allow: [tcp-without-framing]
+```
+
+## `unexpected-length` {#unexpected-length}
+
+**Severity**: error
+
+A Field of a fixed-size type has a length key (`size:`, `prefix:` or `terminator:`). Its size
+already follows from its type, or for a timestamp (`abs_time`, `rel_time`) from its
+`encoding:`. An inline structure takes no length key either: it is as long as its Fields.
+
+```yaml,diagnostic=unexpected-length
+name: demo
+fields: [ {name: id, type: uint32, size: 4} ]
+```
+
+**Fix**: remove the length key.
+
+## `unknown-allow` {#unknown-allow}
+
+**Severity**: warning
+
+An `allow:` entry names no warning: either no Diagnostic has that name, or it names an error,
+which cannot be silenced. It is a warning rather than an error so that a description allowing a
+warning added by a newer Wirdigen still works with an older one.
+
+```yaml,diagnostic=unknown-allow
+name: demo
+fields: [ {name: a, type: uint8} ]
+allow: [bogus]
+```
+
+**Fix**: correct the name or remove the entry. To keep an entry meant for a newer Wirdigen,
+allow this warning too:
+
+```yaml
+name: demo
+fields: [ {name: a, type: uint8} ]
+allow: [unknown-allow, bogus]
+```
 
 ## `unknown-enum` {#unknown-enum}
 
@@ -984,74 +1073,6 @@ enums:
 
 **Fix**: correct the name, here `MsgType`, or declare the Enum under `enums:`. To label the
 values of this Field only, write the table inline: `values: { 1: Request }`.
-
-## `expression-syntax` {#expression-syntax}
-
-**Severity**: error
-
-An [Expression](reference/expressions.md) cannot be read: a missing or extra value, operator or
-parenthesis, a character Expressions do not use (such as `=` or a quote), a malformed or
-oversized integer literal, a built-in other than `_offset` and `_remaining`, or a Field Path
-with an empty segment. The error points at the offending token; in an escaped or multi-line
-YAML string, at the whole value. Only the first error of each Expression is reported.
-
-```yaml,diagnostic=expression-syntax
-name: demo
-fields: [ {name: data, type: bytes, size: "(4 + 2"} ]
-```
-
-**Fix**: correct the Expression, here by closing the parenthesis: `"(4 + 2)"`.
-
-## `leading-zero-literal` {#leading-zero-literal}
-
-**Severity**: error
-
-An integer literal in an Expression starts with `0` and has more digits, such as `010`. In C
-that would be octal; Expressions have no octal, so the number is ambiguous.
-
-```yaml,diagnostic=leading-zero-literal
-name: demo
-fields: [ {name: data, type: bytes, size: "4 * 010"} ]
-```
-
-**Fix**: write the decimal number without the zeros (`10`), or use `0x` or `0b` for hexadecimal
-or binary (`0x10`, `0b10`).
-
-## `chained-comparison` {#chained-comparison}
-
-**Severity**: error
-
-Two comparisons follow each other without parentheses, as in `a < b < c`. Comparisons do not
-chain: in C, `1 < 3 < 2` compares the 1 of `1 < 3` with 2, which is rarely what was meant. The
-error points at the second comparison.
-
-```yaml,diagnostic=chained-comparison
-name: demo
-fields: [ {name: data, type: bytes, size: "1 < 2 < 3"} ]
-```
-
-**Fix**: join the two comparisons with `&&`, as in `a < b && b < c`, or add parentheses to
-compare the 1 or 0 of the first: `(a < b) < c`.
-
-## `expression-too-deep` {#expression-too-deep}
-
-**Severity**: error
-
-An [Expression](reference/expressions.md#operators) nests more than 64 levels deep. Each
-value, parenthesis and unary operator is a level, and so is each binary operator over its
-operands, so a flat chain such as `1+1+…+1` of 65 operands is 65 deep. Lua cannot load the
-Dissector such an Expression would make. The error points at the token that reaches depth 65.
-
-```yaml,diagnostic=expression-too-deep
-name: demo
-fields:
-  - name: data
-    type: bytes
-    size: "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1"
-```
-
-**Fix**: make the Expression shallower. Group a long chain with parentheses, as
-`(1+1+…) + (1+1+…)`, which is about half as deep, and remove parentheses that change nothing.
 
 ## `unknown-field` {#unknown-field}
 
@@ -1084,96 +1105,60 @@ types:
 **Fix**: correct the name, or declare the Field it reads before the Field that reads it: here
 `length`, and a `count` Field before `record`.
 
-## `forward-reference` {#forward-reference}
+## `unknown-key` {#unknown-key}
 
 **Severity**: error
 
-An Expression reads a Field that is read only after it, or reads its own Field. A Dissector
-reads a packet in order, so the value does not exist yet. A note points at the later Field.
+A key is not part of the format. When it is close to a known key, the message suggests that
+key.
 
-```yaml,diagnostic=forward-reference
+```yaml,diagnostic=unknown-key
 name: demo
-fields:
-  - { name: data, type: bytes, size: length }
-  - { name: length, type: uint8 }
+bogus: 1
+fields: [ {name: a, type: uint8} ]
 ```
 
-**Fix**: move the Field that is read before the Field that reads it.
+**Fix**: correct the spelling, or remove the key. Use a YAML comment to document a description.
 
-## `non-numeric-reference` {#non-numeric-reference}
+## `unknown-type` {#unknown-type}
 
 **Severity**: error
 
-An Expression reads a Field that has no number: a `string`, `bytes`, float, address, timestamp,
-inline structure or Field of a Type. Only integer and `bool` Fields can be read.
+A Field's `type:` names no built-in type and no Type. When the name is close to a built-in or
+to a declared Type, the message suggests it. An unknown Type is reported once, at its first
+use, however many Fields use it.
 
-```yaml,diagnostic=non-numeric-reference
+```yaml,diagnostic=unknown-type
 name: demo
-fields:
-  - { name: tag, type: string, size: 4 }
-  - { name: data, type: bytes, size: tag }
+fields: [ {name: id, type: unit8} ]
 ```
 
-**Fix**: read an integer Field, or go into the structure for one: `header.length` rather than
-`header`.
+**Fix**: correct the spelling, here `uint8`, or declare the Type under `types:`. The built-in
+types are listed in [Fields](reference/fields.md#built-in-types).
 
-## `conditional-reference` {#conditional-reference}
-
-**Severity**: error
-
-An Expression reads a Field that is read only under an [`if:`](reference/conditionals.md) or
-in a [`switch` case](reference/conditionals.md#switch-scope), or a Field inside one, from
-outside that `if:` or case. When the condition is false, or another case matched, the Field has
-no value. Two `if:` with the same condition still count as different: conditions are never
-compared.
-
-```yaml,diagnostic=conditional-reference
-name: demo
-fields:
-  - { name: flags, type: uint8 }
-  - { name: len, type: uint8, if: "flags & 1" }
-  - { name: data, type: bytes, size: len, if: "flags & 1" }
-```
-
-**Fix**: put the Field and everything that reads it in one inline structure carrying the `if:`:
-
-```yaml
-name: demo
-fields:
-  - { name: flags, type: uint8 }
-  - name: ext
-    if: "flags & 1"
-    fields:
-      - { name: len, type: uint8 }
-      - { name: data, type: bytes, size: len }
-```
-
-## `unreachable-value` {#unreachable-value}
+## `unreachable-expect` {#unreachable-expect}
 
 **Severity**: warning
 
-A key of a values table is outside the range of the Field's type, so no packet can show its
-label: `256` on a `uint8`, or `-1` on any unsigned type. A range is reported only when none of
-its values fit. For an Enum, each key is reported once, for the first Field whose type cannot
-hold it. The Dissector leaves the key out.
+An [`expect:`](reference/fields.md#expect) lists no value the Field's type can hold: `256` on
+a `uint8`, `2` on a `bool`, `4` on a 2-bit sub-Field. It never matches, so every packet gets
+the "Unexpected value" expert info. A list or a range is reported only when none of its values
+fit.
 
-```yaml,diagnostic=unreachable-value
+```yaml,diagnostic=unreachable-expect
 name: demo
 fields:
-  - { name: kind, type: uint8, values: { 1: One, 256: Never } }
+  - { name: version, type: uint8, expect: 256 }
 ```
 
-**Fix**: remove the key, or widen the Field's type if the value can occur. An Enum shared by
-Fields of several widths can keep keys only the widest reaches; allow the warning then:
+**Fix**: correct the value, or widen the Field's type if the value can occur. To flag every
+packet on purpose, allow the warning:
 
 ```yaml
 name: demo
 fields:
-  - { name: short_kind, type: uint8, values: Kind }
-  - { name: long_kind, type: uint16, values: Kind }
-enums:
-  Kind: { 1: One, 256: Wide }
-allow: [unreachable-value]
+  - { name: version, type: uint8, expect: 256 }
+allow: [unreachable-expect]
 ```
 
 ## `unreachable-field` {#unreachable-field}
@@ -1224,86 +1209,32 @@ fields:
 allow: [unreachable-field]
 ```
 
-## `unreachable-expect` {#unreachable-expect}
+## `unreachable-value` {#unreachable-value}
 
 **Severity**: warning
 
-An [`expect:`](reference/fields.md#expect) lists no value the Field's type can hold: `256` on
-a `uint8`, `2` on a `bool`, `4` on a 2-bit sub-Field. It never matches, so every packet gets
-the "Unexpected value" expert info. A list or a range is reported only when none of its values
-fit.
+A key of a values table is outside the range of the Field's type, so no packet can show its
+label: `256` on a `uint8`, or `-1` on any unsigned type. A range is reported only when none of
+its values fit. For an Enum, each key is reported once, for the first Field whose type cannot
+hold it. The Dissector leaves the key out.
 
-```yaml,diagnostic=unreachable-expect
+```yaml,diagnostic=unreachable-value
 name: demo
 fields:
-  - { name: version, type: uint8, expect: 256 }
+  - { name: kind, type: uint8, values: { 1: One, 256: Never } }
 ```
 
-**Fix**: correct the value, or widen the Field's type if the value can occur. To flag every
-packet on purpose, allow the warning:
+**Fix**: remove the key, or widen the Field's type if the value can occur. An Enum shared by
+Fields of several widths can keep keys only the widest reaches; allow the warning then:
 
 ```yaml
 name: demo
 fields:
-  - { name: version, type: uint8, expect: 256 }
-allow: [unreachable-expect]
-```
-
-## `tcp-without-framing` {#tcp-without-framing}
-
-**Severity**: warning
-
-[`registration: ports:`](reference/registration.md#tcp) declares TCP ports, but the
-description has no `framing:`. Each TCP segment is then dissected as one message, which goes
-wrong when a message is split across segments or a segment holds several messages.
-
-```yaml,diagnostic=tcp-without-framing
-name: demo
-registration:
-  ports:
-    tcp: [5000]
-fields:
-  - { name: id, type: uint8 }
-```
-
-**Fix**: add `framing:` to say where each message ends. When every message travels in a
-segment of its own, allow the warning:
-
-```yaml
-name: demo
-registration:
-  ports:
-    tcp: [5000]
-fields:
-  - { name: id, type: uint8 }
-allow: [tcp-without-framing]
-```
-
-## `protocol-name-taken` {#protocol-name-taken}
-
-**Severity**: warning
-
-Wireshark already has a protocol with one of the names the description gives its own: the
-filter name `name:`, the short name (`name:` in uppercase) or the full name (`title:`, or the
-short name without one). Wireshark refuses to load a Dissector whose protocol names are taken.
-
-```yaml,diagnostic=protocol-name-taken
-name: dns
-fields:
-  - { name: id, type: uint16 }
-```
-
-The built-in protocols are those of the latest stable Wireshark when this Wirdigen was
-released. They vary with the Wireshark version and build, which is why this is a warning.
-
-**Fix**: pick a name and a title of your own, such as `name: mydns`. When the Wireshark you
-target lacks the built-in protocol, allow the warning:
-
-```yaml
-name: dns
-fields:
-  - { name: id, type: uint16 }
-allow: [protocol-name-taken]
+  - { name: short_kind, type: uint8, values: Kind }
+  - { name: long_kind, type: uint16, values: Kind }
+enums:
+  Kind: { 1: One, 256: Wide }
+allow: [unreachable-value]
 ```
 
 ## `unused-enum` {#unused-enum}
@@ -1358,25 +1289,94 @@ types:
 allow: [unused-type]
 ```
 
-## `unknown-allow` {#unknown-allow}
+## `wrong-value-type` {#wrong-value-type}
 
-**Severity**: warning
+**Severity**: error
 
-An `allow:` entry names no warning: either no Diagnostic has that name, or it names an error,
-which cannot be silenced. It is a warning rather than an error so that a description allowing a
-warning added by a newer Wirdigen still works with an older one.
+A value has the wrong kind: a scalar where a list is expected, a list where a mapping is
+expected, a float or a bool where an integer is expected, and so on. The whole description must
+be a mapping.
 
-```yaml,diagnostic=unknown-allow
+```yaml,diagnostic=wrong-value-type
 name: demo
 fields: [ {name: a, type: uint8} ]
-allow: [bogus]
+allow: unknown-allow
 ```
 
-**Fix**: correct the name or remove the entry. To keep an entry meant for a newer Wirdigen,
-allow this warning too:
+**Fix**: write the value in the kind the message asks for, here a list:
+`allow: [unknown-allow]`.
 
-```yaml
-name: demo
+## `yaml-alias` {#yaml-alias}
+
+**Severity**: error
+
+The file uses a YAML alias (`*name`). Aliases are not part of the YAML subset Wirdigen reads,
+because a description reuses Fields through Types. An alias always comes with the anchor it
+refers to, which is the error [`yaml-anchor`](#yaml-anchor).
+
+```yaml,diagnostic=yaml-alias,diagnostic=yaml-anchor
+x: &a demo
+name: *a
 fields: [ {name: a, type: uint8} ]
-allow: [unknown-allow, bogus]
 ```
+
+**Fix**: write the value out, or move repeated Fields into a Type.
+
+## `yaml-anchor` {#yaml-anchor}
+
+**Severity**: error
+
+The file declares a YAML anchor (`&name`). Anchors are not part of the YAML subset Wirdigen
+reads, because a description reuses Fields through Types.
+
+```yaml,diagnostic=yaml-anchor
+name: &n demo
+fields: [ {name: a, type: uint8} ]
+```
+
+**Fix**: remove the anchor, and move repeated Fields into a Type.
+
+## `yaml-syntax` {#yaml-syntax}
+
+**Severity**: error
+
+The file is not well-formed YAML, so nothing else can be checked. The message is the YAML
+parser's.
+
+```yaml,diagnostic=yaml-syntax
+name: [demo
+fields: []
+```
+
+**Fix**: correct the YAML at the position shown, here by closing the `[` list or writing
+`name: demo`.
+
+## `yaml-tag` {#yaml-tag}
+
+**Severity**: error
+
+The file uses a YAML tag (`!foo`, `!!str`). Tags are not part of the YAML subset Wirdigen reads.
+
+```yaml,diagnostic=yaml-tag
+name: !foo demo
+fields: [ {name: a, type: uint8} ]
+```
+
+**Fix**: remove the tag. To keep a value as text, quote it.
+
+## `yaml-too-deep` {#yaml-too-deep}
+
+**Severity**: error
+
+The YAML nests more than 256 levels deep, anywhere in the file: the root is the first level, and
+each value inside a list or a mapping is one level deeper. The error points at the first node
+past the limit, and nothing else is checked. A description within the
+[`field-too-deep`](#field-too-deep) limit nests at most about 194 levels.
+
+```yaml,diagnostic=yaml-too-deep
+name: demo
+info: [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+fields: [ { name: a, type: uint8 } ]
+```
+
+**Fix**: flatten the nesting.

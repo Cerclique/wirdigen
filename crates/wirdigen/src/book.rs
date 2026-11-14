@@ -155,8 +155,9 @@ fn entries(markdown: &str) -> Vec<Entry> {
 /// The page the renderer links to, under `book/src`.
 const INDEX_PAGE: &str = "diagnostics.md";
 
-/// Spec §11: the Diagnostics index has one entry per Diagnostic name and vice versa, each with
-/// its severity, a snippet that triggers it and how to fix it (or `allow:` it, for a warning).
+/// Spec §11: the Diagnostics index has one entry per Diagnostic name and vice versa, sorted by
+/// name, each with its severity, a snippet that triggers it and how to fix it (or `allow:` it, for
+/// a warning).
 #[test]
 fn the_index_has_one_entry_per_diagnostic_name() {
     let index = entries(&read_page(INDEX_PAGE));
@@ -166,6 +167,9 @@ fn the_index_has_one_entry_per_diagnostic_name() {
     }
     let names: BTreeSet<&str> = Name::ALL.iter().map(|n| n.as_str()).collect();
     assert_eq!(documented, names, "the Diagnostics index and the Diagnostic names differ");
+    if let Some(pair) = index.windows(2).find(|pair| pair[0].anchor > pair[1].anchor) {
+        panic!("`{}` must come before `{}`: the Diagnostics index is sorted by name", pair[1].anchor, pair[0].anchor);
+    }
 
     for entry in &index {
         let name =
