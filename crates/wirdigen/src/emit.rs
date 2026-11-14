@@ -154,11 +154,16 @@ fn join<T>(
     Ok(())
 }
 
-/// A value written by a closure, for text built from parts without a `String` of its own.
-#[derive(Clone, Copy)]
-struct Lazy<F>(F);
+/// Text that `write` writes when it is displayed, built from parts without a `String` of its own.
+const fn display_with<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result>(write: F) -> DisplayWith<F> {
+    DisplayWith(write)
+}
 
-impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> Display for Lazy<F> {
+/// What [`display_with`] returns.
+#[derive(Clone, Copy)]
+struct DisplayWith<F>(F);
+
+impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> Display for DisplayWith<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (self.0)(f)
     }
@@ -343,7 +348,7 @@ fn dissector(w: &mut Writer, model: &Dissector) {
         |w| {
             w.line("local v = {}");
             for read in &framing.reads {
-                let at = Lazy(|f: &mut fmt::Formatter<'_>| write!(f, "offset + {}", read.offset));
+                let at = display_with(|f| write!(f, "offset + {}", read.offset));
                 w.line(format_args!("{} = {}", kept(&read.key), read_value_at(&read.read, at, read.size)));
             }
             // The prelude evaluates it under `wd_evaluate`, which catches its faults.
@@ -392,9 +397,7 @@ fn dissector(w: &mut Writer, model: &Dissector) {
 
 /// The line adding the protocol's tree root over the whole of `tvb`.
 fn root_line(model: &Dissector) -> impl Display + '_ {
-    Lazy(|f: &mut fmt::Formatter<'_>| {
-        write!(f, "local root = tree:add(wd_proto, tvb(0, tvb:len()), {})", lua_string(&model.full_name))
-    })
+    display_with(|f| write!(f, "local root = tree:add(wd_proto, tvb(0, tvb:len()), {})", lua_string(&model.full_name)))
 }
 
 /// The lines reading one Message, the whole of `tvb`, under its own tree root, then setting the
@@ -404,8 +407,7 @@ fn message(w: &mut Writer, model: &Dissector) {
         w.line("wd_info_cases = {}");
     }
     if !model.extractors.is_empty() {
-        let fields =
-            Lazy(|f: &mut fmt::Formatter<'_>| join(f, &model.extractors, ", ", |f, x| write!(f, "{}", own(&x.key))));
+        let fields = display_with(|f| join(f, &model.extractors, ", ", |f, x| write!(f, "{}", own(&x.key))));
         w.line(format_args!("local before = wd_info_counts({{ {fields} }})"));
     }
     w.line(root_line(model));
@@ -419,11 +421,11 @@ fn message(w: &mut Writer, model: &Dissector) {
 /// the values it read: `before` holds the extractors' counts from before it. The fence is cleared
 /// first, so the text replaces what TCP reassembly fenced off from an earlier Message.
 fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
-    let case = |path| Lazy(move |f: &mut fmt::Formatter<'_>| write!(f, "wd_info_cases[{}]", lua_string(path)));
+    let case = |path| display_with(move |f| write!(f, "wd_info_cases[{}]", lua_string(path)));
     match info {
         Info::Template(parts) if parts.is_empty() => set_info(w, "\"\""),
         Info::Template(parts) => {
-            let text = Lazy(|f: &mut fmt::Formatter<'_>| {
+            let text = display_with(|f| {
                 join(f, parts, " .. ", |f, part| match part {
                     InfoPart::Text(text) => write!(f, "{}", lua_string(text)),
                     InfoPart::Display(extractor) => {
@@ -514,7 +516,7 @@ fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
         Some(Strings::Table { table: TableRef::Inline(table), .. }) => Some(table),
         _ => None,
     };
-    let open = Lazy(|f: &mut fmt::Formatter<'_>| {
+    let open = display_with(|f| {
         write!(f, "{} = ProtoField.{}(", own(&field.key), field.field_type.constructor)?;
         write!(f, "{}, {}", lua_string(&field.abbrev), lua_string(&field.label))?;
         if let Some(display) = display {
@@ -537,7 +539,7 @@ fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
             }
         }
     });
-    let close = Lazy(|f: &mut fmt::Formatter<'_>| {
+    let close = display_with(|f| {
         if mapping_slots && (field.mask.is_some() || field.description.is_some()) {
             // Slots before the last one given that nothing fills stay `nil`: the value string,
             // the mask. A mask is written in hexadecimal, as wide as its container.
@@ -615,7 +617,7 @@ fn declare(w: &mut Writer, values: bool) {
 
 /// The Lua expression of the value kept under `key` in the function's values table.
 fn kept(key: &str) -> impl Display + '_ {
-    Lazy(move |f: &mut fmt::Formatter<'_>| write!(f, "v{}", index(key)))
+    display_with(move |f| write!(f, "v{}", index(key)))
 }
 
 /// Writes the return of a Type's dissect function, with the table of what it `exports`. A table
@@ -645,7 +647,7 @@ fn nested_exports(w: &mut Writer, access: &str, table: &BTreeMap<String, Export>
 
 /// The table constructor of the values of an export table, without the tables nested in it.
 fn values_constructor(table: &BTreeMap<String, Export>) -> impl Display + '_ {
-    Lazy(move |f: &mut fmt::Formatter<'_>| {
+    display_with(move |f| {
         let mut values = table.iter().filter_map(|(key, export)| match export {
             Export::Value(held) => Some((key, held)),
             Export::Table(_) => None,
@@ -675,20 +677,12 @@ fn is_plain_key(key: &str) -> bool {
 
 /// A key in a table constructor: `key` or `["key"]`.
 fn table_key(key: &str) -> impl Display + '_ {
-    Lazy(
-        move |f: &mut fmt::Formatter<'_>| {
-            if is_plain_key(key) { f.write_str(key) } else { write!(f, "[{}]", lua_string(key)) }
-        },
-    )
+    display_with(move |f| if is_plain_key(key) { f.write_str(key) } else { write!(f, "[{}]", lua_string(key)) })
 }
 
 /// An index into a table: `.key` or `["key"]`.
 fn index(key: &str) -> impl Display + '_ {
-    Lazy(
-        move |f: &mut fmt::Formatter<'_>| {
-            if is_plain_key(key) { write!(f, ".{key}") } else { write!(f, "[{}]", lua_string(key)) }
-        },
-    )
+    display_with(move |f| if is_plain_key(key) { write!(f, ".{key}") } else { write!(f, "[{}]", lua_string(key)) })
 }
 
 /// Which dissect function a statement is in, which says how its paths are reported.
@@ -756,7 +750,7 @@ fn open_subtree(w: &mut Writer, model: &Dissector, field: &Ref, hidden: bool) {
 /// and the context table, and keeping the table it returns in `result` when the caller reads
 /// inside it.
 fn call(w: &mut Writer, model: &Dissector, ty: &str, site: &Ref, context: &[(String, LuaExpr)], result: Option<&str>) {
-    let line = Lazy(|f: &mut fmt::Formatter<'_>| {
+    let line = display_with(|f| {
         f.write_str("offset")?;
         if let Some(result) = result {
             write!(f, ", {}", kept(result))?;
@@ -816,7 +810,7 @@ fn switch(w: &mut Writer, model: &Dissector, path: &str, stmt: &SwitchStmt<'_>, 
                 w.line(format_args!("tree:append_text(\": \" .. {name})"));
             }
             for (index, (ranges, body)) in stmt.cases.iter().enumerate() {
-                let test = Lazy(|f: &mut fmt::Formatter<'_>| {
+                let test = display_with(|f| {
                     join(f, ranges, " or ", |f, (low, high)| {
                         if low == high {
                             write!(f, "subject == {}", lua_integer(*low))
@@ -875,7 +869,7 @@ fn read_value(read: &ValueRead, size: usize) -> impl Display + '_ {
 
 /// The Lua expression of the value of a `size`-byte read at the Lua expression `at`.
 fn read_value_at<'a>(read: &'a ValueRead, at: impl Display + 'a, size: usize) -> impl Display + 'a {
-    Lazy(move |f: &mut fmt::Formatter<'_>| match read {
+    display_with(move |f| match read {
         ValueRead::Integer(format) => write!(f, "string.unpack({}, tvb:raw({at}, {size}))", lua_string(format)),
         ValueRead::Bool => write!(f, "wd_bool(tvb({at}, {size}):uint() ~= 0)"),
     })
@@ -883,7 +877,7 @@ fn read_value_at<'a>(read: &'a ValueRead, at: impl Display + 'a, size: usize) ->
 
 /// The line running `check` on `item_expr`, the Lua expression of the checked item (spec §3.10).
 fn expect_line<'a>(item_expr: impl Display + 'a, check: &'a ExpectCheck, scope: Scope) -> impl Display + 'a {
-    Lazy(move |f: &mut fmt::Formatter<'_>| {
+    display_with(move |f| {
         let reported = reported_path(&check.path, scope);
         let bounds = check.ranges.iter().flat_map(|(l, h)| [lua_integer(*l), lua_integer(*h)]);
         let (value, text) = (lua_expr(&check.value), lua_string(&check.text));
@@ -896,7 +890,7 @@ fn expect_line<'a>(item_expr: impl Display + 'a, check: &'a ExpectCheck, scope: 
 /// The Lua expression of the path a malformed-packet report names: inside a Type, the path of
 /// the use extended by the path in the Type.
 fn reported_path(path: &str, scope: Scope) -> impl Display + Copy + '_ {
-    Lazy(move |f: &mut fmt::Formatter<'_>| match scope {
+    display_with(move |f| match scope {
         Scope::Top => write!(f, "{}", lua_string(path)),
         Scope::Type => {
             f.write_str("site.path .. \".")?;
@@ -1085,7 +1079,7 @@ fn plain_statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope)
             match length {
                 Length::Fixed(size) => {
                     w.block(format_args!("if not wd_fits(tvb, offset, {size}) then"), truncated, "end");
-                    let range = Lazy(|f: &mut fmt::Formatter<'_>| write!(f, "tvb(offset, {size})"));
+                    let range = display_with(|f| write!(f, "tvb(offset, {size})"));
                     let check_read = check_read.as_ref().map(|read| read_value(read, *size));
                     let item = Item {
                         add: &add_call(decode, local, &range),
@@ -1144,7 +1138,7 @@ fn plain_statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope)
 
 /// The call adding the item of `local`, read from the `TvbRange` `range` as `decode` says.
 fn add_call<'a>(decode: &'a Decode, local: Place<'a>, range: &'a dyn Display) -> impl Display + 'a {
-    Lazy(move |f: &mut fmt::Formatter<'_>| match decode {
+    display_with(move |f| match decode {
         Decode::Big => write!(f, "tree:add({local}, {range})"),
         Decode::Little => write!(f, "tree:add_le({local}, {range})"),
         Decode::Encoded { encoding, endian: None } => write!(f, "tree:add_packet_field({local}, {range}, {encoding})"),
@@ -1195,7 +1189,7 @@ fn add_item(w: &mut Writer, model: &Dissector, item: &Item<'_>, scope: Scope) {
             }
             for bit in item.bits {
                 let method = if bit.little { "add_le" } else { "add" };
-                let add = Lazy(|f: &mut fmt::Formatter<'_>| {
+                let add = display_with(|f| {
                     write!(f, "item:{method}({}, {}){}", field_ref(model, &bit.field), item.range, hide(bit.hidden))
                 });
                 match &bit.expect {
@@ -1249,11 +1243,7 @@ const fn binary_helper(op: BinaryOp) -> Option<&'static str> {
 /// A Lua integer literal for an Expression. A decimal literal above `i64::MAX` would be a
 /// float; a hexadecimal one wraps.
 fn expr_integer(value: u64) -> impl Display {
-    Lazy(
-        move |f: &mut fmt::Formatter<'_>| {
-            if i64::try_from(value).is_ok() { write!(f, "{value}") } else { write!(f, "0x{value:X}") }
-        },
-    )
+    display_with(move |f| if i64::try_from(value).is_ok() { write!(f, "{value}") } else { write!(f, "0x{value:X}") })
 }
 
 /// An Expression as Lua: helper calls, and Lua's short-circuit `and`/`or` for `&&`/`||`, turned
@@ -1340,7 +1330,7 @@ fn escape(f: &mut fmt::Formatter<'_>, text: &str) -> fmt::Result {
 
 /// Text for a one-line comment: anything that could end the line is replaced.
 fn comment_text(text: &str) -> impl Display + '_ {
-    Lazy(move |f: &mut fmt::Formatter<'_>| {
+    display_with(move |f| {
         text.chars().try_for_each(|c| {
             f.write_char(if c.is_control() || matches!(c, '\u{85}' | '\u{2028}' | '\u{2029}') { '?' } else { c })
         })
