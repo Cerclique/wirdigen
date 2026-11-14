@@ -22,7 +22,7 @@ macro_rules! variants {
 }
 pub(crate) use variants;
 
-/// What a walk over a description saw.
+/// What a walk over a Protocol Description saw.
 #[derive(Debug, Default)]
 pub(crate) struct Coverage<'s> {
     /// The source, for the text of each Expression.
@@ -31,23 +31,26 @@ pub(crate) struct Coverage<'s> {
     expected: BTreeMap<&'static str, BTreeSet<&'static str>>,
     /// The variants seen, by enum.
     seen: BTreeMap<&'static str, BTreeSet<&'static str>>,
-    /// The type names of `type:` Fields.
+    /// The names in the `type:` of Fields: built-in types and Types.
     pub(crate) types: BTreeSet<String>,
     /// The dissectors named by `dissector:`.
     pub(crate) dissectors: BTreeSet<String>,
 }
 
 impl Coverage<'_> {
+    /// Registers `variants` as every variant of the enum `name`.
     pub(crate) fn expect(&mut self, name: &'static str, variants: &[&'static str]) {
         self.expected.entry(name).or_default().extend(variants);
     }
 
+    /// Records that the walk met `variant` of the enum `name`.
     pub(crate) fn saw(&mut self, name: &'static str, variant: &'static str) {
         self.seen.entry(name).or_default().insert(variant);
     }
 }
 
-/// The enums the walk must meet: one never met would hide all its variants.
+/// The enums whose [`variants!`] the walk must reach, by the name each passes: an enum never
+/// reached would hide all its variants.
 const ENUMS: [&str; 20] = [
     "RawEntry",
     "RawKind",

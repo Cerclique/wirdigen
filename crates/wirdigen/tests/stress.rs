@@ -26,14 +26,17 @@ macro_rules! line {
     };
 }
 
-/// The wide shape's size: Enums, Types, Fields per Type, and top-level Fields.
+/// The Enums of the wide shape.
 const WIDE_ENUMS: usize = 200;
+/// The Types of the wide shape, each used once at the top level.
 const WIDE_TYPES: usize = 320;
+/// The Fields of each Type of the wide shape.
 const WIDE_TYPE_FIELDS: usize = 40;
+/// The top-level Fields of the wide shape, besides its Types.
 const WIDE_TOP_FIELDS: usize = 1_500;
 
-/// The kinds of Field the wide shape cycles through, by their index: `field(i, j)` is Field `j`
-/// of the structure `i`.
+/// Appends Field `j` of Structure `i` of the wide shape at `indent`: the kind of Field cycles
+/// with `j`, and the Enum it names with `i + j`.
 fn wide_field(text: &mut String, indent: &str, i: usize, j: usize) {
     let name = format!("f{j}");
     let e = (i + j) % WIDE_ENUMS;
@@ -87,7 +90,7 @@ fn wide() -> String {
 }
 
 /// The Field and Expression depth limit (ADR 0018, ADR 0020).
-const LIMIT: usize = 64;
+const DEPTH_LIMIT: usize = 64;
 /// How many times the deep shape repeats each of its parts.
 const DEEP_COPIES: usize = 8;
 
@@ -106,12 +109,12 @@ fn deep() -> String {
         line!(
             text,
             "  - name: nested{copy}\n    fields: [{}{{ name: x, type: uint8 }}{}]",
-            "{ name: s, fields: [".repeat(LIMIT - 1),
-            "] }".repeat(LIMIT - 1)
+            "{ name: s, fields: [".repeat(DEPTH_LIMIT - 1),
+            "] }".repeat(DEPTH_LIMIT - 1)
         );
         // `switch` Fields with inline cases, the sub-Fields of a bitfield 64 deep.
         let mut indent = "  ".to_owned();
-        for level in 0..LIMIT - 1 {
+        for level in 0..DEPTH_LIMIT - 1 {
             line!(text, "{indent}- name: switch{copy}x{level}\n{indent}  switch: n\n{indent}  cases:\n{indent}    0:");
             indent.push_str("      ");
             line!(text, "{indent}- {{ name: v, type: uint8 }}");
@@ -119,23 +122,23 @@ fn deep() -> String {
         line!(text, "{indent}- name: flags\n{indent}  type: uint8\n{indent}  bits:");
         line!(text, "{indent}    - {{ name: high, width: 4, expect: [1, \"2-3\"] }}\n{indent}    - {{ padding: 4 }}");
         // Expressions 64 deep: a flat chain, parentheses and unary operators.
-        let chain = vec!["n"; LIMIT].join(" + ");
+        let chain = vec!["n"; DEPTH_LIMIT].join(" + ");
         line!(text, "  - {{ name: flat{copy}, type: uint8, if: \"{chain}\" }}");
-        let parens = format!("{}n{}", "(".repeat(LIMIT - 1), ")".repeat(LIMIT - 1));
+        let parens = format!("{}n{}", "(".repeat(DEPTH_LIMIT - 1), ")".repeat(DEPTH_LIMIT - 1));
         line!(text, "  - {{ name: parens{copy}, type: uint8, if: \"{parens}\" }}");
-        let unary = format!("{}n", "-~".repeat((LIMIT - 1) / 2) + "!");
+        let unary = format!("{}n", "-~".repeat((DEPTH_LIMIT - 1) / 2) + "!");
         line!(text, "  - {{ name: unary{copy}, type: uint8, if: \"{unary}\" }}");
     }
     text.push_str("types:\n");
     for copy in 0..DEEP_COPIES {
-        for i in 0..LIMIT - 1 {
+        for i in 0..DEPTH_LIMIT - 1 {
             line!(
                 text,
                 "  C{copy}x{i}:\n    fields:\n      - {{ name: v, type: uint8 }}\n      - {{ name: next, type: C{copy}x{} }}",
                 i + 1
             );
         }
-        line!(text, "  C{copy}x{}:\n    fields:\n      - {{ name: x, type: uint8 }}", LIMIT - 1);
+        line!(text, "  C{copy}x{}:\n    fields:\n      - {{ name: x, type: uint8 }}", DEPTH_LIMIT - 1);
     }
     text
 }
