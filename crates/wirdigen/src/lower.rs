@@ -1482,10 +1482,11 @@ fn outermost_switch<'p>(fields: &'p [field::Entry], types: &'p NamedTypes) -> Op
         for (entries, site, absolute) in level {
             for field in entries.iter().filter_map(field::Entry::field).filter(|f| f.array.is_none()) {
                 let extend = |path: &[&'p str]| [path, &[field.name.as_str()]].concat();
-                let inside = SwitchSite { ty: site.ty, path: extend(&site.path) };
+                // Where the Field is lowered: built only for the kinds that keep it.
+                let inside = || SwitchSite { ty: site.ty, path: extend(&site.path) };
                 match &field.kind {
-                    FieldKind::Switch(_) => return Some((inside, extend(&absolute))),
-                    FieldKind::Structure(children) => next.push((children.as_slice(), inside, extend(&absolute))),
+                    FieldKind::Switch(_) => return Some((inside(), extend(&absolute))),
+                    FieldKind::Structure(children) => next.push((children.as_slice(), inside(), extend(&absolute))),
                     FieldKind::Type(TypeUse { id, .. }) => {
                         let site = SwitchSite { ty: Some(*id), path: Vec::new() };
                         next.push((types.get(*id).fields.as_slice(), site, extend(&absolute)));

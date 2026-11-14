@@ -469,13 +469,11 @@ fn builtin_or_path(segments: Vec<String>, span: Range<usize>) -> Result<TokenKin
 
 /// The value of an integer literal: decimal, `0x` or `0b`, with `_` separators (spec §4.2).
 fn literal(word: &str, span: Range<usize>) -> Result<u64, SyntaxError> {
-    let lower = word.to_ascii_lowercase();
-    let (digits, radix, kind) = if let Some(hex) = lower.strip_prefix("0x") {
-        (hex, 16, "hexadecimal")
-    } else if let Some(binary) = lower.strip_prefix("0b") {
-        (binary, 2, "binary")
-    } else {
-        (lower.as_str(), 10, "decimal")
+    let prefix = word.get(..2);
+    let (digits, radix, kind) = match prefix {
+        Some(p) if p.eq_ignore_ascii_case("0x") => (&word[2..], 16, "hexadecimal"),
+        Some(p) if p.eq_ignore_ascii_case("0b") => (&word[2..], 2, "binary"),
+        _ => (word, 10, "decimal"),
     };
     if radix == 10 && word.len() > 1 && word.starts_with('0') && word.bytes().all(|b| b.is_ascii_digit() || b == b'_') {
         // The decimal number a reader most likely meant, the zeros dropped.
@@ -486,14 +484,19 @@ fn literal(word: &str, span: Range<usize>) -> Result<u64, SyntaxError> {
                 "write `{decimal}` for a decimal number, or `0x`/`0b` for hexadecimal or binary; octal does not exist"
             )));
     }
-    let digits: String = digits.chars().filter(|c| *c != '_').collect();
-    if let Some(bad) = digits.chars().find(|c| !c.is_digit(radix)) {
+    if let Some(bad) = digits.chars().find(|c| *c != '_' && !c.is_digit(radix)) {
+        // The message shows the digit lowercased, as `0xG` reads `g`.
+        let bad = bad.to_ascii_lowercase();
         return Err(SyntaxError::new(span, format!("`{bad}` is not a {kind} digit in `{word}`")));
     }
-    if digits.is_empty() {
+    // Every character is now a digit or a `_`: the digits, the `_`s skipped.
+    let mut values = digits.chars().filter_map(|c| c.to_digit(radix)).peekable();
+    if values.peek().is_none() {
         return Err(SyntaxError::new(span, format!("`{word}` has no digits")));
     }
-    u64::from_str_radix(&digits, radix).map_err(|_| SyntaxError::new(span, format!("`{word}` does not fit in 64 bits")))
+    values
+        .try_fold(0_u64, |value, digit| value.checked_mul(u64::from(radix))?.checked_add(u64::from(digit)))
+        .ok_or_else(|| SyntaxError::new(span, format!("`{word}` does not fit in 64 bits")))
 }
 
 /// How deep an Expression may nest (ADR 0018): a deeper one makes a Dissector Lua cannot load.
@@ -884,6 +887,8 @@ mod tests {
             ("0x00ff", "255"),
             ("18446744073709551615", "18446744073709551615"),
             ("0xFFFF_FFFF_FFFF_FFFF", "18446744073709551615"),
+            ("0b_1__1_", "3"),
+            ("0x0000_0000_0000_0000_0001", "1"),
         ] {
             assert_eq!(shape(text), expected, "{text}");
         }
@@ -929,6 +934,21 @@ mod tests {
             ("0xG", "`g` is not a hexadecimal digit in `0xG`", "0xG"),
             ("0x", "`0x` has no digits", "0x"),
             ("0x_", "`0x_` has no digits", "0x_"),
+            ("0B__", "`0B__` has no digits", "0B__"),
+            ("12AB", "`a` is not a decimal digit in `12AB`", "12AB"),
+            ("0X_1G", "`g` is not a hexadecimal digit in `0X_1G`", "0X_1G"),
+            ("0b2", "`2` is not a binary digit in `0b2`", "0b2"),
+            (
+                "0x1_0000_0000_0000_0000G",
+                "`g` is not a hexadecimal digit in `0x1_0000_0000_0000_0000G`",
+                "0x1_0000_0000_0000_0000G",
+            ),
+            ("0x1_0000_0000_0000_0000", "`0x1_0000_0000_0000_0000` does not fit in 64 bits", "0x1_0000_0000_0000_0000"),
+            (
+                "1_8446_7440_7370_9551_616",
+                "`1_8446_7440_7370_9551_616` does not fit in 64 bits",
+                "1_8446_7440_7370_9551_616",
+            ),
             ("18446744073709551616", "`18446744073709551616` does not fit in 64 bits", "18446744073709551616"),
             ("2 * _size", "there is no built-in `_size`", "_size"),
             ("_offset.x", "`_offset` has no Fields", "_offset.x"),
