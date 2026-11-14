@@ -27,7 +27,8 @@ Each [GitHub Release](https://github.com/Cerclique/wirdigen/releases) also has
 prebuilt binaries for Linux (x86_64, aarch64), macOS (Apple silicon, Intel) and
 Windows (x86_64). Each archive includes shell completions and man pages, and
 `cargo binstall wirdigen-cli` installs from them. The JSON Schema for
-`*.wirdigen.yaml` is attached as `wirdigen.schema.json`.
+`*.wirdigen.yaml` is attached as `wirdigen.schema.json`, and the latest is at
+<https://cerclique.github.io/wirdigen/wirdigen.schema.json>.
 
 To use the generated Dissectors you need
 [Wireshark](https://www.wireshark.org/) 4.4 or later.

@@ -559,7 +559,7 @@ Not stable: message wording, notes, span precision, rendered layout and the sche
 
 ### 6.6 JSON Schema
 
-A JSON Schema (`.json`) for `*.wirdigen.yaml` is generated from the Rust model, with the model's doc comments as `description`s for editor hover. It is for editor completion only and ships through `json_schema()`, `wirdigen schema`, release assets and a SchemaStore entry.
+A JSON Schema (`.json`) for `*.wirdigen.yaml` is generated from the Rust model, with the model's doc comments as `description`s for editor hover. It is for editor completion only and ships through `json_schema()`, `wirdigen schema`, release assets, the book site and a SchemaStore entry. The book site serves the latest tag's schema at `https://cerclique.github.io/wirdigen/wirdigen.schema.json` (`main`'s under `/dev/`); the SchemaStore entry points at that URL, so a release reaches editors without a new entry.
 
 ## 7. Architecture and generation
 
@@ -809,7 +809,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 *Documentation set for v1.*
 
 - **Book**: an mdBook in `book/` on GitHub Pages is the user guide and format reference.
-  - The release book is served at `/`, built from the latest tag. `main` is served at `/dev/` with a "development version" banner. There is no per-version archive.
+  - The release book is served at `/`, built from the latest tag. `main` is served at `/dev/` with a "development version" banner. There is no per-version archive. Each carries `wirdigen.schema.json` built from the same ref (§6.6).
   - Until a tag carries `book/`, `/` also serves `main`, so the Diagnostic links rendered by the library resolve before the first v1 release (#52).
   - PR CI builds the book and checks snippets without deploying.
 - **README**: a short landing page (what Wirdigen is, install, a ~20-line quickstart, a link to the book). It is also `wirdigen-cli`'s crates.io page.
