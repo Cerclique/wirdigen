@@ -1,7 +1,9 @@
 # Deploys the book to GitHub Pages (spec §11): the latest tag at `/`, `main` at `/dev/` with a
 # "development version" banner (book/dev-banner.js). Until a tag carries `book/`, `/` serves
-# `main` too, so the Diagnostic links rendered by the library resolve. PRs only build the book,
-# in ci.yml.
+# `main` too, so the Diagnostic links rendered by the library resolve. Each site also carries
+# `wirdigen.schema.json` from the same ref: `/wirdigen.schema.json` is the stable URL the
+# SchemaStore entry points at (spec §6.6), so a release reaches editors without a new entry.
+# PRs only build the book, in ci.yml.
 
 name: Book
 
@@ -21,7 +23,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,7 +32,7 @@ jobs:
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: mdbook@0.5.4
-      - name: Build the release book at / and main's at /dev/
+      - name: Build the release book and schema at / and main's at /dev/
         run: |
           set -euo pipefail
           # Pre-releases sort before their release: 1.0.0-rc.1 < 1.0.0.
@@ -42,11 +44,16 @@ jobs:
           fi
           echo "release book from $release, dev book from origin/main"
 
+          # One target dir for both refs, so the second schema build reuses the first's deps.
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/target"
           build() { # <ref> <dest> <site-url>
             local tree
             tree=$(mktemp -d)
             git worktree add --detach "$tree" "$1"
             MDBOOK_OUTPUT__HTML__SITE_URL="$3" mdbook build "$tree/book" --dest-dir "$2"
+            # Each ref's own toolchain and CLI, so the schema matches that ref's book.
+            (cd "$tree" && rustup toolchain install \
+              && cargo run -q --locked -p wirdigen-cli -- schema -o "$2/wirdigen.schema.json")
           }
           build "$release" "$RUNNER_TEMP/site" /wirdigen/
           build origin/main "$RUNNER_TEMP/site/dev" /wirdigen/dev/
