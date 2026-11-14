@@ -230,11 +230,11 @@ pub(crate) fn parse(node: &Node, text: &str) -> Result<Expr, Diagnostic> {
 /// Parses an Expression, with spans into `text`.
 pub(crate) fn parse_text(text: &str) -> Result<Expr, SyntaxError> {
     let tokens = lex(text)?;
-    let mut parser = Parser { tokens: &tokens, next: 0, end: text.len() };
+    let mut parser = Parser { tokens: &tokens, next: 0, end: text.len(), depth: 0 };
     if tokens.is_empty() {
         return Err(SyntaxError::new(0..text.len(), "the Expression is empty"));
     }
-    let expr = parser.binary(1)?;
+    let Parsed { expr, .. } = parser.binary(1)?;
     match parser.peek() {
         None => Ok(expr),
         Some(Token { kind: TokenKind::Close, span }) => {
@@ -496,13 +496,30 @@ fn literal(word: &str, span: Range<usize>) -> Result<u64, SyntaxError> {
     u64::from_str_radix(&digits, radix).map_err(|_| SyntaxError::new(span, format!("`{word}` does not fit in 64 bits")))
 }
 
+/// How deep an Expression may nest (ADR 0018): a deeper one makes a Dissector Lua cannot load.
+const MAX_DEPTH: usize = 64;
+
 /// A precedence-climbing parser over the tokens of one Expression.
+///
+/// It measures depth as it goes: each `(`, unary operator and value is one level below what
+/// encloses it, and each binary operator one level above both its operands, so a flat chain
+/// `a+a+…+a` of k operands is k deep. Past [`MAX_DEPTH`] it stops, which also bounds its
+/// recursion and that of every pass walking the tree after it.
 struct Parser<'t> {
     tokens: &'t [Token],
     /// The index of the next token to read.
     next: usize,
     /// The length of the text, where a missing token is reported.
     end: usize,
+    /// How many levels enclose the sub-Expression being read.
+    depth: usize,
+}
+
+/// A parsed sub-Expression and how many levels it spans.
+struct Parsed {
+    expr: Expr,
+    /// Its depth, its parentheses included: 1 for a value.
+    levels: usize,
 }
 
 impl Parser<'_> {
@@ -511,9 +528,37 @@ impl Parser<'_> {
         self.tokens.get(self.next)
     }
 
+    /// Fails at `span` if a sub-Expression spanning `levels` here would be too deep (ADR 0018).
+    fn ensure_depth(&self, levels: usize, span: &Range<usize>) -> Result<(), SyntaxError> {
+        if self.depth + levels <= MAX_DEPTH {
+            return Ok(());
+        }
+        Err(SyntaxError::named(
+            Name::ExpressionTooDeep,
+            span.clone(),
+            format!("the Expression is nested more than {MAX_DEPTH} levels deep"),
+        )
+        .with_note(format!(
+            "Expressions are limited to {MAX_DEPTH} levels: a deeper one makes a Dissector that Lua cannot load"
+        )))
+    }
+
+    /// Reads with `read` one level deeper, after checking that `span` may open that level.
+    fn nested(
+        &mut self,
+        span: &Range<usize>,
+        read: impl FnOnce(&mut Self) -> Result<Parsed, SyntaxError>,
+    ) -> Result<Parsed, SyntaxError> {
+        self.ensure_depth(1, span)?;
+        self.depth += 1;
+        let parsed = read(self);
+        self.depth -= 1;
+        parsed
+    }
+
     /// An Expression whose binary operators bind at least as tightly as `min`.
-    fn binary(&mut self, min: u8) -> Result<Expr, SyntaxError> {
-        let mut left = self.unary()?;
+    fn binary(&mut self, min: u8) -> Result<Parsed, SyntaxError> {
+        let Parsed { expr: mut left, mut levels } = self.unary()?;
         // Whether `left` is a comparison this loop built, so another one chains it.
         let mut compared = false;
         while let Some(Token { kind: TokenKind::Binary(op), span }) = self.peek().cloned() {
@@ -524,8 +569,12 @@ impl Parser<'_> {
                 return Err(SyntaxError::named(Name::ChainedComparison, span, "comparisons cannot be chained")
                     .with_note("join two comparisons with `&&`, as in `a < b && b < c`, or add parentheses"));
             }
+            // The operator pushes everything read so far one level down.
+            self.ensure_depth(levels + 1, &span)?;
             self.next += 1;
-            let right = self.binary(op.precedence() + 1)?;
+            let Parsed { expr: right, levels: right_levels } =
+                self.nested(&span, |parser| parser.binary(op.precedence() + 1))?;
+            levels = 1 + levels.max(right_levels);
             compared = op.is_comparison();
             let whole = left.span.start..right.span.end;
             left = Expr {
@@ -537,11 +586,11 @@ impl Parser<'_> {
                 span: whole,
             };
         }
-        Ok(left)
+        Ok(Parsed { expr: left, levels })
     }
 
     /// A unary operator applied to an operand, or an operand.
-    fn unary(&mut self) -> Result<Expr, SyntaxError> {
+    fn unary(&mut self) -> Result<Parsed, SyntaxError> {
         let op = match self.peek().map(|t| &t.kind) {
             Some(TokenKind::Unary(op)) => *op,
             Some(TokenKind::Binary(BinaryOp::Sub)) => UnaryOp::Negate,
@@ -549,27 +598,32 @@ impl Parser<'_> {
         };
         let span = self.peek().expect("just peeked").span.clone();
         self.next += 1;
-        let operand = self.unary()?;
+        let Parsed { expr: operand, levels } = self.nested(&span, Self::unary)?;
         let whole = span.start..operand.span.end;
-        Ok(Expr { kind: ExprKind::Unary { op: Spanned { value: op, span }, operand: Box::new(operand) }, span: whole })
+        let expr =
+            Expr { kind: ExprKind::Unary { op: Spanned { value: op, span }, operand: Box::new(operand) }, span: whole };
+        Ok(Parsed { expr, levels: levels + 1 })
     }
 
     /// A literal, a Field Path, a built-in or a parenthesized Expression.
-    fn operand(&mut self) -> Result<Expr, SyntaxError> {
+    fn operand(&mut self) -> Result<Parsed, SyntaxError> {
         let Some(token) = self.peek().cloned() else {
             return Err(SyntaxError::new(self.end..self.end, "the Expression ends early: expected a value"));
         };
+        if matches!(token.kind, TokenKind::Int(_) | TokenKind::Path(_) | TokenKind::Builtin(_)) {
+            self.ensure_depth(1, &token.span)?;
+        }
         self.next += 1;
         let kind = match token.kind {
             TokenKind::Int(value) => ExprKind::Int(value),
             TokenKind::Path(segments) => ExprKind::Path(segments),
             TokenKind::Builtin(builtin) => ExprKind::Builtin(builtin),
             TokenKind::Open => {
-                let inner = self.binary(1)?;
+                let Parsed { expr: inner, levels } = self.nested(&token.span, |parser| parser.binary(1))?;
                 return match self.peek() {
                     Some(Token { kind: TokenKind::Close, .. }) => {
                         self.next += 1;
-                        Ok(inner)
+                        Ok(Parsed { expr: inner, levels: levels + 1 })
                     }
                     Some(other) => {
                         Err(SyntaxError::new(other.span.clone(), format!("expected `)`, found {}", other.kind)))
@@ -580,7 +634,7 @@ impl Parser<'_> {
             }
             other => return Err(SyntaxError::new(token.span, format!("expected a value, found {other}"))),
         };
-        Ok(Expr { kind, span: token.span })
+        Ok(Parsed { expr: Expr { kind, span: token.span }, levels: 1 })
     }
 }
 
@@ -871,5 +925,55 @@ mod tests {
         assert!(expr.constant().is_none());
         let found: Vec<String> = expr.references().iter().map(|r| r.shape()).collect();
         assert_eq!(found, ["len", "_offset"]);
+    }
+
+    /// The text a too-deep error's span covers, or `None` when `text` parses.
+    fn too_deep_at(text: &str) -> Option<String> {
+        let error = parse_text(text).err()?;
+        assert_eq!(error.name, Name::ExpressionTooDeep, "{}", error.message);
+        Some(text[error.span].to_owned())
+    }
+
+    #[test]
+    fn expressions_up_to_depth_64_parse() {
+        let unary = format!("{}a", "-".repeat(63));
+        let flat = format!("a{}", " + a".repeat(63));
+        let parenthesized = format!("{}a{}", "(".repeat(63), ")".repeat(63));
+        for text in [unary, flat, parenthesized] {
+            assert!(parse_text(&text).is_ok(), "{text}");
+        }
+    }
+
+    #[test]
+    fn depth_65_is_too_deep_at_the_token_that_reaches_it() {
+        // Each `(` and unary operator is a level, and so is the value they enclose.
+        assert_eq!(too_deep_at(&format!("{}x", "-".repeat(64))).as_deref(), Some("x"));
+        assert_eq!(too_deep_at(&format!("{}x{}", "(".repeat(64), ")".repeat(64))).as_deref(), Some("x"));
+        assert_eq!(too_deep_at(&format!("{}x", "(".repeat(65))).as_deref(), Some("("));
+        // A flat chain of k operands is k deep: the operator adding the 65th one reaches 65.
+        assert_eq!(too_deep_at(&format!("a{} - a", " + a".repeat(63))).as_deref(), Some("-"));
+        assert_eq!(too_deep_at(&format!("a{} * a", " + a".repeat(63))), None);
+        // An operator that wraps a deep left side deepens everything already in it.
+        let mixed = format!("{}a{} + b + c + d + e", "(".repeat(60), ")".repeat(60));
+        let error = parse_text(&mixed).unwrap_err();
+        assert_eq!((error.name, error.span.start), (Name::ExpressionTooDeep, mixed.rfind('+').unwrap()));
+    }
+
+    #[test]
+    fn far_too_deep_expressions_fail_without_overflowing_the_stack() {
+        let flat = format!("a{} > 0", "+a".repeat(99_999));
+        for text in ["(".repeat(30_000) + "1" + &")".repeat(30_000), "-".repeat(30_000) + "1", flat] {
+            assert!(too_deep_at(&text).is_some());
+        }
+    }
+
+    #[test]
+    fn a_too_deep_expression_states_the_limit_and_why() {
+        let error = parse_text(&format!("{}1", "-".repeat(64))).unwrap_err();
+        assert_eq!(error.message, "the Expression is nested more than 64 levels deep");
+        assert_eq!(
+            error.note.as_deref(),
+            Some("Expressions are limited to 64 levels: a deeper one makes a Dissector that Lua cannot load")
+        );
     }
 }

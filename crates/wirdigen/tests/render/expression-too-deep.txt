@@ -1,0 +1,8 @@
+error[expression-too-deep]: the Expression is nested more than 64 levels deep
+ --> expression-too-deep.wirdigen.yaml:3:103
+  |
+3 |   - { name: data, type: bytes, size: "----------------------------------------------------------------1" }
+  |                                                                                                       ^
+  |
+  = note: Expressions are limited to 64 levels: a deeper one makes a Dissector that Lua cannot load
+  = note: see https://cerclique.github.io/wirdigen/diagnostics.html#expression-too-deep

@@ -410,16 +410,39 @@ fn with_notes(diagnostic: Diagnostic, notes: Notes) -> Diagnostic {
 
 /// The names the Type `ty` reads but does not declare, each once, in source order. A Type in a
 /// cycle (`recursive-type`) stops the walk.
-pub(crate) fn free_refs(types: &mut Types<'_>, ty: &str) -> Vec<FreeRef> {
+///
+/// The Types `ty` uses are worked out first, depth-first with an explicit stack and each after
+/// the Types it uses, so the walk of a body finds them memoized and never recurses once per Type
+/// of a chain (ADR 0018).
+fn free_refs<'a>(types: &mut Types<'a>, ty: &str) -> Vec<FreeRef> {
     if let Some(known) = types.free.get(ty) {
         return known.clone().unwrap_or_default();
     }
-    let Some(body) = types.body(ty) else { return Vec::new() };
+    let Some(body) = types.named_body(ty).map(|(name, body)| (name, field::type_uses(body))) else {
+        return Vec::new();
+    };
+    // Each Type being worked out, outermost first, with its uses and how many are followed.
+    let mut stack = vec![(body.0, body.1, 0)];
     types.free.insert(ty.to_owned(), None);
-    let mut found = Vec::new();
-    collect_free(body, ty, &mut Vec::new(), types, &mut found);
-    types.free.insert(ty.to_owned(), Some(found.clone()));
-    found
+    while let Some((name, uses, followed)) = stack.last_mut() {
+        if let Some(used) = uses.get(*followed) {
+            *followed += 1;
+            if !types.free.contains_key(&used.value) {
+                if let Some((used, body)) = types.named_body(&used.value) {
+                    types.free.insert(used.to_owned(), None);
+                    stack.push((used, field::type_uses(body), 0));
+                }
+            }
+            continue;
+        }
+        let name: &'a str = name;
+        stack.pop();
+        let body = types.body(name).expect("a Type on the stack has a body");
+        let mut found = Vec::new();
+        collect_free(body, name, &mut Vec::new(), types, &mut found);
+        types.free.insert(name.to_owned(), Some(found));
+    }
+    types.free.get(ty).cloned().flatten().unwrap_or_default()
 }
 
 /// Adds to `found` the names the Type `name`, used at `levels` in the Type `ty`, reads that `ty`

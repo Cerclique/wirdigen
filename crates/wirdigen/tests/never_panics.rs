@@ -142,6 +142,57 @@ fn mutated_description() -> impl Strategy<Value = String> {
     })
 }
 
+/// One level of a deep Expression, wrapped around what is inside it.
+#[derive(Debug, Clone, Copy)]
+enum Level {
+    Parenthesis,
+    Unary(&'static str),
+    /// A binary operator after what is inside, as in a flat chain `a+a+…+a`.
+    Right(&'static str),
+    /// A binary operator before what is inside, nesting to the right.
+    Left(&'static str),
+}
+
+/// Any one kind of level, with its operator.
+fn level() -> impl Strategy<Value = Level> {
+    let binary = prop::sample::select(&["+", "-", "*", "<<", "&", "==", "&&", "||"][..]);
+    prop_oneof![
+        Just(Level::Parenthesis),
+        prop::sample::select(&["-", "!", "~"][..]).prop_map(Level::Unary),
+        binary.clone().prop_map(Level::Right),
+        binary.prop_map(Level::Left),
+    ]
+}
+
+/// A description reading a Field `x`, then bytes sized by an Expression around depth 64
+/// (ADR 0018) or far deeper: runs of parentheses, unary and binary operators around `x`.
+fn deep_expression() -> impl Strategy<Value = String> {
+    let run = (level(), prop_oneof![1..40_usize, 60..70_usize, 1_000..20_000_usize]);
+    prop::collection::vec(run, 1..6).prop_map(|runs| {
+        // What goes before `x`, innermost first, and what goes after it.
+        let (mut before, mut after) = (Vec::new(), String::new());
+        for (level, count) in runs {
+            for _ in 0..count {
+                match level {
+                    Level::Parenthesis => {
+                        before.push("(".to_owned());
+                        after.push(')');
+                    }
+                    Level::Unary(op) => before.push(op.to_owned()),
+                    Level::Right(op) => {
+                        after.push_str(op);
+                        after.push('1');
+                    }
+                    Level::Left(op) => before.push(format!("1{op}")),
+                }
+            }
+        }
+        before.reverse();
+        let expression = format!("{}x{after}", before.concat());
+        format!("name: demo\nfields:\n  - {{ name: x, type: uint8 }}\n  - {{ name: data, type: bytes, size: \"{expression}\" }}\n")
+    })
+}
+
 /// No regression files: shrunk failures become corpus cases (see the module docs). The case count
 /// stays the default, which `PROPTEST_CASES` overrides.
 fn config() -> Config {
@@ -166,6 +217,12 @@ proptest! {
     /// A corpus description with a few bytes deleted, inserted, copied or overwritten.
     #[test]
     fn mutated_corpus(text in mutated_description()) {
+        validate_and_render(text);
+    }
+
+    /// An Expression nested near the depth limit or far past it.
+    #[test]
+    fn deep_expressions(text in deep_expression()) {
         validate_and_render(text);
     }
 }

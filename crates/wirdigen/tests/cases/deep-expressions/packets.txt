@@ -1,0 +1,2 @@
+# n=29, so unary=aa bb, flat=cc dd and tail=ee.
+0000  1d aa bb cc dd ee

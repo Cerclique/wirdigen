@@ -70,6 +70,12 @@ Comparisons do not chain: `a < b < c` is
 [`chained-comparison`](../diagnostics.md#chained-comparison). Write `a < b && b < c`, or
 `(a < b) < c` to compare the first result.
 
+An Expression nests at most 64 levels deep. Each value, parenthesis and unary operator is a
+level, and so is each binary operator over its operands: `x` is 1 deep, `-x` and `(x)` are 2
+deep, and `a + a + … + a` with 64 operands is 64 deep. A deeper Expression is
+[`expression-too-deep`](../diagnostics.md#expression-too-deep), because Lua could not load the
+Dissector it makes. No Expression written by hand comes close.
+
 Any other mistake, such as a missing value or parenthesis or a character Expressions do not
 use, is [`expression-syntax`](../diagnostics.md#expression-syntax), pointing at the token.
 

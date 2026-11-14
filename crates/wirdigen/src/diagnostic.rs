@@ -112,6 +112,7 @@ names! {
     ExpressionSyntax => "expression-syntax", Error;
     LeadingZeroLiteral => "leading-zero-literal", Error;
     ChainedComparison => "chained-comparison", Error;
+    ExpressionTooDeep => "expression-too-deep", Error;
     UnknownField => "unknown-field", Error;
     ForwardReference => "forward-reference", Error;
     NonNumericReference => "non-numeric-reference", Error;

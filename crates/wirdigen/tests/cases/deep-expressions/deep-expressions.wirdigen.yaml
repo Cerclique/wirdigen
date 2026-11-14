@@ -1,0 +1,9 @@
+# Expressions exactly as deep as allowed (ADR 0018): the Dissector must still load. `-~x` is
+# `x + 1`, so `unary` is 63 unary operators around `n`, worth 31 - n; `flat` is a chain of 64
+# operands, worth n - 27.
+name: deep_expressions
+fields:
+  - { name: n, type: uint8 }
+  - { name: unary, type: bytes, size: "-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-n" }
+  - { name: flat, type: bytes, size: "n*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1*1-27" }
+  - { name: tail, type: uint8 }
