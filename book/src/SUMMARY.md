@@ -28,3 +28,4 @@
 ---
 
 [Diagnostics index](diagnostics.md)
+[Glossary](glossary.md)
