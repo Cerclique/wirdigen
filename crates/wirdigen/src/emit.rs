@@ -54,8 +54,17 @@ struct Writer {
 struct Frame {
     /// Its key in `wd` (`dissect_top`).
     key: String,
+    /// Its parameters (`tvb, pinfo, tree, offset`).
+    params: String,
+    /// Whether it keeps values Expressions read, in its table `v`.
+    values: bool,
+}
+
+impl Frame {
     /// The arguments it passes its parts: its own parameters, and its values table.
-    args: String,
+    fn args(&self) -> String {
+        if self.values { format!("{}, v", self.params) } else { self.params.clone() }
+    }
 }
 
 impl Writer {
@@ -83,7 +92,9 @@ impl Writer {
         self.line(close);
     }
 
-    /// What `write` writes, from no indentation and no nesting, rather than into `out`.
+    /// What `write` writes, from no indentation and no nesting, rather than into `out`. The frame
+    /// and the parts are left as they are: a part belongs to the dissect function being written,
+    /// and the parts it writes go to the same list.
     fn detached(&mut self, write: impl FnOnce(&mut Self)) -> String {
         let out = std::mem::take(&mut self.out);
         let depth = std::mem::replace(&mut self.depth, 0);
@@ -138,14 +149,14 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.line("local wd = {}");
     w.line("");
     for shared in &model.tables {
-        w.block(&format!("{} = {{", own(&shared.local)), |w| table_entries(w, &shared.table), "}");
+        w.block(&format!("{} = {{", own(&shared.key)), |w| table_entries(w, &shared.table), "}");
         w.line("");
     }
     if !model.names.is_empty() {
         w.line("-- The names of values, for switch Fields and the Info column");
         for names in &model.names {
             let entries = LuaTable::Ranges(names.entries.clone());
-            w.block(&format!("{} = {{", own(&names.local)), |w| table_entries(w, &entries), "}");
+            w.block(&format!("{} = {{", own(&names.key)), |w| table_entries(w, &entries), "}");
         }
         w.line("");
     }
@@ -160,7 +171,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.block(
         "wd_proto.fields = {",
         |w| {
-            model.proto_fields.iter().for_each(|f| w.line(&format!("{},", own(&f.local))));
+            model.proto_fields.iter().for_each(|f| w.line(&format!("{},", own(&f.key))));
             if unmatched {
                 w.line("wd_f_unmatched,");
             }
@@ -171,14 +182,14 @@ pub(crate) fn emit(model: &Dissector) -> String {
     if !model.extractors.is_empty() {
         w.line("-- The Fields the Info column shows, extracted from each packet once it is read");
         for extractor in &model.extractors {
-            w.line(&format!("{} = Field.new({})", own(&extractor.local), lua_string(&extractor.abbrev)));
+            w.line(&format!("{} = Field.new({})", own(&extractor.key), lua_string(&extractor.abbrev)));
         }
         w.line("");
     }
     if !model.sites.is_empty() {
         w.line("-- The ProtoFields of each use of a Type, passed to the Type's dissect function");
         for shared in &model.sites {
-            w.block(&format!("{} = {{", own(&shared.local)), |w| site_entries(w, model, &shared.site), "}");
+            w.block(&format!("{} = {{", own(&shared.key)), |w| site_entries(w, model, &shared.site), "}");
         }
         w.line("");
     }
@@ -196,21 +207,29 @@ fn body(model: &Dissector) -> String {
     // reads inside it also returns the values read, in a table.
     for function in &model.types {
         let context = if function.context { ", ctx" } else { "" };
-        let frame = (format!("dissect_{}", function.name), format!("tvb, pinfo, tree, offset, site{context}"));
-        dissect_function(&mut w, &format!("-- Type: {}", function.name), frame, &function.values, |w| {
+        let frame = Frame {
+            key: format!("dissect_{}", function.name),
+            params: format!("tvb, pinfo, tree, offset, site{context}"),
+            values: !function.values.is_empty(),
+        };
+        dissect_function(&mut w, &format!("-- Type: {}", function.name), frame, |w| {
             for stmt in &function.body {
                 statement(w, model, stmt, Scope::Type);
             }
             if function.exports.is_empty() {
                 w.line("return offset");
             } else {
-                w.line(&format!("return offset, {}", export_table(&function.exports)));
+                return_exports(w, &function.exports);
             }
         });
     }
 
-    let frame = ("dissect_top".to_owned(), "tvb, pinfo, tree, offset".to_owned());
-    dissect_function(&mut w, "-- Layout", frame, &model.values, |w| {
+    let frame = Frame {
+        key: "dissect_top".to_owned(),
+        params: "tvb, pinfo, tree, offset".to_owned(),
+        values: !model.values.is_empty(),
+    };
+    dissect_function(&mut w, "-- Layout", frame, |w| {
         for stmt in &model.layout {
             statement(w, model, stmt, Scope::Top);
         }
@@ -229,19 +248,12 @@ fn body(model: &Dissector) -> String {
     w.out
 }
 
-/// Writes the dissect function `wd.<key>(<params>)`, with the comment `comment`, keeping the
-/// values Expressions read under `values` and running the statements `body` writes. Its parts
-/// are defined before it.
-fn dissect_function(
-    w: &mut Writer,
-    comment: &str,
-    (key, params): (String, String),
-    values: &[String],
-    body: impl FnOnce(&mut Writer),
-) {
-    let open = format!("function wd.{key}({params})");
-    let args = if values.is_empty() { params } else { format!("{params}, v") };
-    w.frame = Frame { key, args };
+/// Writes the dissect function `frame`, with the comment `comment`, running the statements
+/// `body` writes. Its parts are defined before it.
+fn dissect_function(w: &mut Writer, comment: &str, frame: Frame, body: impl FnOnce(&mut Writer)) {
+    let open = format!("function wd.{}({})", frame.key, frame.params);
+    let values = frame.values;
+    w.frame = frame;
     let function = w.detached(|w| {
         w.block(
             &open,
@@ -282,7 +294,7 @@ fn dissector(w: &mut Writer, model: &Dissector) {
             w.line("local v = {}");
             for read in &framing.reads {
                 let at = format!("offset + {}", read.offset);
-                w.line(&format!("{} = {}", value(&read.local), read_value_at(&read.read, &at, read.size)));
+                w.line(&format!("{} = {}", kept(&read.key), read_value_at(&read.read, &at, read.size)));
             }
             // The prelude evaluates it under `wd_evaluate`, which catches its faults.
             w.line(&format!("return {}", lua_expr(&framing.length.value)));
@@ -340,7 +352,7 @@ fn message(w: &mut Writer, model: &Dissector) {
         w.line("wd_info_cases = {}");
     }
     if !model.extractors.is_empty() {
-        let fields: Vec<String> = model.extractors.iter().map(|x| own(&x.local)).collect();
+        let fields: Vec<String> = model.extractors.iter().map(|x| own(&x.key)).collect();
         w.line(&format!("local before = wd_info_counts({{ {} }})", fields.join(", ")));
     }
     w.line(&root_line(model));
@@ -362,11 +374,11 @@ fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
                 .map(|part| match part {
                     InfoPart::Text(text) => lua_string(text),
                     InfoPart::Display(extractor) => {
-                        format!("wd_info_display({}, before)", own(&model.extractors[*extractor].local))
+                        format!("wd_info_display({}, before)", own(&model.extractors[*extractor].key))
                     }
                     InfoPart::Label { extractor, names } => {
-                        let names = names.map_or_else(|| "{}".to_owned(), |n| own(&model.names[n].local));
-                        format!("wd_info_label({}, before, {names})", own(&model.extractors[*extractor].local))
+                        let names = names.map_or_else(|| "{}".to_owned(), |n| own(&model.names[n].key));
+                        format!("wd_info_label({}, before, {names})", own(&model.extractors[*extractor].key))
                     }
                     InfoPart::Case(path) => format!("({} or \"\")", case(path)),
                 })
@@ -451,7 +463,7 @@ fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
     };
     match &field.strings {
         None | Some(Strings::Table { table: TableRef::Inline(_), .. }) => {}
-        Some(Strings::Table { table: TableRef::Shared(index), .. }) => args.push(own(&model.tables[*index].local)),
+        Some(Strings::Table { table: TableRef::Shared(index), .. }) => args.push(own(&model.tables[*index].key)),
         Some(Strings::Unit { singular, plural }) => {
             let forms: Vec<String> =
                 [Some(singular), plural.as_ref()].into_iter().flatten().map(|s| lua_string(s)).collect();
@@ -474,7 +486,7 @@ fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
         );
     }
     tail.extend(description);
-    let open = format!("{} = ProtoField.{}({}", own(&field.local), field.field_type.constructor, args.join(", "));
+    let open = format!("{} = ProtoField.{}({}", own(&field.key), field.field_type.constructor, args.join(", "));
     let close = if tail.is_empty() { String::new() } else { format!(", {}", tail.join(", ")) };
     match inline {
         Some(table) => w.block(&format!("{open}, {{"), |w| table_entries(w, table), &format!("}}{close})")),
@@ -510,8 +522,8 @@ fn site_entries(w: &mut Writer, model: &Dissector, site: &Site) {
     w.line(&format!("path = {},", lua_string(&site.path)));
     for (key, entry) in &site.entries {
         let value = match entry {
-            SiteEntry::Field(index) => &model.proto_fields[*index].local,
-            SiteEntry::Site(index) => &model.sites[*index].local,
+            SiteEntry::Field(index) => &model.proto_fields[*index].key,
+            SiteEntry::Site(index) => &model.sites[*index].key,
         };
         w.line(&format!("{key} = {},", own(value)));
     }
@@ -520,30 +532,52 @@ fn site_entries(w: &mut Writer, model: &Dissector, site: &Site) {
 /// Declares, up front, the table a function keeps the values Expressions read in, when it keeps
 /// any: values read inside a structure are read later, after the structure's `do` block has
 /// ended.
-fn declare(w: &mut Writer, values: &[String]) {
-    if !values.is_empty() {
+fn declare(w: &mut Writer, values: bool) {
+    if values {
         w.line("local v = {}");
     }
 }
 
 /// The Lua expression of the value kept under `key` in the function's values table.
-fn value(key: &str) -> String {
+fn kept(key: &str) -> String {
     format!("v{}", index(key))
 }
 
-/// The table constructor of what a Type returns.
-fn export_table(exports: &BTreeMap<String, Export>) -> String {
-    let entries: Vec<String> = exports
+/// Writes the return of a Type's dissect function, with the table of what it `exports`. A table
+/// nested in it, for an inline structure, is assigned once the table holding it exists, rather
+/// than written as a nested table constructor: each would take a register and a level of
+/// Lua's parser, however deep the structures nest.
+fn return_exports(w: &mut Writer, exports: &BTreeMap<String, Export>) {
+    if exports.values().all(|export| matches!(export, Export::Value(_))) {
+        w.line(&format!("return offset, {}", values_constructor(exports)));
+        return;
+    }
+    w.line(&format!("local exports = {}", values_constructor(exports)));
+    nested_exports(w, "exports", exports);
+    w.line("return offset, exports");
+}
+
+/// Assigns the tables nested in `table`, the export table at the Lua expression `access`.
+fn nested_exports(w: &mut Writer, access: &str, table: &BTreeMap<String, Export>) {
+    for (key, export) in table {
+        if let Export::Table(inner) = export {
+            let access = format!("{access}{}", index(key));
+            w.line(&format!("{access} = {}", values_constructor(inner)));
+            nested_exports(w, &access, inner);
+        }
+    }
+}
+
+/// The table constructor of the values of an export table, without the tables nested in it.
+fn values_constructor(table: &BTreeMap<String, Export>) -> String {
+    let entries: Vec<String> = table
         .iter()
-        .map(|(key, export)| {
-            let value = match export {
-                Export::Local(local) => value(local),
-                Export::Table(inner) => export_table(inner),
-            };
-            format!("{} = {value}", table_key(key))
+        .filter_map(|(key, export)| match export {
+            Export::Value(held) => Some(format!("{} = {}", table_key(key), kept(held))),
+            Export::Table(_) => None,
         })
         .collect();
-    format!("{{ {} }}", entries.join(", "))
+    if entries.is_empty() { "{}".to_owned() } else { format!("{{ {} }}", entries.join(", ")) }
 }
 
 /// The Lua keywords, which cannot be written as plain table keys.
@@ -582,7 +616,7 @@ enum Scope {
 /// The Lua expression of a `ProtoField`.
 fn field_ref(model: &Dissector, r: &Ref) -> String {
     match r {
-        Ref::Local(index) => own(&model.proto_fields[*index].local),
+        Ref::Local(index) => own(&model.proto_fields[*index].key),
         Ref::Slot(key) => format!("site.{key}"),
     }
 }
@@ -590,7 +624,7 @@ fn field_ref(model: &Dissector, r: &Ref) -> String {
 /// The Lua expression of a site table.
 fn site_ref(model: &Dissector, r: &Ref) -> String {
     match r {
-        Ref::Local(index) => own(&model.sites[*index].local),
+        Ref::Local(index) => own(&model.sites[*index].key),
         Ref::Slot(key) => format!("site.{key}"),
     }
 }
@@ -641,7 +675,7 @@ fn call(w: &mut Writer, model: &Dissector, ty: &str, site: &Ref, context: &[(Str
             context.iter().map(|(key, value)| format!("{} = {}", table_key(key), lua_expr(value))).collect();
         args.push(format!("{{ {} }}", entries.join(", ")));
     }
-    let assigned = result.map_or_else(|| "offset".to_owned(), |r| format!("offset, {}", value(r)));
+    let assigned = result.map_or_else(|| "offset".to_owned(), |r| format!("offset, {}", kept(r)));
     w.line(&format!("{assigned} = wd.dissect_{ty}(tvb, pinfo, tree, offset, {})", args.join(", ")));
     w.block("if not offset then", |w| w.line("return nil"), "end");
 }
@@ -677,7 +711,7 @@ fn switch(w: &mut Writer, model: &Dissector, path: &str, stmt: &SwitchStmt<'_>, 
             open_subtree(w, model, stmt.field, stmt.hidden);
             let name = stmt.names.map_or_else(
                 || "subject".to_owned(),
-                |index| format!("wd_case_name({}, subject)", own(&model.names[index].local)),
+                |index| format!("wd_case_name({}, subject)", own(&model.names[index].key)),
             );
             if stmt.info {
                 // The label of the subject's value is kept for the Info column, as text (spec §3.14).
@@ -878,7 +912,7 @@ fn padding(w: &mut Writer, parent: &str, length: &Length, scope: Scope) {
 /// table, and returns the offset after what it read, or `nil` once it stopped the dissection.
 /// No statement reads a local of the statements around it, so it needs nothing else.
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
-    if !matches!(stmt, Stmt::If { .. } | Stmt::Switch { .. } | Stmt::Structure { .. } | Stmt::Array { .. }) {
+    if !stmt.nests() {
         return plain_statement(w, model, stmt, scope);
     }
     if w.nesting < NESTING {
@@ -889,7 +923,7 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     }
     w.part_count += 1;
     let key = format!("part_{}", w.part_count);
-    let args = w.frame.args.clone();
+    let args = w.frame.args();
     let comment = format!("-- Part of {}, nested too deep to stay in it", w.frame.key);
     let part = w.detached(|w| {
         w.line(&comment);
@@ -968,8 +1002,8 @@ fn plain_statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope)
                     };
                     add_item(w, model, &item, scope);
                     handoff_line(w, &range);
-                    if let Some(kept) = value {
-                        w.line(&format!("{} = {}", self::value(&kept.local), read_value(&kept.read, *size)));
+                    if let Some(value) = value {
+                        w.line(&format!("{} = {}", kept(&value.key), read_value(&value.read, *size)));
                     }
                     w.line(&format!("offset = offset + {size}"));
                 }
@@ -1133,7 +1167,7 @@ fn lua_expr(expr: &LuaExpr) -> String {
             }
             lua
         }
-        LuaExpr::Local { local, keys } => keys.iter().fold(value(local), |access, key| access + &index(key)),
+        LuaExpr::Value { key, keys } => keys.iter().fold(kept(key), |access, k| access + &index(k)),
         LuaExpr::Checked => "value".to_owned(),
         LuaExpr::Context(key) => format!("ctx{}", index(key)),
         LuaExpr::Offset => "offset".to_owned(),

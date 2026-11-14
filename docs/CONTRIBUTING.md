@@ -23,7 +23,7 @@ new ADR, not just a code change.
 |---|---|---|
 | Goldens, Diagnostics, renderer, schema, book snippets, property tests, CLI | `make test` | Rust only |
 | Lua checks (spec §10.4) | `make test-lua` | `lua5.2`, `lua5.3` and `lua5.4` on `PATH` |
-| Dissectors in real tshark (spec §10.5, §10.6) | `make test-tshark` | `tshark` and `text2pcap` from Wireshark ≥ 4.4, as a non-root user |
+| Dissectors in real tshark, the corpus and large generated descriptions (spec §10.5, §10.6) | `make test-tshark` | `tshark` and `text2pcap` from Wireshark ≥ 4.4, as a non-root user |
 
 `make test` is plain `cargo test` and needs no tools beyond Rust. Dissector behaviour is tested only in
 real tshark ([ADR 0011](adr/0011-dissectors-tested-in-real-tshark.md)); there is no mock of

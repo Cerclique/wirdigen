@@ -285,7 +285,7 @@ fn report(summary: &str, config: &Config, packet: &BadPacket, reason: &str) -> S
 }
 
 /// `bytes` as text2pcap hex, 16 bytes per offset line.
-fn text2pcap(bytes: &[u8]) -> String {
+pub(super) fn text2pcap(bytes: &[u8]) -> String {
     let mut text = String::new();
     for (line, chunk) in bytes.chunks(16).enumerate() {
         write!(text, "{:04x} ", line * 16).expect("writing to a String");
