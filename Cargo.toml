@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/wirdigen", "crates/wirdigen-cli"]
 
 [workspace.package]
-version = "1.0.0-alpha.0"
+version = "1.0.0-alpha.1"
 authors = ["Aurélien VERNIZEAU <aurelien.vernizeau@gmail.com>"]
 edition = "2024"
 rust-version = "1.85"
@@ -13,7 +13,7 @@ license-file = "LICENSE"
 keywords = ["wireshark", "dissector", "lua"]
 
 [workspace.dependencies]
-wirdigen = { version = "=1.0.0-alpha.0", path = "crates/wirdigen" }
+wirdigen = { version = "=1.0.0-alpha.1", path = "crates/wirdigen" }
 # The CLI's build script and tests use these too, so one pin each keeps them in step.
 clap = { version = "4.6.7", features = ["derive"] }
 clap_complete = "4.6.11"

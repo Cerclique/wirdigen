@@ -21,7 +21,7 @@ cargo install --locked wirdigen-cli
 ```
 
 Wirdigen 1.0 is in pre-release: name one to install it, as in
-`--version 1.0.0-alpha.0`.
+`--version 1.0.0-alpha.1`.
 
 Each [GitHub Release](https://github.com/Cerclique/wirdigen/releases) also has
 prebuilt binaries for Linux (x86_64, aarch64), macOS (Apple silicon, Intel) and
