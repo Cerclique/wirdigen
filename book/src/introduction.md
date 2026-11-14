@@ -17,6 +17,7 @@ By convention the file is named `<protocol>.wirdigen.yaml`, here `demo.wirdigen.
 
 New to Wirdigen? The [tutorial](tutorial.md) builds a complete description step by step and
 runs its Dissector in tshark; [Installing a Dissector](installing.md) then puts it in Wireshark.
+To check first whether Wirdigen can describe your protocol, see [Limits](reference/limits.md).
 
 ## About this book
 
