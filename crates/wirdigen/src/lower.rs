@@ -664,6 +664,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
 
 /// What one dissect function keeps in its values table, and for a Type, takes and returns
 /// (spec §7.3).
+///
 /// Paths borrow the Protocol's names, so lowering looks one up by its `&[&str]` without allocating.
 #[derive(Debug, Default)]
 struct Plan<'p> {
@@ -902,12 +903,13 @@ struct Lowering<'p> {
     /// The keys [`Self::sites`] took.
     sites_declared: Declared,
     /// The site table of each case outside any Type using a Type, by the path of its `switch`
-    /// Field and the Type's name: one serves every case using that Type.
+    /// Field and the Type's name: one serves every case using that Type. Nested so a case is
+    /// looked up by its `&[&str]` path without allocating.
     case_sites: BTreeMap<Vec<&'p str>, BTreeMap<&'p str, usize>>,
     /// The Type whose dissect function is being lowered, `None` for the top-level layout.
     current_type: Option<TypeId>,
     /// The `switch` Fields whose subject value label the Info column shows, by where they are
-    /// lowered.
+    /// lowered: nested so a `switch` is looked up by its `&[&str]` path without allocating.
     info_cases: BTreeMap<Option<TypeId>, BTreeSet<Vec<&'p str>>>,
     /// The field extractors of the Fields the Info column shows, each once.
     extractors: Vec<Extractor>,
@@ -1101,7 +1103,7 @@ impl<'p> Lowering<'p> {
                     if let Some(&index) = shared {
                         Ref::Local(index)
                     } else {
-                        let site = self.site(*id, &FieldPath::of(segments));
+                        let site = self.site(*id, &FieldPath::of(segments.to_vec()));
                         let index = self.share_site(format!("{}__{name}", mangle("site_", segments)), site);
                         self.case_sites.entry(segments.to_vec()).or_default().insert(name, index);
                         Ref::Local(index)
@@ -1239,7 +1241,7 @@ impl<'p> Lowering<'p> {
         let entries = slots
             .into_iter()
             .map(|slot| {
-                let inside = FieldPath::of(&[at.segments.as_slice(), &slot.segments].concat());
+                let inside = FieldPath::of([at.segments.as_slice(), &slot.segments].concat());
                 let entry = match slot.kind {
                     SlotKind::Field(field) => SiteEntry::Field(self.proto_field(field, &inside)),
                     SlotKind::Bit(bytes, bit) => SiteEntry::Field(self.proto_field_bit(bytes, bit, &inside)),
@@ -1521,15 +1523,11 @@ impl<'p> FieldPath<'p> {
         let mut segments = Vec::with_capacity(parent.len() + 1);
         segments.extend_from_slice(parent);
         segments.push(name);
-        Self::from_segments(segments)
+        Self::of(segments)
     }
 
     /// The path made of `segments`.
-    fn of(segments: &[&'p str]) -> Self {
-        Self::from_segments(segments.to_vec())
-    }
-
-    fn from_segments(segments: Vec<&'p str>) -> Self {
+    fn of(segments: Vec<&'p str>) -> Self {
         let joined = segments.join(".");
         Self { segments, joined }
     }
