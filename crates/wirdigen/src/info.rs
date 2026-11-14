@@ -292,6 +292,20 @@ fn find<'p>(top: &'p [Entry], types: &'p NamedTypes, path: &[String]) -> Result<
 }
 
 #[cfg(test)]
+impl RawInfo {
+    /// Records what each piece of the template is.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        for piece in self.parsed.as_ref().expect("a valid description's `info:` parses") {
+            variants!(coverage, "Piece", piece, {
+                Piece::Text(_) => "Text",
+                Piece::Path { .. } => "Path",
+            });
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

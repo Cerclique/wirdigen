@@ -2109,6 +2109,150 @@ pub(crate) fn default_label(name: &str) -> String {
     chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
 }
 
+/// The name of every built-in type, in documentation order.
+#[cfg(test)]
+pub(crate) fn builtin_names() -> impl Iterator<Item = &'static str> {
+    BUILTINS.iter().map(|(name, _)| *name)
+}
+
+#[cfg(test)]
+impl RawAmount {
+    /// Records whether the value is a constant or an Expression, and the Expression's parts.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        variants!(coverage, "RawAmount", self, {
+            RawAmount::Constant(_) => "Constant",
+            RawAmount::Expression(_) => "Expression",
+        });
+        if let Self::Expression(expr) = self {
+            expr.cover(coverage);
+        }
+    }
+}
+
+#[cfg(test)]
+impl RawEntry {
+    /// Records what the entry is and uses, and everything below it.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        variants!(coverage, "RawEntry", self, {
+            RawEntry::Field(_) => "Field",
+            RawEntry::Padding(_) => "Padding",
+        });
+        match self {
+            Self::Field(field) => field.cover(coverage),
+            Self::Padding(padding) => padding.amount.value.cover(coverage),
+        }
+    }
+}
+
+#[cfg(test)]
+impl RawField {
+    /// Records what the Field is and uses, and everything below it.
+    fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        variants!(coverage, "RawKind", &self.kind, {
+            RawKind::Type { .. } => "Type",
+            RawKind::Structure { .. } => "Structure",
+            RawKind::Switch(_) => "Switch",
+        });
+        match &self.kind {
+            RawKind::Type { name, .. } => {
+                coverage.types.insert(name.value.clone());
+                if let Some(builtin) = Builtin::from_name(&name.value) {
+                    self.cover_value(builtin, coverage);
+                }
+            }
+            RawKind::Structure { fields, .. } => fields.iter().for_each(|entry| entry.cover(coverage)),
+            RawKind::Switch(switch) => switch.cover(coverage),
+        }
+        for length in &self.lengths {
+            variants!(coverage, "RawLength", &length.value.value, {
+                RawLength::Size(_) => "Size",
+                RawLength::Prefix(_) => "Prefix",
+                RawLength::Terminator(_) => "Terminator",
+            });
+            if let RawLength::Size(amount) = &length.value.value {
+                amount.cover(coverage);
+            }
+        }
+        if let Some(array) = &self.array {
+            variants!(coverage, "RawArray", &array.value, {
+                RawArray::Count(_) => "Count",
+                RawArray::ToEnd => "ToEnd",
+            });
+            if let RawArray::Count(count) = &array.value {
+                count.value.cover(coverage);
+            }
+        }
+        if let Some(condition) = &self.condition {
+            condition.value.cover(coverage);
+        }
+        if let Some(endian) = &self.endian {
+            cover_endian(endian, coverage);
+        }
+        self.mappings.cover(coverage);
+        if let Some(bits) = &self.bits {
+            bits.cover(coverage);
+        }
+        if let Some(dissector) = &self.dissector {
+            coverage.dissectors.insert(dissector.name.clone());
+        }
+    }
+
+    /// Records the `display:` and `encoding:` of a Field of the built-in type `builtin`.
+    fn cover_value(&self, builtin: Builtin, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        let display = self.display.as_ref().map(|d| builtin.displays().iter().find(|v| v.as_str() == d.value));
+        if let Some(display) = display {
+            let display = display.expect("a valid Field's `display:` is one of its type's");
+            variants!(coverage, "Display", display, {
+                Display::Dec => "Dec",
+                Display::Hex => "Hex",
+                Display::Oct => "Oct",
+                Display::DecHex => "DecHex",
+                Display::HexDec => "HexDec",
+                Display::Plain => "Plain",
+                Display::Dot => "Dot",
+                Display::Dash => "Dash",
+                Display::Colon => "Colon",
+                Display::Space => "Space",
+                Display::Local => "Local",
+                Display::Utc => "Utc",
+                Display::DoyUtc => "DoyUtc",
+            });
+        }
+        let encoding = self.encoding.as_ref().map(|e| builtin.encodings().iter().find(|v| v.as_str() == e.value));
+        if let Some(encoding) = encoding {
+            let encoding = encoding.expect("a valid Field's `encoding:` is one of its type's");
+            variants!(coverage, "Encoding", encoding, {
+                Encoding::Ascii => "Ascii",
+                Encoding::Utf8 => "Utf8",
+                Encoding::Utf16 => "Utf16",
+                Encoding::Ucs2 => "Ucs2",
+                Encoding::Latin1 => "Latin1",
+                Encoding::Secs => "Secs",
+                Encoding::SecsNsecs => "SecsNsecs",
+                Encoding::Ntp => "Ntp",
+                Encoding::Msecs => "Msecs",
+                Encoding::Usecs => "Usecs",
+                Encoding::Nsecs => "Nsecs",
+            });
+        }
+    }
+}
+
+/// Records the byte order an `endian:` value sets.
+#[cfg(test)]
+pub(crate) fn cover_endian(value: &Spanned<String>, coverage: &mut crate::coverage::Coverage<'_>) {
+    use crate::coverage::variants;
+    let endian = Endian::check(value).expect("a valid description's `endian:` is a byte order");
+    variants!(coverage, "Endian", &endian, {
+        Endian::Big => "Big",
+        Endian::Little => "Little",
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -631,6 +631,40 @@ mod builtin_protocols {
     }
 }
 
+/// The coverage stress Description (#216), which uses every feature once, makes a Dissector
+/// tshark loads: load only, with no capture.
+mod stress {
+    use super::*;
+
+    use wirdigen::Source;
+
+    #[test]
+    fn the_coverage_dissector_loads() {
+        if !enabled() {
+            return;
+        }
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stress");
+        let text =
+            fs::read_to_string(dir.join("coverage.wirdigen.yaml")).expect("the coverage Description is committed");
+        let lua = wirdigen::validate(&Source::new("coverage.wirdigen.yaml", text))
+            .unwrap_or_else(|d| panic!("the coverage Description is invalid: {d}"))
+            .generate();
+        let scratch = Scratch::new("stress-coverage");
+        let script = scratch.path("coverage.lua");
+        fs::write(&script, &lua).expect("the scratch directory is writable");
+        let script = format!("lua_script:{}", path_str(&script));
+        let output = scratch.run("tshark", &["-G", "protocols", "-X", &script]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.trim().is_empty(), "tshark wrote to stderr ({}):\n{stderr}", output.status);
+        let proto = proto_name(&lua);
+        let protocols = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            protocols.lines().any(|line| line.split('\t').nth(2) == Some(proto)),
+            "tshark loaded no protocol `{proto}`"
+        );
+    }
+}
+
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.
 mod harness {
     use super::*;

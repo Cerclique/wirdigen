@@ -682,6 +682,77 @@ impl fmt::Display for Expr {
 }
 
 #[cfg(test)]
+impl Expr {
+    /// Records the kinds of the Expression's tokens and nodes, its operators and its built-ins.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        let source = coverage.source;
+        for token in lex(&source[self.span.clone()]).expect("a parsed Expression lexes") {
+            variants!(coverage, "TokenKind", &token.kind, {
+                TokenKind::Int(_) => "Int",
+                TokenKind::Path(_) => "Path",
+                TokenKind::Builtin(_) => "Builtin",
+                TokenKind::Unary(_) => "Unary",
+                TokenKind::Binary(_) => "Binary",
+                TokenKind::Open => "Open",
+                TokenKind::Close => "Close",
+            });
+        }
+        self.cover_nodes(coverage);
+    }
+
+    fn cover_nodes(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        variants!(coverage, "ExprKind", &self.kind, {
+            ExprKind::Int(_) => "Int",
+            ExprKind::Path(_) => "Path",
+            ExprKind::Builtin(_) => "Builtin",
+            ExprKind::Unary { .. } => "Unary",
+            ExprKind::Binary { .. } => "Binary",
+        });
+        match &self.kind {
+            ExprKind::Int(_) | ExprKind::Path(_) => {}
+            ExprKind::Builtin(builtin) => variants!(coverage, "Builtin", builtin, {
+                Builtin::Offset => "Offset",
+                Builtin::Remaining => "Remaining",
+            }),
+            ExprKind::Unary { op, operand } => {
+                variants!(coverage, "UnaryOp", &op.value, {
+                    UnaryOp::Not => "Not",
+                    UnaryOp::Complement => "Complement",
+                    UnaryOp::Negate => "Negate",
+                });
+                operand.cover_nodes(coverage);
+            }
+            ExprKind::Binary { op, left, right } => {
+                variants!(coverage, "BinaryOp", &op.value, {
+                    BinaryOp::Mul => "Mul",
+                    BinaryOp::Div => "Div",
+                    BinaryOp::Rem => "Rem",
+                    BinaryOp::Add => "Add",
+                    BinaryOp::Sub => "Sub",
+                    BinaryOp::Shl => "Shl",
+                    BinaryOp::Shr => "Shr",
+                    BinaryOp::BitAnd => "BitAnd",
+                    BinaryOp::BitXor => "BitXor",
+                    BinaryOp::BitOr => "BitOr",
+                    BinaryOp::Eq => "Eq",
+                    BinaryOp::Ne => "Ne",
+                    BinaryOp::Lt => "Lt",
+                    BinaryOp::Le => "Le",
+                    BinaryOp::Gt => "Gt",
+                    BinaryOp::Ge => "Ge",
+                    BinaryOp::And => "And",
+                    BinaryOp::Or => "Or",
+                });
+                left.cover_nodes(coverage);
+                right.cover_nodes(coverage);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use proptest::prelude::*;
 

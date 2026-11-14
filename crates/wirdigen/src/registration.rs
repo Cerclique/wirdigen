@@ -192,3 +192,17 @@ fn check_ports(raw: &RawPorts, framing: bool, diagnostics: &mut Vec<Diagnostic>)
     }
     Ports { transport: raw.transport, ranges: valid.into_iter().map(|(range, _)| range).collect() }
 }
+
+#[cfg(test)]
+impl RawRegistration {
+    /// Records the transports ports are declared on.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        for ports in &self.transports {
+            variants!(coverage, "Transport", &ports.transport, {
+                Transport::Udp => "Udp",
+                Transport::Tcp => "Tcp",
+            });
+        }
+    }
+}
