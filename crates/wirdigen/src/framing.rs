@@ -348,6 +348,27 @@ fn structure_size(entries: &[Entry], types: &NamedTypes) -> Option<usize> {
 }
 
 #[cfg(test)]
+impl RawFraming {
+    /// Records the parts of the `length` Expression.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        self.length.value.cover(coverage);
+    }
+}
+
+/// Records where each top-level Field of `protocol` lies in every Message.
+#[cfg(test)]
+pub(crate) fn cover_places(protocol: &crate::description::Protocol, coverage: &mut crate::coverage::Coverage<'_>) {
+    use crate::coverage::variants;
+    for place in places(&protocol.fields, &protocol.types).values() {
+        variants!(coverage, "Place", place, {
+            Place::At(_) => "At",
+            Place::Conditional => "Conditional",
+            Place::Unknown => "Unknown",
+        });
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use crate::Source;
 

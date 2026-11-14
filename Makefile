@@ -6,7 +6,7 @@ export RUSTDOCFLAGS := -D warnings
 	docker-test-tshark-4.4 docker-test-tshark-stable-24.04 docker-test-tshark-stable-26.04 \
 	docker-test-tshark-random-4.4 \
 	docker-test-tshark-random-stable-24.04 docker-bless-tshark \
-	refresh-protocols docker-refresh-protocols
+	refresh-protocols docker-refresh-protocols refresh-stress profile profile-mem profiling-build
 
 lint:
 	cargo fmt --all --check
@@ -39,6 +39,55 @@ test-tshark-random:
 # newer Wireshark than the snapshot's replaces it instead.
 refresh-protocols:
 	WIRDIGEN_TSHARK=1 WIRDIGEN_BLESS=1 cargo test -p wirdigen --locked --test tshark builtin_protocols::
+
+# Rewrites the stress Descriptions of crates/wirdigen/tests/stress/ from tests/stress.rs; `make test`
+# fails when they drift.
+refresh-stress:
+	WIRDIGEN_BLESS=1 cargo test -p wirdigen --locked --test stress
+
+# What `make profile` and `make profile-mem` run: the real `wirdigen generate`, built with the
+# `profiling` profile, over the stress Descriptions or DESC="<files>", writing into target/profile/.
+DESC ?= $(wildcard crates/wirdigen/tests/stress/*.wirdigen.yaml)
+PROFILE_DIR := target/profile
+PROFILE_RUN := target/profiling/wirdigen generate --quiet --out-dir $(PROFILE_DIR) $(DESC)
+
+profiling-build:
+	cargo build -p wirdigen-cli --profile profiling --locked
+	mkdir -p $(PROFILE_DIR)
+
+# CPU profile with samply, opened in the Firefox Profiler; NO_OPEN=1 only saves it. Checks its
+# prerequisites first and never installs anything.
+profile:
+	@command -v samply >/dev/null || { \
+		echo "make profile needs samply on PATH. Install it with:"; \
+		echo "  cargo install --locked samply"; exit 1; }
+	@if [ -r /proc/sys/kernel/perf_event_paranoid ] && [ "$$(cat /proc/sys/kernel/perf_event_paranoid)" -gt 1 ]; then \
+		echo "make profile needs kernel.perf_event_paranoid at 1 or less, it is $$(cat /proc/sys/kernel/perf_event_paranoid). Lower it until the next reboot with:"; \
+		echo "  sudo sysctl kernel.perf_event_paranoid=1"; exit 1; fi
+	@$(MAKE) --no-print-directory profiling-build
+	@# samply exits 0 whatever the command does: a first run stops on errors, and warms the cache.
+	@$(PROFILE_RUN)
+	@out=$(PROFILE_DIR)/cpu-$$(date +%Y%m%d-%H%M%S).json.gz && \
+		{ samply record --save-only -o "$$out" -- $(PROFILE_RUN) || { \
+			echo "If samply says \"mmap failed\", perf may lock too little memory for one buffer per CPU."; \
+			echo "Raise the limit until the next reboot with:"; \
+			echo "  sudo sysctl kernel.perf_event_mlock_kb=2048"; exit 1; }; } && \
+		if [ -n "$(NO_OPEN)" ]; then echo "Saved $$out. Open it with:"; echo "  samply load $$out"; \
+		else samply load "$$out"; fi
+
+# Allocation profile with heaptrack: a summary here, the full view in heaptrack_gui.
+profile-mem:
+	@command -v heaptrack >/dev/null && command -v heaptrack_print >/dev/null || { \
+		echo "make profile-mem needs heaptrack and heaptrack_print on PATH. Install heaptrack with your"; \
+		echo "package manager, for example:"; \
+		echo "  sudo apt install heaptrack    # Debian, Ubuntu"; \
+		echo "  sudo pacman -S heaptrack      # Arch"; \
+		echo "  sudo dnf install heaptrack    # Fedora"; exit 1; }
+	@$(MAKE) --no-print-directory profiling-build
+	@out=$(PROFILE_DIR)/mem-$$(date +%Y%m%d-%H%M%S) && \
+		{ heaptrack --record-only -o "$$out" $(PROFILE_RUN) >"$$out.log" 2>&1 || { cat "$$out.log"; exit 1; }; } && rm "$$out.log" && \
+		heaptrack_print -f "$$out.zst" -m 0 -p 1 -a 1 -T 1 -n 5 2>/dev/null | awk -f scripts/heaptrack-summary.awk && \
+		echo && echo "Saved $$out.zst. See every backtrace with:" && echo "  heaptrack_gui $$out.zst"
 
 # Needs mdbook 0.5.4 (the version CI uses). Snippets are checked by `make test`.
 book:

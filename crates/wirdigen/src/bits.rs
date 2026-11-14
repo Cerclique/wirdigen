@@ -379,3 +379,20 @@ pub(crate) fn check(
         })
         .collect()
 }
+
+#[cfg(test)]
+impl RawBits {
+    /// Records what each entry is, and the mappings of the sub-Fields.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        for entry in &self.entries {
+            variants!(coverage, "RawBit", entry, {
+                RawBit::SubField(_) => "SubField",
+                RawBit::Padding(_) => "Padding",
+            });
+            if let RawBit::SubField(sub) = entry {
+                sub.mappings.cover(coverage);
+            }
+        }
+    }
+}

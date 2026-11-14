@@ -318,3 +318,23 @@ fn misplaced(key: &Spanned<&'static str>) -> Diagnostic {
         None,
     )
 }
+
+#[cfg(test)]
+impl RawSwitch {
+    /// Records the subject, what each case and `default:` reads, and everything below them.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        self.subject.value.cover(coverage);
+        for (_, body) in self.bodies() {
+            variants!(coverage, "RawBody", body, {
+                RawBody::Type(_) => "Type",
+                RawBody::Fields(_) => "Fields",
+            });
+            if let RawBody::Fields(fields) = body {
+                for entry in fields {
+                    entry.cover(coverage);
+                }
+            }
+        }
+    }
+}

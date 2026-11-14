@@ -66,6 +66,12 @@ pub(crate) fn check(name: &Spanned<String>, title: Option<&Spanned<String>>, dia
     }
 }
 
+/// The filter name of every built-in protocol of the snapshot.
+#[cfg(test)]
+pub(crate) fn filter_names() -> std::collections::BTreeSet<&'static str> {
+    protocols().map(|protocol| protocol.filter).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

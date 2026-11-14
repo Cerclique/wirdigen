@@ -74,6 +74,8 @@ mod bits;
 #[cfg(test)]
 mod book;
 mod builtin;
+#[cfg(test)]
+mod coverage;
 mod depth;
 mod description;
 mod diagnostic;

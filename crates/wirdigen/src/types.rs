@@ -383,6 +383,17 @@ impl<'a> Walk<'a> {
 }
 
 #[cfg(test)]
+impl RawType {
+    /// Records the Type's byte order and everything in its body.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        if let Some(endian) = &self.endian {
+            field::cover_endian(endian, coverage);
+        }
+        self.fields.iter().for_each(|entry| entry.cover(coverage));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
 

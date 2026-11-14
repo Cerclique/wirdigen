@@ -631,6 +631,68 @@ mod builtin_protocols {
     }
 }
 
+/// The Dissectors of the stress Descriptions (#216) load in tshark: load only, with no capture.
+/// coverage uses every feature once; deep sits at the depth limits; wide and expressions are
+/// large, where Lua's per-function limits bite (#199).
+mod stress {
+    use super::*;
+
+    use wirdigen::Source;
+
+    fn stress_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stress")
+    }
+
+    /// Generates the Dissector of `tests/stress/<name>.wirdigen.yaml` and checks that tshark
+    /// loads it: nothing on stderr, and its protocol registered.
+    fn loads(name: &str) {
+        if !enabled() {
+            return;
+        }
+        let file = format!("{name}.wirdigen.yaml");
+        let text = fs::read_to_string(stress_dir().join(&file)).unwrap_or_else(|_| panic!("{file} is committed"));
+        let lua = wirdigen::validate(&Source::new(&file, text))
+            .unwrap_or_else(|d| panic!("{file} is invalid: {d}"))
+            .generate();
+        let scratch = Scratch::new(&format!("stress-{name}"));
+        let script = scratch.path(&format!("{name}.lua"));
+        fs::write(&script, &lua).expect("the scratch directory is writable");
+        let script = format!("lua_script:{}", path_str(&script));
+        let output = scratch.run("tshark", &["-G", "protocols", "-X", &script]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.trim().is_empty(), "{name}: tshark wrote to stderr ({}):\n{stderr}", output.status);
+        let proto = proto_name(&lua);
+        let protocols = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            protocols.lines().any(|line| line.split('\t').nth(2) == Some(proto)),
+            "{name}: tshark loaded no protocol `{proto}`"
+        );
+    }
+
+    macro_rules! stress {
+        ($($test:ident => $name:literal),* $(,)?) => {
+            $(#[test] fn $test() { loads($name); })*
+
+            #[test]
+            fn every_stress_description_has_a_test() {
+                let tested = [$($name),*];
+                for entry in fs::read_dir(stress_dir()).expect("tests/stress exists") {
+                    let file = entry.expect("tests/stress is readable").file_name().into_string().expect("UTF-8");
+                    let name = file.strip_suffix(".wirdigen.yaml").unwrap_or(&file);
+                    assert!(tested.contains(&name), "tests/stress/{file} has no load test");
+                }
+            }
+        };
+    }
+
+    stress! {
+        the_coverage_dissector_loads => "coverage",
+        the_deep_dissector_loads => "deep",
+        the_expressions_dissector_loads => "expressions",
+        the_wide_dissector_loads => "wide",
+    }
+}
+
 /// A Dissector that cannot be trusted must fail the run, whatever tshark's exit status says.
 mod harness {
     use super::*;

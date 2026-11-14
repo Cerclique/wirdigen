@@ -668,3 +668,23 @@ fn check_unit_form(form: &Spanned<String>, diagnostics: &mut Vec<Diagnostic>) {
         ));
     }
 }
+
+#[cfg(test)]
+impl RawMappings {
+    /// Records how `values:` and `unit:` are written.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        use crate::coverage::variants;
+        if let Some(values) = &self.values {
+            variants!(coverage, "RawValues", &values.value, {
+                RawValues::Inline(_) => "Inline",
+                RawValues::Enum(_) => "Enum",
+            });
+        }
+        if let Some(unit) = &self.unit {
+            variants!(coverage, "RawUnit", &unit.value.plural, {
+                None => "Singular",
+                Some(_) => "SingularAndPlural",
+            });
+        }
+    }
+}

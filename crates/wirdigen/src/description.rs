@@ -245,3 +245,22 @@ fn is_protocol_name(name: &str) -> bool {
         && chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
+
+#[cfg(test)]
+impl Description {
+    /// Records everything the description uses.
+    pub(crate) fn cover(&self, coverage: &mut crate::coverage::Coverage<'_>) {
+        self.registration.cover(coverage);
+        if let Some(framing) = &self.framing {
+            framing.cover(coverage);
+        }
+        if let Some(endian) = &self.endian {
+            field::cover_endian(endian, coverage);
+        }
+        if let Some(info) = &self.info {
+            info.cover(coverage);
+        }
+        self.fields.iter().for_each(|entry| entry.cover(coverage));
+        self.types.iter().for_each(|ty| ty.cover(coverage));
+    }
+}
