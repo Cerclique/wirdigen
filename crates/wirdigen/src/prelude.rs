@@ -108,13 +108,14 @@ pub(crate) fn names_used(lua: &str) -> BTreeSet<&str> {
     let bytes = lua.as_bytes();
     let mut names = BTreeSet::new();
     let mut at = 0;
-    let mut prefix = lua.find(PREFIX);
-    while let Some(start) = prefix {
+    // Kept across the openers skipped before it, rather than searched for again after each.
+    let mut next_name = lua.find(PREFIX);
+    while let Some(start) = next_name {
         if start < at {
-            prefix = lua[at..].find(PREFIX).map(|p| at + p);
+            next_name = lua[at..].find(PREFIX).map(|p| at + p);
             continue;
         }
-        if let Some(opening) = bytes[at..start].iter().position(|c| matches!(c, b'-' | b'"' | b'\'' | b'[')) {
+        if let Some(opening) = bytes[at..start].iter().position(|c| may_open_literal(*c)) {
             at = past_opening(bytes, at + opening);
             continue;
         }
@@ -131,6 +132,11 @@ pub(crate) fn names_used(lua: &str) -> BTreeSet<&str> {
 /// Whether `c` can be part of a Lua name.
 fn is_identifier(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
+}
+
+/// Whether `c` may open a comment or a string, which [`past_opening`] then skips.
+fn may_open_literal(c: u8) -> bool {
+    matches!(c, b'-' | b'"' | b'\'' | b'[')
 }
 
 /// Where the scan resumes after the byte at `at`: past the comment or string it opens, if it
