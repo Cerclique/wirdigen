@@ -94,7 +94,7 @@ fn diagnose(snippet: &Snippet) -> Outcome {
     let source = Source::new(snippet.location.clone(), snippet.text.clone());
     let diagnostics = match crate::validate(&source) {
         Ok(valid) => valid.warnings().to_vec(),
-        Err(diagnostics) => diagnostics.into_vec(),
+        Err(diagnostics) => diagnostics.into_iter().collect(),
     };
     Outcome {
         names: diagnostics.iter().map(crate::Diagnostic::name).collect(),

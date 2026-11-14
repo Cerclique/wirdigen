@@ -233,14 +233,28 @@ impl Diagnostics {
         Self { items }
     }
 
-    pub(crate) fn into_vec(self) -> Vec<Diagnostic> {
-        self.items
-    }
-
     /// Whether at least one diagnostic is an error.
     #[must_use]
     pub fn has_errors(&self) -> bool {
         self.items.iter().any(|d| d.severity() == Severity::Error)
+    }
+
+    /// The number of diagnostics.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Whether there are no diagnostics.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// The diagnostics as a slice, in source order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[Diagnostic] {
+        &self.items
     }
 
     /// Iterates over the diagnostics in source order.
@@ -262,6 +276,16 @@ impl<'a> IntoIterator for &'a Diagnostics {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+/// Yields the owned diagnostics in source order, the same order as [`Diagnostics::iter`].
+impl IntoIterator for Diagnostics {
+    type Item = Diagnostic;
+    type IntoIter = std::vec::IntoIter<Diagnostic>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
     }
 }
 

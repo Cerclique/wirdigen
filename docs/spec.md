@@ -615,6 +615,7 @@ pub fn json_schema() -> String;    // pretty, deterministic
 
 pub struct Diagnostics;            // newtype: every error and warning of the run, source order
 // impl std::error::Error (one-line summary); has_errors(); render(&Source, &RenderOptions) -> String
+// len(); is_empty(); as_slice() -> &[Diagnostic]; iter(); IntoIterator by value and by reference
 
 pub struct Diagnostic;
 impl Diagnostic {
