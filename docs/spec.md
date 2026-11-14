@@ -832,7 +832,7 @@ The gated tests fail rather than skip when their tool is missing. `make test-lua
 - **CLI chapter**: output placement, `generate --check` in CI, exit codes and the `--deny-warnings` caveat (§6.5), linking to the changelog's "New warnings" group.
   - It holds the normative **JSON Lines contract** (§9.7).
   - Flag detail stays in `--help` and the man pages. The book includes `wirdigen --help` from its `trycmd` case, so CI catches a stale copy.
-- **Diagnostics index**: one page with an anchor per Diagnostic name: its severity, meaning, a CI-checked triggering snippet, and how to fix or `allow:` it. A test fails if a Diagnostic lacks an entry or vice versa.
+- **Diagnostics index**: one page with an anchor per Diagnostic name, sorted by name: its severity, meaning, a CI-checked triggering snippet, and how to fix or `allow:` it. A test fails if a Diagnostic lacks an entry or vice versa, or if the entries are out of order.
 - **docs.rs**: crate docs with a runnable doctest (`Source` → `validate` → `generate`, plus rendering Diagnostics), short notes on semver scope and the I/O-free design, and a link to the book for the format.
 - **Changelog**: git-cliff after a hand-written first v1 entry ("rewrite, no compatibility with 0.3"). PRs that add a warning use the commit scope `diagnostics`, grouped under **"New warnings"**.
 - **`docs/CONTRIBUTING.md`**, short: test layers and their setup, adding a corpus case and re-blessing goldens, the PR title convention including the `diagnostics` scope, and pointers to `GLOSSARY.md` and `docs/adr/`. It is not part of the book.

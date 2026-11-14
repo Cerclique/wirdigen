@@ -68,7 +68,7 @@ next to a hand-written `<case>.expected` that holds one `severity name line:col-
 line and no message text. A new Diagnostic also needs:
 
 - a directory of its own, with an `allowed` case for a warning;
-- an entry in the book's [Diagnostics index](../book/src/diagnostics.md).
+- an entry in the book's [Diagnostics index](../book/src/diagnostics.md), in alphabetical order.
 
 Tests check both.
 
