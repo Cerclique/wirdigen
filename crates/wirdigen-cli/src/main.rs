@@ -194,7 +194,7 @@ impl Run {
         let valid = wirdigen::validate(&source);
         let diagnostics = match &valid {
             Ok(valid) => valid.warnings(),
-            Err(diagnostics) => diagnostics.iter().as_slice(),
+            Err(diagnostics) => diagnostics.as_slice(),
         };
         self.report(&source, diagnostics);
         match valid {

@@ -160,9 +160,11 @@ pub fn validate(source: &Source) -> Result<ValidDescription, Diagnostics> {
     checked.retain(|d| !description.allows(d));
     let diagnostics = Diagnostics::new(checked);
     match protocol {
-        Some(protocol) => {
-            Ok(ValidDescription { source_name: source.name().to_owned(), protocol, warnings: diagnostics.into_vec() })
-        }
+        Some(protocol) => Ok(ValidDescription {
+            source_name: source.name().to_owned(),
+            protocol,
+            warnings: diagnostics.into_iter().collect(),
+        }),
         None => Err(diagnostics),
     }
 }

@@ -79,3 +79,18 @@ fn severity_tokens_are_error_and_warning() {
     assert_eq!(Severity::Error.as_str(), "error");
     assert_eq!(Severity::Warning.as_str(), "warning");
 }
+
+#[test]
+fn diagnostics_expose_len_is_empty_as_slice_and_an_owning_iterator() {
+    let source = Source::new("x", "name: Demo\nfields: [ {name: A, type: uint8}, {name: B, type: uint8} ]\n");
+    let diagnostics = wirdigen::validate(&source).unwrap_err();
+    let borrowed: Vec<Diagnostic> = diagnostics.iter().cloned().collect();
+    assert!(borrowed.len() > 1, "the test needs several Diagnostics: {borrowed:?}");
+
+    assert_eq!(diagnostics.len(), borrowed.len());
+    assert!(!diagnostics.is_empty());
+    assert_eq!(diagnostics.as_slice(), borrowed.as_slice());
+
+    let owned: Vec<Diagnostic> = diagnostics.into_iter().collect();
+    assert_eq!(owned, borrowed);
+}
