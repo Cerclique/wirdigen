@@ -4,7 +4,12 @@ use std::ops::Range;
 use crate::render::{self, RenderOptions};
 use crate::source::Source;
 
-/// How serious a [`Diagnostic`] is.
+/// How serious a [`Diagnostic`] is (spec §6.2).
+///
+/// `Error` and `Warning` are the only severities, and callers may match them
+/// exhaustively: the enum is deliberately not `#[non_exhaustive]` (spec §8, ADR 0012).
+/// Adding a variant is a major (semver-breaking) change. Each level is defined by
+/// what generation does next, so a new one would also need a new outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Severity {
     /// The description has no single meaning or contradicts itself: no Dissector is generated.
