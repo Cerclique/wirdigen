@@ -1,14 +1,12 @@
 //! Large descriptions (#199, ADR 0019): however many Fields or Types a description has, and
-//! however deep it nests, its Dissector stays within Lua's per-function limits (200 locals, 255
-//! upvalues, 255 registers, and about 200 levels of nesting in the parser), so tshark loads it
-//! and dissects with it.
+//! however deep it nests up to the depth limit of 64 (ADR 0020), its Dissector stays within
+//! Lua's per-function limits (200 locals, 255 upvalues, 255 registers, and about 200 levels of
+//! nesting in the parser), so tshark loads it and dissects with it.
 //!
 //! The descriptions are generated here rather than checked in. Each packet holds one byte per
 //! `uint8`, and the test checks the last Field read, deepest in the tree, with tshark's `-T
 //! fields` output rather than its JSON, too deeply nested for `serde_json` here. Success is
 //! judged as for the corpus: nothing on stderr, and no `_ws.lua.error` or `_ws.malformed.expert`.
-//! A chain of 500 Types is a tree deeper than Wireshark's default limit of 500 levels, a limit
-//! of Wireshark's rather than of the Dissector, so tshark runs with a higher one.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -17,10 +15,6 @@ use wirdigen::Source;
 
 use super::bad_input::text2pcap;
 use super::{PORT, Scratch, enabled, path_str};
-
-/// The tree depth tshark allows, above the 500 levels of the chain of Types and the layers
-/// under it.
-const MAX_TREE_DEPTH: &str = "gui.max_tree_depth:1000";
 
 /// Generates the Dissector of `description`, dissects one packet of `bytes` with it, and checks
 /// that the item at the filter name `deepest` shows `expected`.
@@ -41,7 +35,7 @@ fn check(name: &str, description: &str, bytes: &[u8], deepest: &str, expected: &
     let decode_as = format!("udp.port=={PORT},demo");
     let script = format!("lua_script:{}", path_str(&script));
     let fields = [deepest, "_ws.lua.error", "_ws.malformed.expert"];
-    let mut args = vec!["-r", path_str(&pcap), "-X", &script, "-d", &decode_as, "-o", MAX_TREE_DEPTH, "-T", "fields"];
+    let mut args = vec!["-r", path_str(&pcap), "-X", &script, "-d", &decode_as, "-T", "fields"];
     args.extend(fields.iter().flat_map(|field| ["-e", field]));
     let output = scratch.run("tshark", &args);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -80,18 +74,19 @@ fn a_thousand_fields() {
     check("thousand-fields", &description, &bytes, "demo.data499", "f3");
 }
 
-/// 500 Types in a chain: each holds a `uint8` and a Field of the next.
+/// 64 Types in a chain: each holds a `uint8` and a Field of the next, so the `uint8` of the last
+/// is 64 deep, as deep as a Field may be.
 #[test]
-fn five_hundred_chained_types() {
+fn sixty_four_chained_types() {
     let mut description = "name: demo\nfields:\n  - { name: t, type: T0 }\ntypes:\n".to_owned();
-    for i in 0..500 {
+    for i in 0..64 {
         line(&mut description, &format!("  T{i}:\n    fields:\n      - {{ name: a, type: uint8 }}"));
-        if i < 499 {
+        if i < 63 {
             line(&mut description, &format!("      - {{ name: next, type: T{} }}", i + 1));
         }
     }
-    let deepest = format!("demo.t{}.a", ".next".repeat(499));
-    check("chained-types", &description, &[7; 500], &deepest, "7");
+    let deepest = format!("demo.t{}.a", ".next".repeat(63));
+    check("chained-types", &description, &[7; 64], &deepest, "7");
 }
 
 /// 500 Types, each used by one top-level Field.
@@ -108,20 +103,21 @@ fn five_hundred_types_used_at_the_top_level() {
     check("flat-types", &description, &[9; 500], "demo.f499.a", "9");
 }
 
-/// 50 levels of inline structures, each conditional on the `uint8` before it and an array of one
-/// element, holding a `uint8` and the next level. The last condition is an Expression nearly as
-/// deep as ADR 0018 allows, which must load however deep it is in the description.
+/// 64 levels of inline structures, each conditional on the `uint8` before it and an array of one
+/// element, holding a `uint8` and the next level: the last `uint8` is 64 deep, as deep as a Field
+/// may be. The last condition is an Expression nearly as deep as ADR 0018 allows, which must load
+/// however deep it is in the description.
 #[test]
-fn fifty_nested_inline_structures() {
+fn sixty_four_nested_inline_structures() {
     let mut description = "name: demo\nfields:\n  - { name: v, type: uint8 }\n".to_owned();
-    nested_structures(&mut description, "  ", 50, |level| {
-        if level == 49 { format!("\"v{}\"", "+0".repeat(60)) } else { "v".to_owned() }
+    nested_structures(&mut description, "  ", 64, |level| {
+        if level == 63 { format!("\"v{}\"", "+0".repeat(60)) } else { "v".to_owned() }
     });
-    let deepest = format!("demo{}.v", ".s".repeat(50));
-    check("nested-structures", &description, &[1; 51], &deepest, "1");
+    let deepest = format!("demo{}.v", ".s".repeat(64));
+    check("nested-structures", &description, &[1; 65], &deepest, "1");
 }
 
-/// The same 50 levels inside a Type, the first conditional on a value of its caller's.
+/// 50 levels of inline structures inside a Type, the first conditional on a value of its caller's.
 #[test]
 fn fifty_nested_inline_structures_in_a_type() {
     let mut description =
@@ -132,17 +128,16 @@ fn fifty_nested_inline_structures_in_a_type() {
     check("nested-structures-in-a-type", &description, &[1; 51], &deepest, "1");
 }
 
-/// 160 levels of inline structures inside a Type, whose caller reads the deepest value: the
-/// Type returns it in a table nested as deep. (Validation itself overflows Rust's stack at about
-/// 200 levels, #207.)
+/// 63 levels of inline structures inside a Type, whose caller reads the deepest value, 64 deep,
+/// as deep as a Field may be: the Type returns it in a table nested as deep.
 #[test]
-fn a_value_read_160_structures_deep_in_a_type() {
+fn a_value_read_64_fields_deep_in_a_type() {
     let mut description = "name: demo\nfields:\n  - { name: t, type: T }\n".to_owned();
-    let path = format!("t{}.v", ".s".repeat(160));
+    let path = format!("t{}.v", ".s".repeat(63));
     line(&mut description, &format!("  - {{ name: data, type: bytes, size: \"{path}\" }}"));
     description.push_str("types:\n  T:\n    fields:\n");
     let mut indent = "      ".to_owned();
-    for _ in 0..160 {
+    for _ in 0..63 {
         line(&mut description, &format!("{indent}- name: s\n{indent}  fields:"));
         indent.push_str("  ");
     }

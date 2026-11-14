@@ -1,0 +1,137 @@
+# Generated: see ADR 0020.
+name: demo
+fields:
+  - { name: tag, type: uint8 }
+  - name: s
+    fields:
+      - name: s
+        fields:
+          - name: s
+            fields:
+              - name: s
+                fields:
+                  - name: s
+                    fields:
+                      - name: s
+                        fields:
+                          - name: s
+                            fields:
+                              - name: s
+                                fields:
+                                  - name: s
+                                    fields:
+                                      - name: s
+                                        fields:
+                                          - name: s
+                                            fields:
+                                              - name: s
+                                                fields:
+                                                  - name: s
+                                                    fields:
+                                                      - name: s
+                                                        fields:
+                                                          - name: s
+                                                            fields:
+                                                              - name: s
+                                                                fields:
+                                                                  - name: s
+                                                                    fields:
+                                                                      - name: s
+                                                                        fields:
+                                                                          - name: s
+                                                                            fields:
+                                                                              - name: s
+                                                                                fields:
+                                                                                  - name: s
+                                                                                    fields:
+                                                                                      - name: s
+                                                                                        fields:
+                                                                                          - name: s
+                                                                                            fields:
+                                                                                              - name: s
+                                                                                                fields:
+                                                                                                  - name: s
+                                                                                                    fields:
+                                                                                                      - name: s
+                                                                                                        fields:
+                                                                                                          - name: s
+                                                                                                            fields:
+                                                                                                              - name: s
+                                                                                                                fields:
+                                                                                                                  - name: s
+                                                                                                                    fields:
+                                                                                                                      - name: s
+                                                                                                                        fields:
+                                                                                                                          - name: s
+                                                                                                                            fields:
+                                                                                                                              - name: s
+                                                                                                                                fields:
+                                                                                                                                  - name: s
+                                                                                                                                    fields:
+                                                                                                                                      - name: s
+                                                                                                                                        fields:
+                                                                                                                                          - name: s
+                                                                                                                                            fields:
+                                                                                                                                              - name: s
+                                                                                                                                                fields:
+                                                                                                                                                  - name: s
+                                                                                                                                                    fields:
+                                                                                                                                                      - name: s
+                                                                                                                                                        fields:
+                                                                                                                                                          - name: s
+                                                                                                                                                            fields:
+                                                                                                                                                              - name: s
+                                                                                                                                                                fields:
+                                                                                                                                                                  - name: s
+                                                                                                                                                                    fields:
+                                                                                                                                                                      - name: s
+                                                                                                                                                                        fields:
+                                                                                                                                                                          - name: s
+                                                                                                                                                                            fields:
+                                                                                                                                                                              - name: s
+                                                                                                                                                                                fields:
+                                                                                                                                                                                  - name: s
+                                                                                                                                                                                    fields:
+                                                                                                                                                                                      - name: s
+                                                                                                                                                                                        fields:
+                                                                                                                                                                                          - name: s
+                                                                                                                                                                                            fields:
+                                                                                                                                                                                              - name: s
+                                                                                                                                                                                                fields:
+                                                                                                                                                                                                  - name: s
+                                                                                                                                                                                                    fields:
+                                                                                                                                                                                                      - name: s
+                                                                                                                                                                                                        fields:
+                                                                                                                                                                                                          - name: s
+                                                                                                                                                                                                            fields:
+                                                                                                                                                                                                              - name: s
+                                                                                                                                                                                                                fields:
+                                                                                                                                                                                                                  - name: s
+                                                                                                                                                                                                                    fields:
+                                                                                                                                                                                                                      - name: s
+                                                                                                                                                                                                                        fields:
+                                                                                                                                                                                                                          - name: s
+                                                                                                                                                                                                                            fields:
+                                                                                                                                                                                                                              - name: s
+                                                                                                                                                                                                                                fields:
+                                                                                                                                                                                                                                  - name: s
+                                                                                                                                                                                                                                    fields:
+                                                                                                                                                                                                                                      - name: s
+                                                                                                                                                                                                                                        fields:
+                                                                                                                                                                                                                                          - name: s
+                                                                                                                                                                                                                                            fields:
+                                                                                                                                                                                                                                              - name: s
+                                                                                                                                                                                                                                                fields:
+                                                                                                                                                                                                                                                  - name: s
+                                                                                                                                                                                                                                                    fields:
+                                                                                                                                                                                                                                                      - name: s
+                                                                                                                                                                                                                                                        fields:
+                                                                                                                                                                                                                                                          - name: s
+                                                                                                                                                                                                                                                            fields:
+                                                                                                                                                                                                                                                              - name: sw
+                                                                                                                                                                                                                                                                switch: tag
+                                                                                                                                                                                                                                                                cases:
+                                                                                                                                                                                                                                                                  1: [ { name: a, type: uint8 } ]
+                                                                                                                                                                                                                                                                  2:
+                                                                                                                                                                                                                                                                    - name: b
+                                                                                                                                                                                                                                                                      fields: [ { name: y, type: uint8 } ]
