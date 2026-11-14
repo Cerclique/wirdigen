@@ -607,14 +607,17 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         filter_name: &protocol.name,
         enums: &protocol.enums,
         proto_fields: Vec::new(),
+        proto_fields_declared: Declared::default(),
         tables: Vec::new(),
         names: Vec::new(),
         slots: BTreeMap::new(),
         sites: Vec::new(),
+        sites_declared: Declared::default(),
         case_sites: BTreeMap::new(),
         current_type: None,
         info_cases: BTreeSet::new(),
         extractors: Vec::new(),
+        extractors_declared: Declared::default(),
     };
     // The `switch` Fields the Info column shows are known before any of them is lowered.
     let info = lowering.info(protocol);
@@ -883,11 +886,15 @@ struct Lowering<'p> {
     filter_name: &'p str,
     enums: &'p BTreeMap<String, Table>,
     proto_fields: Vec<ProtoField>,
+    /// What [`Self::proto_fields`] declares, to find one by filter name and keep keys unique.
+    proto_fields_declared: Declared,
     tables: Vec<SharedTable>,
     names: Vec<NamesTable>,
     /// The slots of each Type's site tables, in the Type's layout order.
     slots: BTreeMap<TypeId, Vec<Slot<'p>>>,
     sites: Vec<SharedSite>,
+    /// The keys [`Self::sites`] took.
+    sites_declared: Declared,
     /// The site table of each case outside any Type using a Type, by the path of its `switch`
     /// Field and the Type's name: one serves every case using that Type.
     case_sites: BTreeMap<(Vec<String>, String), usize>,
@@ -897,6 +904,36 @@ struct Lowering<'p> {
     info_cases: BTreeSet<SwitchSite>,
     /// The field extractors of the Fields the Info column shows, each once.
     extractors: Vec<Extractor>,
+    /// What [`Self::extractors`] declares, to find one by filter name and keep keys unique.
+    extractors_declared: Declared,
+}
+
+/// The filter names and keys taken by one kind of declaration, which lowering pushes in layout
+/// order onto a `Vec` of its own: finding one or a free key does not scan that `Vec`.
+#[derive(Default)]
+struct Declared {
+    /// The index in that `Vec` of the declaration with each filter name.
+    filter_names: BTreeMap<String, usize>,
+    keys: BTreeSet<String>,
+}
+
+impl Declared {
+    /// The index of the declaration with `filter_name`, if one was declared.
+    fn find(&self, filter_name: &str) -> Option<usize> {
+        self.filter_names.get(filter_name).copied()
+    }
+
+    /// Records that the declaration at `index` has `filter_name`.
+    fn declare(&mut self, filter_name: &str, index: usize) {
+        self.filter_names.insert(filter_name.to_owned(), index);
+    }
+
+    /// Takes a fresh key from `base`, as [`unique`] picks it.
+    fn key(&mut self, base: &str) -> String {
+        let key = unique(base, |name| self.keys.contains(name));
+        self.keys.insert(key.clone());
+        key
+    }
 }
 
 /// Where a `switch` Field the Info column shows is lowered: the Type whose dissect function
@@ -956,10 +993,11 @@ impl<'p> Lowering<'p> {
     /// The field extractor of the `ProtoField` at `path`, declared once.
     fn extractor(&mut self, path: &[String]) -> usize {
         let abbrev = format!("{}.{}", self.filter_name, path.join("."));
-        if let Some(index) = self.extractors.iter().position(|x| x.abbrev == abbrev) {
+        if let Some(index) = self.extractors_declared.find(&abbrev) {
             return index;
         }
-        let key = unique(&format!("x_{}", path.join("__")), |name| self.extractors.iter().any(|x| x.key == name));
+        let key = self.extractors_declared.key(&format!("x_{}", path.join("__")));
+        self.extractors_declared.declare(&abbrev, self.extractors.len());
         self.extractors.push(Extractor { key, abbrev });
         self.extractors.len() - 1
     }
@@ -1216,7 +1254,7 @@ impl<'p> Lowering<'p> {
 
     /// Declares `site` once under a fresh key from `base`, and returns its index in the sites.
     fn share_site(&mut self, base: &str, site: Site) -> usize {
-        let key = unique(base, |n| self.sites.iter().any(|s| s.key == n));
+        let key = self.sites_declared.key(base);
         self.sites.push(SharedSite { key, site });
         self.sites.len() - 1
     }
@@ -1341,7 +1379,7 @@ impl<'p> Lowering<'p> {
     fn proto_field(&mut self, field: &Field, segments: &[&str]) -> usize {
         let path = segments.join(".");
         let abbrev = format!("{}.{path}", self.filter_name);
-        if let Some(index) = self.proto_fields.iter().position(|f| f.abbrev == abbrev) {
+        if let Some(index) = self.proto_fields_declared.find(&abbrev) {
             return index;
         }
         let (field_type, strings) = match &field.kind {
@@ -1350,8 +1388,10 @@ impl<'p> Lowering<'p> {
                 (FieldType::new("none", Args::Plain), None)
             }
         };
+        let key = self.key(segments);
+        self.proto_fields_declared.declare(&abbrev, self.proto_fields.len());
         self.proto_fields.push(ProtoField {
-            key: self.key(segments),
+            key,
             abbrev,
             label: field.label.clone().unwrap_or_else(|| default_label(&field.name)),
             description: field.description.clone(),
@@ -1388,7 +1428,7 @@ impl<'p> Lowering<'p> {
     /// number of bits.
     fn proto_field_bit(&mut self, bytes: usize, bit: &Bit, segments: &[&str]) -> usize {
         let abbrev = format!("{}.{}", self.filter_name, segments.join("."));
-        if let Some(index) = self.proto_fields.iter().position(|f| f.abbrev == abbrev) {
+        if let Some(index) = self.proto_fields_declared.find(&abbrev) {
             return index;
         }
         let (field_type, strings) = match &bit.kind {
@@ -1402,8 +1442,10 @@ impl<'p> Lowering<'p> {
                 (FieldType::new("bool", Args::Display(bool_width(bytes))), Some(strings))
             }
         };
+        let key = self.key(segments);
+        self.proto_fields_declared.declare(&abbrev, self.proto_fields.len());
         self.proto_fields.push(ProtoField {
-            key: self.key(segments),
+            key,
             abbrev,
             label: bit.label.clone().unwrap_or_else(|| default_label(&bit.name)),
             description: bit.description.clone(),
@@ -1415,9 +1457,9 @@ impl<'p> Lowering<'p> {
     }
 
     /// The key of the `ProtoField` at a path: `f_` then the segments joined by `__`
-    /// (`f_options__ttl`).
-    fn key(&self, segments: &[&str]) -> String {
-        unique(&format!("f_{}", segments.join("__")), |name| self.proto_fields.iter().any(|f| f.key == name))
+    /// (`f_options__ttl`), taken.
+    fn key(&mut self, segments: &[&str]) -> String {
+        self.proto_fields_declared.key(&format!("f_{}", segments.join("__")))
     }
 }
 
