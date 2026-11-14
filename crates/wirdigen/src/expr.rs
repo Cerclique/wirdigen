@@ -485,6 +485,7 @@ fn literal(word: &str, span: Range<usize>) -> Result<u64, SyntaxError> {
             )));
     }
     if let Some(bad) = digits.chars().find(|c| *c != '_' && !c.is_digit(radix)) {
+        // The message shows the digit lowercased, as `0xG` reads `g`.
         let bad = bad.to_ascii_lowercase();
         return Err(SyntaxError::new(span, format!("`{bad}` is not a {kind} digit in `{word}`")));
     }
