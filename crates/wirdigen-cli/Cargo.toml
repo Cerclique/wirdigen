@@ -50,6 +50,7 @@ trycmd = "1.2.1"
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "allow"
+unreachable_pub = "warn"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

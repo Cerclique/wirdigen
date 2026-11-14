@@ -11,7 +11,7 @@ use wirdigen::{Diagnostic, Source};
 /// What happened to one input, as the `status` of its `file` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum FileStatus {
+pub(crate) enum FileStatus {
     /// `generate`: new bytes went to the output.
     Written,
     /// `generate`: the output already held these bytes; `--check`: the output is up to date.
@@ -26,7 +26,7 @@ pub enum FileStatus {
 
 impl FileStatus {
     /// Whether this status makes the run exit with code 1.
-    pub fn is_failure(self) -> bool {
+    pub(crate) fn is_failure(self) -> bool {
         matches!(self, FileStatus::Stale | FileStatus::Failed)
     }
 }
@@ -94,7 +94,7 @@ impl Record<'_> {
 ///
 /// `rendered` is the uncoloured human rendering; `denied` marks a warning promoted by
 /// `--deny-warnings`, which keeps its `warning` severity.
-pub fn diagnostic(source: &Source, diagnostic: &Diagnostic, rendered: &str, denied: bool) -> String {
+pub(crate) fn diagnostic(source: &Source, diagnostic: &Diagnostic, rendered: &str, denied: bool) -> String {
     let notes = diagnostic
         .notes()
         .iter()
@@ -115,11 +115,11 @@ pub fn diagnostic(source: &Source, diagnostic: &Diagnostic, rendered: &str, deni
 
 /// A `file` record: what happened to `input`, whose Dissector goes to `output` (none under
 /// `validate`).
-pub fn file(input: &str, output: Option<&str>, status: FileStatus) -> String {
+pub(crate) fn file(input: &str, output: Option<&str>, status: FileStatus) -> String {
     Record::File { input, output, status }.to_line()
 }
 
 /// The `summary` record closing a run: the Diagnostics by severity, and the exit code.
-pub fn summary(errors: usize, warnings: usize, exit_code: u8) -> String {
+pub(crate) fn summary(errors: usize, warnings: usize, exit_code: u8) -> String {
     Record::Summary { errors, warnings, exit_code }.to_line()
 }
