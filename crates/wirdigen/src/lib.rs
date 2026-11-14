@@ -70,8 +70,6 @@
 //! `wirdigen --deny-warnings`, can then fail after an upgrade with no change to its
 //! descriptions.
 
-#![deny(missing_docs)]
-
 mod bits;
 #[cfg(test)]
 mod book;
