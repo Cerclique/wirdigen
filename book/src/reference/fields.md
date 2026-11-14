@@ -514,7 +514,8 @@ fields:
   `dissector:` shows the decoded bytes but not the raw ones.
 - A Field with no bytes calls no dissector. The Protocol column keeps this protocol's name.
 - Whether Wireshark has a dissector by that name is known only when a packet is read. A name it
-  does not know adds an expert info **warning**, even when the Field is empty, "Unknown dissector <name>: payload", filtered
+  does not know adds an expert info **warning**, even when the Field is empty,
+  `Unknown dissector <name>: payload`, filtered
   as `<protocol>._undecoded.dissector`, and the dissection goes on.
 - Bytes the other dissector cannot read are its own malformed packet, shown in its layer; the
   dissection of this protocol goes on.
