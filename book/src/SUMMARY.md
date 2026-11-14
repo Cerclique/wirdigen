@@ -22,6 +22,7 @@
 - [Framing](reference/framing.md)
 - [Expressions](reference/expressions.md)
 - [Info column](reference/info.md)
+- [Limits](reference/limits.md)
 - [Diagnostics](reference/diagnostics.md)
 
 ---
