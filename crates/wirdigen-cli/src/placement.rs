@@ -202,19 +202,27 @@ fn next_to(input: &Path) -> PathBuf {
     }
 }
 
-/// `path` joined to `cwd`, with `.` dropped and `..` taking off the previous component.
+/// `path` joined to `cwd`, with `.` dropped and `..` taking off the previous normal component.
+///
+/// A `..` with no normal component before it is kept on a relative path, so `../x` never equals
+/// `x` when `cwd` is empty, and dropped after a root or prefix, since `/..` is `/`.
 fn normalize(cwd: &Path, path: &Path) -> PathBuf {
-    let mut normal = PathBuf::new();
-    for component in cwd.join(path).components() {
+    let mut normal: Vec<Component<'_>> = Vec::new();
+    let joined = cwd.join(path);
+    for component in joined.components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                normal.pop();
-            }
+            Component::ParentDir => match normal.last() {
+                Some(Component::Normal(_)) => {
+                    normal.pop();
+                }
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                None | Some(Component::ParentDir | Component::CurDir) => normal.push(component),
+            },
             other => normal.push(other),
         }
     }
-    normal
+    normal.iter().collect()
 }
 
 #[cfg(test)]
@@ -293,6 +301,34 @@ mod tests {
         let inputs = files(&["a.yaml"]);
         let result = reject_stdout_under_json(&inputs, &Placement::NextToInput, &[Output::File("a.lua".into())]);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn a_leading_parent_of_a_relative_path_is_kept() {
+        assert_eq!(normalize(Path::new(""), Path::new("../x")), PathBuf::from("../x"));
+        assert_eq!(normalize(Path::new(""), Path::new("a/../../x")), PathBuf::from("../x"));
+    }
+
+    #[test]
+    fn a_parent_after_the_root_is_dropped() {
+        assert_eq!(normalize(Path::new(""), Path::new("/..")), PathBuf::from("/"));
+        assert_eq!(normalize(Path::new(""), Path::new("/a/../..")), PathBuf::from("/"));
+    }
+
+    #[test]
+    fn without_a_working_directory_a_parent_input_is_not_the_output() {
+        let placement = Placement::Single(Output::File(PathBuf::from("x.wirdigen.yaml")));
+        let result = outputs(&files(&["../x.wirdigen.yaml"]), &placement, Path::new(""));
+        assert_eq!(result.unwrap(), vec![Output::File(PathBuf::from("x.wirdigen.yaml"))]);
+    }
+
+    #[test]
+    fn without_a_working_directory_two_inputs_to_one_output_is_a_usage_error() {
+        let placement = Placement::Dir(PathBuf::from("out"));
+        let result = outputs(&files(&["x/p.yaml", "y/p.yaml"]), &placement, Path::new(""));
+        let Err(UsageError::SameOutput { first, second, output }) = result else { panic!("{result:?}") };
+        assert_eq!((first.as_str(), second.as_str()), ("x/p.yaml", "y/p.yaml"));
+        assert_eq!(output, PathBuf::from("out/p.lua"));
     }
 
     #[test]
