@@ -955,5 +955,6 @@ These are not open design questions, but the spec deliberately leaves them to th
 | Field declaration | [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41) | [0015](adr/0015-own-field-vocabulary.md) |
 | Expression depth | [Deeply nested Expressions or Type chains abort the process](https://github.com/Cerclique/wirdigen/issues/191) | [0018](adr/0018-expression-depth-limit.md) |
 | Lua limits | [A Dissector with more than ~200 Fields or ~95 Types fails to load](https://github.com/Cerclique/wirdigen/issues/199) | [0019](adr/0019-generated-lua-within-lua-function-limits.md) |
+| Field depth | [Long chains of Types still overflow the stack in later passes](https://github.com/Cerclique/wirdigen/issues/207) | [0020](adr/0020-field-depth-limit.md) |
 
 Research notes behind the first three rows live in [`docs/research/`](research/).

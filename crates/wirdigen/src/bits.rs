@@ -202,6 +202,8 @@ pub(crate) struct Bit {
     pub(crate) kind: BitKind,
     /// The values it should hold, when it has `expect:` (spec §3.10).
     pub(crate) expect: Option<Expect>,
+    /// Where the name is written, for Diagnostics about the validated layout.
+    pub(crate) span: Range<usize>,
 }
 
 /// What a validated sub-Field holds (spec §3.8).
@@ -372,6 +374,7 @@ pub(crate) fn check(
                 width: place.width,
                 kind,
                 expect,
+                span: sub.name.span.clone(),
             })
         })
         .collect()

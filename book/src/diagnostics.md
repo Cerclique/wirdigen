@@ -81,6 +81,23 @@ fields: [ {name: a, type: uint8} ]
 
 **Fix**: remove the tag. To keep a value as text, quote it.
 
+## `yaml-too-deep` {#yaml-too-deep}
+
+**Severity**: error
+
+The YAML nests more than 256 levels deep, anywhere in the file: the root is the first level, and
+each value inside a list or a mapping is one level deeper. The error points at the first node
+past the limit, and nothing else is checked. A description within the
+[`field-too-deep`](#field-too-deep) limit nests at most about 194 levels.
+
+```yaml,diagnostic=yaml-too-deep
+name: demo
+info: [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+fields: [ { name: a, type: uint8 } ]
+```
+
+**Fix**: flatten the nesting.
+
 ## `merge-key` {#merge-key}
 
 **Severity**: error
@@ -349,6 +366,93 @@ types:
 
 **Fix**: break the cycle, for example by giving the inner Field a Type of its own that does not
 use the outer one.
+
+## `field-too-deep` {#field-too-deep}
+
+**Severity**: error
+
+A Field is more than 64 deep: more than 64 Fields enclose it, counted through every
+[Type](reference/fields.md#types) it is reached by. An inline structure, an array, a `switch`
+Field, a bitfield (for its sub-Fields) and a Field of a Type each add one level; a `switch` case
+adds none. That makes 64 the most names between the protocol's and the Field's own in its
+[filter name](reference/fields.md#filter-names). The error points at each Field that is the
+first past 64 on its path, once however many uses of a Type take it there, and names a filter
+name that reaches it; the Fields under it are not reported.
+
+```yaml,diagnostic=field-too-deep
+name: demo
+fields: [ { name: t, type: T1 } ]
+types:
+  T1: { fields: [ { name: next, type: T2 } ] }
+  T2: { fields: [ { name: next, type: T3 } ] }
+  T3: { fields: [ { name: next, type: T4 } ] }
+  T4: { fields: [ { name: next, type: T5 } ] }
+  T5: { fields: [ { name: next, type: T6 } ] }
+  T6: { fields: [ { name: next, type: T7 } ] }
+  T7: { fields: [ { name: next, type: T8 } ] }
+  T8: { fields: [ { name: next, type: T9 } ] }
+  T9: { fields: [ { name: next, type: T10 } ] }
+  T10: { fields: [ { name: next, type: T11 } ] }
+  T11: { fields: [ { name: next, type: T12 } ] }
+  T12: { fields: [ { name: next, type: T13 } ] }
+  T13: { fields: [ { name: next, type: T14 } ] }
+  T14: { fields: [ { name: next, type: T15 } ] }
+  T15: { fields: [ { name: next, type: T16 } ] }
+  T16: { fields: [ { name: next, type: T17 } ] }
+  T17: { fields: [ { name: next, type: T18 } ] }
+  T18: { fields: [ { name: next, type: T19 } ] }
+  T19: { fields: [ { name: next, type: T20 } ] }
+  T20: { fields: [ { name: next, type: T21 } ] }
+  T21: { fields: [ { name: next, type: T22 } ] }
+  T22: { fields: [ { name: next, type: T23 } ] }
+  T23: { fields: [ { name: next, type: T24 } ] }
+  T24: { fields: [ { name: next, type: T25 } ] }
+  T25: { fields: [ { name: next, type: T26 } ] }
+  T26: { fields: [ { name: next, type: T27 } ] }
+  T27: { fields: [ { name: next, type: T28 } ] }
+  T28: { fields: [ { name: next, type: T29 } ] }
+  T29: { fields: [ { name: next, type: T30 } ] }
+  T30: { fields: [ { name: next, type: T31 } ] }
+  T31: { fields: [ { name: next, type: T32 } ] }
+  T32: { fields: [ { name: next, type: T33 } ] }
+  T33: { fields: [ { name: next, type: T34 } ] }
+  T34: { fields: [ { name: next, type: T35 } ] }
+  T35: { fields: [ { name: next, type: T36 } ] }
+  T36: { fields: [ { name: next, type: T37 } ] }
+  T37: { fields: [ { name: next, type: T38 } ] }
+  T38: { fields: [ { name: next, type: T39 } ] }
+  T39: { fields: [ { name: next, type: T40 } ] }
+  T40: { fields: [ { name: next, type: T41 } ] }
+  T41: { fields: [ { name: next, type: T42 } ] }
+  T42: { fields: [ { name: next, type: T43 } ] }
+  T43: { fields: [ { name: next, type: T44 } ] }
+  T44: { fields: [ { name: next, type: T45 } ] }
+  T45: { fields: [ { name: next, type: T46 } ] }
+  T46: { fields: [ { name: next, type: T47 } ] }
+  T47: { fields: [ { name: next, type: T48 } ] }
+  T48: { fields: [ { name: next, type: T49 } ] }
+  T49: { fields: [ { name: next, type: T50 } ] }
+  T50: { fields: [ { name: next, type: T51 } ] }
+  T51: { fields: [ { name: next, type: T52 } ] }
+  T52: { fields: [ { name: next, type: T53 } ] }
+  T53: { fields: [ { name: next, type: T54 } ] }
+  T54: { fields: [ { name: next, type: T55 } ] }
+  T55: { fields: [ { name: next, type: T56 } ] }
+  T56: { fields: [ { name: next, type: T57 } ] }
+  T57: { fields: [ { name: next, type: T58 } ] }
+  T58: { fields: [ { name: next, type: T59 } ] }
+  T59: { fields: [ { name: next, type: T60 } ] }
+  T60: { fields: [ { name: next, type: T61 } ] }
+  T61: { fields: [ { name: next, type: T62 } ] }
+  T62: { fields: [ { name: next, type: T63 } ] }
+  T63: { fields: [ { name: next, type: T64 } ] }
+  T64: { fields: [ { name: next, type: T65 } ] }
+  T65: { fields: [ { name: x, type: uint8 } ] }
+```
+
+**Fix**: flatten the layout: move the Field, or a Field enclosing it, closer to the top level,
+for example by reading records that each hold the next as an [array](reference/arrays.md) of
+one Type.
 
 ## `unexpected-length` {#unexpected-length}
 

@@ -143,6 +143,9 @@ fn read_body(name: Spanned<String>, node: &Node, errors: &mut Vec<Diagnostic>) -
 pub(crate) struct Types<'a> {
     /// In source order.
     raw: &'a [RawType],
+    /// The position of each Type of `raw`, by name: every Field of a long chain of Types looks
+    /// one up.
+    positions: BTreeMap<&'a str, usize>,
     /// Whether some Field uses each Type of `raw`.
     used: Vec<bool>,
     /// One `unknown-type` per unknown name, at its first use in the source: an unknown Type is
@@ -155,22 +158,26 @@ pub(crate) struct Types<'a> {
 
 impl<'a> Types<'a> {
     pub(crate) fn new(raw: &'a [RawType]) -> Self {
-        Self { raw, used: vec![false; raw.len()], unknown: Vec::new(), free: BTreeMap::new() }
+        let mut positions = BTreeMap::new();
+        for (position, t) in raw.iter().enumerate() {
+            positions.entry(t.name.value.as_str()).or_insert(position);
+        }
+        Self { raw, positions, used: vec![false; raw.len()], unknown: Vec::new(), free: BTreeMap::new() }
     }
 
     /// The Fields of the Type named `name`, as written.
     pub(crate) fn body(&self, name: &str) -> Option<&'a [RawEntry]> {
-        self.position(name).map(|i| self.raw[i].fields.as_slice())
+        self.named_body(name).map(|(_, body)| body)
     }
 
     /// The Type named `name`, by its name as declared, and its Fields as written.
     pub(crate) fn named_body(&self, name: &str) -> Option<(&'a str, &'a [RawEntry])> {
         let raw: &'a [RawType] = self.raw;
-        raw.iter().find(|t| t.name.value == name).map(|t| (t.name.value.as_str(), t.fields.as_slice()))
+        self.position(name).map(|i| (raw[i].name.value.as_str(), raw[i].fields.as_slice()))
     }
 
     fn position(&self, name: &str) -> Option<usize> {
-        self.raw.iter().position(|t| t.name.value == name)
+        self.positions.get(name).copied()
     }
 
     /// Whether `types:` declares a Type named `name`, valid name or not, so that a Field using

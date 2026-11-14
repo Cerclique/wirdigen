@@ -65,6 +65,7 @@ names! {
     YamlAlias => "yaml-alias", Error;
     YamlAnchor => "yaml-anchor", Error;
     YamlTag => "yaml-tag", Error;
+    YamlTooDeep => "yaml-too-deep", Error;
     MergeKey => "merge-key", Error;
     MissingKey => "missing-key", Error;
     WrongValueType => "wrong-value-type", Error;
@@ -81,6 +82,7 @@ names! {
     DuplicateFieldName => "duplicate-field-name", Error;
     UnknownType => "unknown-type", Error;
     RecursiveType => "recursive-type", Error;
+    FieldTooDeep => "field-too-deep", Error;
     UnexpectedLength => "unexpected-length", Error;
     MissingLength => "missing-length", Error;
     ConflictingLength => "conflicting-length", Error;

@@ -5,3 +5,5 @@ All notable changes to Wirdigen are documented here. The changelog is generated 
 ## [1.0.0-alpha.1] - TBD
 
 Wirdigen v1 is a rewrite. It has no format or API compatibility with 0.3 and there is no migration path: Protocol Description files and library code written for 0.3 must be written again. The 0.2.x and 0.3.0 releases stay on crates.io and are not yanked. See `docs/adr/0003-v1-via-pre-releases.md`.
+
+A Protocol Description nested deeper than 64 Fields is rejected with `field-too-deep`, and YAML nested deeper than 256 levels with `yaml-too-deep`, instead of aborting Wirdigen with a stack overflow. Descriptions between 65 and about 500 Fields deep, which earlier builds of v1 accepted, must be flattened. See `docs/adr/0020-field-depth-limit.md`.

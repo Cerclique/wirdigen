@@ -6,6 +6,19 @@ use saphyr_parser::{Event, Parser, ScalarStyle, Span};
 
 use crate::diagnostic::{Diagnostic, Name};
 
+/// The deepest level a YAML node may be at, the root being level 1 (ADR 0020): the reader, and
+/// the passes after it, recurse once per level.
+pub(crate) const MAX_LEVEL: usize = 256;
+
+/// What `saphyr-parser` reports when flow collections nest past what it counts.
+const FLOW_LIMIT: &str = "recursion limit exceeded";
+
+/// The `yaml-too-deep` of a node at `span`, past [`MAX_LEVEL`].
+fn too_deep(span: Range<usize>) -> Diagnostic {
+    Diagnostic::new(Name::YamlTooDeep, span, format!("the YAML is nested more than {MAX_LEVEL} levels deep"))
+        .with_note("no Protocol Description within the Field depth limit nests this deep", None)
+}
+
 /// A YAML node with its byte span in the source.
 #[derive(Debug)]
 pub(crate) struct Node {
@@ -86,6 +99,12 @@ impl<'a> Reader<'a> {
     fn next(&mut self) -> Step<'a> {
         match self.events.next() {
             Some(Ok((event, span))) => Ok((event, self.range(span))),
+            // The scanner counts flow collections in a byte, and refuses the 256th nested one:
+            // in a document whose root is a block collection, the node at level 257.
+            Some(Err(error)) if error.info() == FLOW_LIMIT => {
+                let at = self.byte(error.marker().index());
+                Err(too_deep(at..at))
+            }
             Some(Err(error)) => {
                 let at = self.byte(error.marker().index());
                 Err(Diagnostic::new(Name::YamlSyntax, at..at, error.info().to_owned()))
@@ -105,7 +124,7 @@ impl<'a> Reader<'a> {
             Event::StreamEnd => return Ok(None),
             Event::DocumentStart(_) => {
                 let (event, span) = self.next()?;
-                let root = self.node(event, span)?;
+                let root = self.node(event, span, 1)?;
                 let (end, _) = self.next()?;
                 debug_assert!(matches!(end, Event::DocumentEnd));
                 root
@@ -125,7 +144,12 @@ impl<'a> Reader<'a> {
         Ok(Some(root))
     }
 
-    fn node(&mut self, event: Event<'a>, span: Range<usize>) -> Result<Node, Diagnostic> {
+    /// Reads the node that `event` starts, at `level`, the root being level 1. A node past
+    /// [`MAX_LEVEL`] stops the parse before the reader recurses any deeper.
+    fn node(&mut self, event: Event<'a>, span: Range<usize>, level: usize) -> Result<Node, Diagnostic> {
+        if level > MAX_LEVEL {
+            return Err(too_deep(span));
+        }
         match event {
             Event::Scalar(text, style, anchor, tag) => {
                 self.check_properties(anchor, tag.is_some(), &span);
@@ -162,7 +186,7 @@ impl<'a> Reader<'a> {
                         end = end.max(item_span.end);
                         break;
                     }
-                    let item = self.node(event, item_span)?;
+                    let item = self.node(event, item_span, level + 1)?;
                     end = end.max(item.span.end);
                     items.push(item);
                 }
@@ -178,7 +202,7 @@ impl<'a> Reader<'a> {
                         end = end.max(key_span.end);
                         break;
                     }
-                    let key = self.node(event, key_span)?;
+                    let key = self.node(event, key_span, level + 1)?;
                     let is_merge_key = matches!(&key.value, Value::Scalar { text, plain: true, .. } if text == "<<");
                     if is_merge_key {
                         self.diagnostics.push(Diagnostic::new(
@@ -188,7 +212,7 @@ impl<'a> Reader<'a> {
                         ));
                     }
                     let (event, value_span) = self.next()?;
-                    let value = self.node(event, value_span)?;
+                    let value = self.node(event, value_span, level + 1)?;
                     end = end.max(value.span.end);
                     entries.push((key, value));
                 }

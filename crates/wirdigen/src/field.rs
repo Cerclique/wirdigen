@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::ops::{Range, RangeInclusive};
 
 use crate::bits::{self, Bit, RawBits};
+use crate::depth;
 use crate::diagnostic::{Diagnostic, Name, record};
 use crate::expect::{self, Expect, RawExpect};
 use crate::expr::{self, Expr, ExprKind, Fault};
@@ -1131,14 +1132,16 @@ fn entries_read_to_end<'t>(
 }
 
 /// Whether the body of the Type named `name` reads to the end. A built-in or unknown type does
-/// not; a Type already being walked is recursive, an error reported elsewhere.
+/// not; a Type already being walked is recursive, an error reported elsewhere. Nor does a chain
+/// of Types longer than the depth limit, `field-too-deep` reported elsewhere: this walk runs
+/// before that check, and recurses once per Type (ADR 0020).
 fn type_reads_to_end<'t>(
     name: &str,
     types: &Types<'t>,
     seen: &mut Vec<&'t str>,
 ) -> Option<(Vec<String>, &'static str)> {
     let (name, body) = types.named_body(name)?;
-    if seen.contains(&name) {
+    if seen.contains(&name) || seen.len() > depth::MAX_DEPTH {
         return None;
     }
     seen.push(name);

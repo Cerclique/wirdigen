@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::builtin;
+use crate::depth;
 use crate::diagnostic::{Diagnostic, Name, Severity, record};
 use crate::expr::Expr;
 use crate::field::{self, Endian, Entry, Parse, RawEntry};
@@ -209,6 +210,11 @@ pub(crate) fn check(description: &Description) -> (Option<Protocol>, Vec<Diagnos
     let endian = Endian::resolve(description.endian.as_ref(), Endian::default(), &mut diagnostics);
     let mut enums = Enums::check(&description.enums, &mut diagnostics);
     let (fields, types) = types::check(&description.types, &description.fields, endian, &mut enums, &mut diagnostics);
+    // Depth is counted through every use of a Type, which needs Types without cycles. A Field
+    // too deep stops the checks below, which recurse once per level (ADR 0020).
+    if !diagnostics.iter().any(|d| d.name() == Name::RecursiveType.as_str()) {
+        depth::check(&name.value, &fields, &types, &mut diagnostics);
+    }
     let enums = enums.finish(&mut diagnostics);
     // Filter names are walked through every use of every Type, which needs Types without cycles.
     // The `info:` template is resolved in the checked layout too, where no Field is in error.
