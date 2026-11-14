@@ -101,32 +101,50 @@ fn defining(chunks: &[Chunk], name: &str) -> Option<usize> {
 
 /// The `wd_` names `lua` uses as variables: outside comments and string literals, and not as
 /// a table field (`t.wd_x`, `{ wd_x = ... }`), which names nothing the prelude defines.
+///
+/// Rather than lexing every byte, the scan jumps from one `wd_` to the next, and between them
+/// looks only for the bytes that can open a comment or a string, skipping those to their end.
 pub(crate) fn names_used(lua: &str) -> BTreeSet<&str> {
     let bytes = lua.as_bytes();
     let mut names = BTreeSet::new();
     let mut at = 0;
-    while at < bytes.len() {
-        at = match bytes[at] {
-            b'-' if bytes.get(at + 1) == Some(&b'-') => {
-                let start = at + 2;
-                long_bracket(bytes, start).map_or_else(|| line_end(bytes, start), |level| long_end(bytes, start, level))
-            }
-            quote @ (b'"' | b'\'') => quoted_end(bytes, at + 1, quote),
-            b'[' if long_bracket(bytes, at).is_some() => {
-                long_end(bytes, at, long_bracket(bytes, at).expect("checked just above"))
-            }
-            c if c.is_ascii_alphanumeric() || c == b'_' => {
-                let end = at + bytes[at..].iter().take_while(|c| c.is_ascii_alphanumeric() || **c == b'_').count();
-                let name = &lua[at..end];
-                if name.starts_with(PREFIX) && !is_field(bytes, at, end) {
-                    names.insert(name);
-                }
-                end
-            }
-            _ => at + 1,
-        };
+    let mut prefix = lua.find(PREFIX);
+    while let Some(start) = prefix {
+        if start < at {
+            prefix = lua[at..].find(PREFIX).map(|p| at + p);
+            continue;
+        }
+        if let Some(opening) = bytes[at..start].iter().position(|c| matches!(c, b'-' | b'"' | b'\'' | b'[')) {
+            at = past_opening(bytes, at + opening);
+            continue;
+        }
+        let end = start + bytes[start..].iter().take_while(|c| is_identifier(**c)).count();
+        let inside_identifier = start > 0 && is_identifier(bytes[start - 1]);
+        if !inside_identifier && !is_field(bytes, start, end) {
+            names.insert(&lua[start..end]);
+        }
+        at = end;
     }
     names
+}
+
+/// Whether `c` can be part of a Lua name.
+fn is_identifier(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
+/// Where the scan resumes after the byte at `at`: past the comment or string it opens, if it
+/// opens one, else just past it.
+fn past_opening(bytes: &[u8], at: usize) -> usize {
+    match bytes[at] {
+        b'-' if bytes.get(at + 1) == Some(&b'-') => {
+            let start = at + 2;
+            long_bracket(bytes, start).map_or_else(|| line_end(bytes, start), |level| long_end(bytes, start, level))
+        }
+        quote @ (b'"' | b'\'') => quoted_end(bytes, at + 1, quote),
+        b'[' => long_bracket(bytes, at).map_or(at + 1, |level| long_end(bytes, at, level)),
+        _ => at + 1,
+    }
 }
 
 /// The level of the long bracket `[[` or `[==[` opening at `at`, if one does.
@@ -140,9 +158,16 @@ fn long_bracket(bytes: &[u8], at: usize) -> Option<usize> {
 
 /// Where the long string or comment opening at `at` with a bracket of `level` ends.
 fn long_end(bytes: &[u8], at: usize, level: usize) -> usize {
-    let close: Vec<u8> = std::iter::once(b']').chain(std::iter::repeat_n(b'=', level)).chain(*b"]").collect();
-    let body = at + level + 2;
-    bytes[body..].windows(close.len()).position(|w| w == close).map_or(bytes.len(), |p| body + p + close.len())
+    let mut search = at + level + 2;
+    while let Some(p) = bytes[search..].iter().position(|c| *c == b']') {
+        let close = search + p;
+        let equals = bytes[close + 1..].iter().take_while(|c| **c == b'=').count();
+        if equals == level && bytes.get(close + 1 + level) == Some(&b']') {
+            return close + level + 2;
+        }
+        search = close + 1;
+    }
+    bytes.len()
 }
 
 /// Where the line holding `at` ends.
@@ -152,12 +177,15 @@ fn line_end(bytes: &[u8], at: usize) -> usize {
 
 /// Where the string literal whose text starts at `at`, opened by `quote`, ends.
 fn quoted_end(bytes: &[u8], mut at: usize, quote: u8) -> usize {
-    while let Some(&c) = bytes.get(at) {
-        match c {
+    while let Some(p) = bytes[at..].iter().position(|c| *c == b'\\' || *c == b'\n' || *c == quote) {
+        at += p;
+        match bytes[at] {
             b'\\' => at += 2,
             b'\n' => return at,
-            c if c == quote => return at + 1,
-            _ => at += 1,
+            _ => return at + 1,
+        }
+        if at >= bytes.len() {
+            break;
         }
     }
     bytes.len()
@@ -317,6 +345,72 @@ mod tests {
         let lua = "-- wd_a\n--[[ wd_b ]] x = \"wd_c\\\"wd_d\" .. 'wd_e' .. [==[ wd_f ]==]\n\
                    t.wd_g = { wd_h = 1, wd_i == 2 } .. wd_j(x_wd_k, wd_l) ..wd_m\n";
         assert_eq!(names_used(lua).into_iter().collect::<Vec<_>>(), ["wd_i", "wd_j", "wd_l", "wd_m"]);
+    }
+
+    fn used(lua: &str) -> Vec<&str> {
+        names_used(lua).into_iter().collect()
+    }
+
+    #[test]
+    fn a_prefix_inside_an_identifier_names_nothing() {
+        assert_eq!(used("xwd_a _wd_b 1wd_c wd_d9wd_e xwd_wd_f wd_wd_g"), ["wd_d9wd_e", "wd_wd_g"]);
+    }
+
+    #[test]
+    fn names_at_the_ends_of_the_input_are_found() {
+        assert_eq!(used("wd_a + wd_b"), ["wd_a", "wd_b"]);
+        assert_eq!(used("wd_"), ["wd_"]);
+        assert_eq!(used("wd"), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn line_comments_hide_names_to_the_end_of_their_line() {
+        assert_eq!(used("x - wd_a -- wd_b - wd_c\nwd_d --wd_e"), ["wd_a", "wd_d"]);
+        assert_eq!(used("--[ wd_a\nwd_b --[= wd_c ]=]\nwd_d"), ["wd_b", "wd_d"]);
+    }
+
+    #[test]
+    fn long_comments_hide_names_up_to_their_closing_level() {
+        assert_eq!(used("--[[ wd_a\n wd_b ]] wd_c"), ["wd_c"]);
+        assert_eq!(used("--[==[ wd_a ]] wd_b ]=] wd_c ]==] wd_d"), ["wd_d"]);
+    }
+
+    #[test]
+    fn quoted_strings_hide_names_past_escaped_quotes() {
+        assert_eq!(
+            used(r#""wd_a\"wd_b" wd_c 'wd_d\'wd_e' wd_f "it's wd_g" 'say "wd_h"' wd_i"#),
+            ["wd_c", "wd_f", "wd_i"]
+        );
+        assert_eq!(used(r#""wd_a\\" wd_b"#), ["wd_b"]);
+        // A quoted string ends at the end of its line.
+        assert_eq!(used("\"wd_a\nwd_b"), ["wd_b"]);
+    }
+
+    #[test]
+    fn long_strings_hide_names_up_to_their_closing_level() {
+        assert_eq!(
+            used("[[ wd_a ]] wd_b [=[ wd_c ]] wd_d ]=] wd_e [===[ ]==] wd_f ]===] wd_g"),
+            ["wd_b", "wd_e", "wd_g"]
+        );
+        // A lone `[` or `[=` opens nothing.
+        assert_eq!(used("t[wd_a] [= wd_b"), ["wd_a", "wd_b"]);
+    }
+
+    #[test]
+    fn table_fields_name_nothing() {
+        assert_eq!(
+            used("t.wd_a t . wd_b t..wd_c { wd_d = 1 } { x, wd_e = 2 } { wd_f } wd_g = 3"),
+            ["wd_c", "wd_f", "wd_g"]
+        );
+    }
+
+    #[test]
+    fn unterminated_strings_and_comments_hide_the_rest_of_the_input() {
+        assert_eq!(used("wd_a \"wd_b"), ["wd_a"]);
+        assert_eq!(used("wd_a 'wd_b\\"), ["wd_a"]);
+        assert_eq!(used("wd_a --[[ wd_b"), ["wd_a"]);
+        assert_eq!(used("wd_a [==[ wd_b ]=]"), ["wd_a"]);
+        assert_eq!(used("wd_a -- wd_b"), ["wd_a"]);
     }
 
     #[test]
