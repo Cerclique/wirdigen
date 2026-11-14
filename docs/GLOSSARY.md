@@ -4,6 +4,7 @@ Wirdigen turns a declarative description of a network protocol into a Wireshark 
 
 ## Language
 
+<!-- ANCHOR: terms -->
 **Array**:
 A Field whose layout is read several times in a row: as many times as a count gives, or until the Message ends.
 _Avoid_: List, sequence, repeated field, vector
@@ -127,3 +128,4 @@ _Avoid_: Struct, message, template
 **Value Mapping**:
 What a Field shows beside or instead of its raw value: labels for values and value ranges, given inline or by naming an Enum, labels for true and false, or a unit.
 _Avoid_: Value labels, value string, lookup
+<!-- ANCHOR_END: terms -->

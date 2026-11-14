@@ -23,7 +23,8 @@ To check first whether Wirdigen can describe your protocol, see [Limits](referen
 
 This book is the user guide and the reference of the Protocol Description format. Every YAML
 example in it is a complete description checked by Wirdigen's CI, so it is valid unless the text
-says which Diagnostic it shows.
+says which Diagnostic it shows. The [Glossary](glossary.md)
+defines the terms it uses.
 
 Wirdigen v1 is being written: chapters shown greyed out in the table of contents are not written
 yet. The book at <https://cerclique.github.io/wirdigen/> follows the latest release; the one at
