@@ -105,87 +105,89 @@ local function wd_info_label(field, before, names)
 end
 
 local wd_proto = Proto("telemetry", "Sensor Telemetry")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_Sensor = {
+wd.enum_Sensor = {
     [1] = "Temperature",
     [2] = "Humidity",
     [3] = "Pressure",
 }
 
 -- The names of values, for switch Fields and the Info column
-local names_sensor = {
+wd.names_sensor = {
     { 1, 1, "Temperature" },
     { 2, 2, "Humidity" },
     { 3, 3, "Pressure" },
 }
 
-local f_version = ProtoField.uint8("telemetry.version", "Version", base.DEC)
-local f_node = ProtoField.uint16("telemetry.node", "Node", base.HEX, nil, nil, "Identifier of the sending node")
-local f_seq = ProtoField.uint32("telemetry.seq", "Seq", base.DEC, nil, nil, "Counts the node's datagrams from 1")
-local f_sensor = ProtoField.uint8("telemetry.sensor", "Sensor", base.DEC, enum_Sensor)
-local f_status = ProtoField.uint8("telemetry.status", "Status", base.HEX)
-local f_status__low_battery = ProtoField.bool("telemetry.status.low_battery", "Low battery", 8, { "Set", "Not set" }, 0x80)
-local f_status__calibrated = ProtoField.bool("telemetry.status.calibrated", "Calibrated", 8, { "Set", "Not set" }, 0x40)
-local f_status__priority = ProtoField.uint8("telemetry.status.priority", "Priority", base.DEC, {
+wd.f_version = ProtoField.uint8("telemetry.version", "Version", base.DEC)
+wd.f_node = ProtoField.uint16("telemetry.node", "Node", base.HEX, nil, nil, "Identifier of the sending node")
+wd.f_seq = ProtoField.uint32("telemetry.seq", "Seq", base.DEC, nil, nil, "Counts the node's datagrams from 1")
+wd.f_sensor = ProtoField.uint8("telemetry.sensor", "Sensor", base.DEC, wd.enum_Sensor)
+wd.f_status = ProtoField.uint8("telemetry.status", "Status", base.HEX)
+wd.f_status__low_battery = ProtoField.bool("telemetry.status.low_battery", "Low battery", 8, { "Set", "Not set" }, 0x80)
+wd.f_status__calibrated = ProtoField.bool("telemetry.status.calibrated", "Calibrated", 8, { "Set", "Not set" }, 0x40)
+wd.f_status__priority = ProtoField.uint8("telemetry.status.priority", "Priority", base.DEC, {
     [0] = "Low",
     [1] = "Normal",
     [2] = "High",
     [3] = "Critical",
 }, 0x30)
-local f_reading = ProtoField.float("telemetry.reading", "Reading")
-local f_battery = ProtoField.uint8("telemetry.battery", "Battery", base.DEC + base.UNIT_STRING, { " %" })
+wd.f_reading = ProtoField.float("telemetry.reading", "Reading")
+wd.f_battery = ProtoField.uint8("telemetry.battery", "Battery", base.DEC + base.UNIT_STRING, { " %" })
 
 wd_proto.fields = {
-    f_version,
-    f_node,
-    f_seq,
-    f_sensor,
-    f_status,
-    f_status__low_battery,
-    f_status__calibrated,
-    f_status__priority,
-    f_reading,
-    f_battery,
+    wd.f_version,
+    wd.f_node,
+    wd.f_seq,
+    wd.f_sensor,
+    wd.f_status,
+    wd.f_status__low_battery,
+    wd.f_status__calibrated,
+    wd.f_status__priority,
+    wd.f_reading,
+    wd.f_battery,
 }
 
 -- The Fields the Info column shows, extracted from each packet once it is read
-local x_sensor = Field.new("telemetry.sensor")
-local x_reading = Field.new("telemetry.reading")
-local x_node = Field.new("telemetry.node")
-local x_seq = Field.new("telemetry.seq")
+wd.x_sensor = Field.new("telemetry.sensor")
+wd.x_reading = Field.new("telemetry.reading")
+wd.x_node = Field.new("telemetry.node")
+wd.x_seq = Field.new("telemetry.seq")
 
 local wd_ei_truncated = wd_expert_truncated("telemetry")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: version
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "version")
         return nil
     end
-    tree:add(f_version, tvb(offset, 1))
+    tree:add(wd.f_version, tvb(offset, 1))
     offset = offset + 1
     -- Field: node
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "node")
         return nil
     end
-    tree:add(f_node, tvb(offset, 2))
+    tree:add(wd.f_node, tvb(offset, 2))
     offset = offset + 2
     -- Field: seq
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "seq")
         return nil
     end
-    tree:add(f_seq, tvb(offset, 4))
+    tree:add(wd.f_seq, tvb(offset, 4))
     offset = offset + 4
     -- Field: sensor
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "sensor")
         return nil
     end
-    tree:add(f_sensor, tvb(offset, 1))
+    tree:add(wd.f_sensor, tvb(offset, 1))
     offset = offset + 1
     -- Field: status
     if not wd_fits(tvb, offset, 1) then
@@ -193,10 +195,10 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_status, tvb(offset, 1))
-        item:add(f_status__low_battery, tvb(offset, 1))
-        item:add(f_status__calibrated, tvb(offset, 1))
-        item:add(f_status__priority, tvb(offset, 1))
+        local item = tree:add(wd.f_status, tvb(offset, 1))
+        item:add(wd.f_status__low_battery, tvb(offset, 1))
+        item:add(wd.f_status__calibrated, tvb(offset, 1))
+        item:add(wd.f_status__priority, tvb(offset, 1))
     end
     offset = offset + 1
     -- Field: reading
@@ -204,25 +206,25 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "reading")
         return nil
     end
-    tree:add(f_reading, tvb(offset, 4))
+    tree:add(wd.f_reading, tvb(offset, 4))
     offset = offset + 4
     -- Field: battery
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "battery")
         return nil
     end
-    tree:add(f_battery, tvb(offset, 1))
+    tree:add(wd.f_battery, tvb(offset, 1))
     offset = offset + 1
     return offset
 end
 
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "TELEMETRY"
-    local before = wd_info_counts({ x_sensor, x_reading, x_node, x_seq })
+    local before = wd_info_counts({ wd.x_sensor, wd.x_reading, wd.x_node, wd.x_seq })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "Sensor Telemetry")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     pinfo.cols.info:clear_fence()
-    pinfo.cols.info = wd_info_label(x_sensor, before, names_sensor) .. " " .. wd_info_display(x_reading, before) .. " from node " .. wd_info_display(x_node, before) .. ", seq " .. wd_info_display(x_seq, before)
+    pinfo.cols.info = wd_info_label(wd.x_sensor, before, wd.names_sensor) .. " " .. wd_info_display(wd.x_reading, before) .. " from node " .. wd_info_display(wd.x_node, before) .. ", seq " .. wd_info_display(wd.x_seq, before)
     return tvb:len()
 end
 

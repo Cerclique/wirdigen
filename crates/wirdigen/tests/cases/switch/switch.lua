@@ -128,86 +128,89 @@ end
 local wd_info_cases = {}
 
 local wd_proto = Proto("switch", "SWITCH")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_Kind = {
+wd.enum_Kind = {
     { 1, 1, "Login" },
     { 2, 2, "Logout" },
     { 16, 31, "Vendor" },
 }
 
 -- The names of values, for switch Fields and the Info column
-local names_detail = {
+wd.names_detail = {
     { 16, 16, "Sixteen" },
 }
-local names_body = {
+wd.names_body = {
     { 1, 1, "Login" },
     { 2, 2, "Logout" },
     { 16, 31, "Vendor" },
 }
 
-local f_kind = ProtoField.uint8("switch.kind", "Kind", base.DEC + base.RANGE_STRING, enum_Kind)
-local f_body = ProtoField.none("switch.body", "Body")
-local f_body__user_id = ProtoField.uint32("switch.body.user_id", "User id", base.DEC)
-local f_body__flags = ProtoField.uint8("switch.body.flags", "Flags", base.DEC)
-local f_body__size = ProtoField.uint8("switch.body.size", "Size", base.DEC)
-local f_body__note = ProtoField.bytes("switch.body.note", "Note", base.NONE)
-local f_body__code = ProtoField.uint8("switch.body.code", "Code", base.DEC, {
+wd.f_kind = ProtoField.uint8("switch.kind", "Kind", base.DEC + base.RANGE_STRING, wd.enum_Kind)
+wd.f_body = ProtoField.none("switch.body", "Body")
+wd.f_body__user_id = ProtoField.uint32("switch.body.user_id", "User id", base.DEC)
+wd.f_body__flags = ProtoField.uint8("switch.body.flags", "Flags", base.DEC)
+wd.f_body__size = ProtoField.uint8("switch.body.size", "Size", base.DEC)
+wd.f_body__note = ProtoField.bytes("switch.body.note", "Note", base.NONE)
+wd.f_body__code = ProtoField.uint8("switch.body.code", "Code", base.DEC, {
     [16] = "Sixteen",
 })
-local f_body__detail = ProtoField.none("switch.body.detail", "Detail")
-local f_body__detail__v16 = ProtoField.uint8("switch.body.detail.v16", "V16", base.DEC)
-local f_body__detail__user_id = ProtoField.uint32("switch.body.detail.user_id", "User id", base.DEC)
-local f_body__detail__flags = ProtoField.uint8("switch.body.detail.flags", "Flags", base.DEC)
-local f_body__raw = ProtoField.bytes("switch.body.raw", "Raw", base.NONE)
-local f_mode = ProtoField.uint8("switch.mode", "Mode", base.DEC)
-local f_trailer = ProtoField.none("switch.trailer", "Trailer")
-local f_trailer__short = ProtoField.uint16("switch.trailer.short", "Short", base.DEC)
-local f_trailer__a = ProtoField.uint8("switch.trailer.a", "A", base.DEC)
-local f_trailer__b = ProtoField.uint8("switch.trailer.b", "B", base.DEC)
+wd.f_body__detail = ProtoField.none("switch.body.detail", "Detail")
+wd.f_body__detail__v16 = ProtoField.uint8("switch.body.detail.v16", "V16", base.DEC)
+wd.f_body__detail__user_id = ProtoField.uint32("switch.body.detail.user_id", "User id", base.DEC)
+wd.f_body__detail__flags = ProtoField.uint8("switch.body.detail.flags", "Flags", base.DEC)
+wd.f_body__raw = ProtoField.bytes("switch.body.raw", "Raw", base.NONE)
+wd.f_mode = ProtoField.uint8("switch.mode", "Mode", base.DEC)
+wd.f_trailer = ProtoField.none("switch.trailer", "Trailer")
+wd.f_trailer__short = ProtoField.uint16("switch.trailer.short", "Short", base.DEC)
+wd.f_trailer__a = ProtoField.uint8("switch.trailer.a", "A", base.DEC)
+wd.f_trailer__b = ProtoField.uint8("switch.trailer.b", "B", base.DEC)
 local wd_f_unmatched = wd_field_unmatched("switch")
 
 wd_proto.fields = {
-    f_kind,
-    f_body,
-    f_body__user_id,
-    f_body__flags,
-    f_body__size,
-    f_body__note,
-    f_body__code,
-    f_body__detail,
-    f_body__detail__v16,
-    f_body__detail__user_id,
-    f_body__detail__flags,
-    f_body__raw,
-    f_mode,
-    f_trailer,
-    f_trailer__short,
-    f_trailer__a,
-    f_trailer__b,
+    wd.f_kind,
+    wd.f_body,
+    wd.f_body__user_id,
+    wd.f_body__flags,
+    wd.f_body__size,
+    wd.f_body__note,
+    wd.f_body__code,
+    wd.f_body__detail,
+    wd.f_body__detail__v16,
+    wd.f_body__detail__user_id,
+    wd.f_body__detail__flags,
+    wd.f_body__raw,
+    wd.f_mode,
+    wd.f_trailer,
+    wd.f_trailer__short,
+    wd.f_trailer__a,
+    wd.f_trailer__b,
     wd_f_unmatched,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_body__Login = {
+wd.site_body__Login = {
     path = "body",
-    f_user_id = f_body__user_id,
-    f_flags = f_body__flags,
+    f_user_id = wd.f_body__user_id,
+    f_flags = wd.f_body__flags,
 }
-local site_body__Vendor = {
+wd.site_body__detail = {
+    path = "body.detail",
+    f_user_id = wd.f_body__detail__user_id,
+    f_flags = wd.f_body__detail__flags,
+}
+wd.site_body__Vendor = {
     path = "body",
-    f_code = f_body__code,
-    f_detail = f_body__detail,
-    f_detail__v16 = f_body__detail__v16,
-    t_detail__Login = {
-        path = "body.detail",
-        f_user_id = f_body__detail__user_id,
-        f_flags = f_body__detail__flags,
-    },
+    f_code = wd.f_body__code,
+    f_detail = wd.f_body__detail,
+    f_detail__v16 = wd.f_body__detail__v16,
+    t_detail__Login = wd.site_body__detail,
 }
-local site_trailer__Pair = {
+wd.site_trailer__Pair = {
     path = "trailer",
-    f_a = f_trailer__a,
-    f_b = f_trailer__b,
+    f_a = wd.f_trailer__a,
+    f_b = wd.f_trailer__b,
 }
 
 local wd_ei_truncated = wd_expert_truncated("switch")
@@ -216,7 +219,7 @@ local wd_ei_unmatched = wd_expert_unmatched("switch")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_unmatched }
 
 -- Type: Login
-local function dissect_Login(tvb, pinfo, tree, offset, site)
+function wd.dissect_Login(tvb, pinfo, tree, offset, site)
     -- Field: user_id
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".user_id")
@@ -235,22 +238,22 @@ local function dissect_Login(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Vendor
-local function dissect_Vendor(tvb, pinfo, tree, offset, site)
-    local v_code
+function wd.dissect_Vendor(tvb, pinfo, tree, offset, site)
+    local v = {}
     -- Field: code
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".code")
         return nil
     end
     tree:add(site.f_code, tvb(offset, 1))
-    v_code = string.unpack(">I1", tvb:raw(offset, 1))
+    v.code = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Switch: detail
     do
-        local subject = v_code
+        local subject = v.code
         local start = offset
         local tree = tree:add(site.f_detail, tvb(offset, tvb:len() - offset))
-        tree:append_text(": " .. wd_case_name(names_detail, subject))
+        tree:append_text(": " .. wd_case_name(wd.names_detail, subject))
         if subject == 16 then
             -- Field: detail.v16
             if not wd_fits(tvb, offset, 1) then
@@ -260,7 +263,7 @@ local function dissect_Vendor(tvb, pinfo, tree, offset, site)
             tree:add(site.f_detail__v16, tvb(offset, 1))
             offset = offset + 1
         else
-            offset = dissect_Login(tvb, pinfo, tree, offset, site.t_detail__Login)
+            offset = wd.dissect_Login(tvb, pinfo, tree, offset, site.t_detail__Login)
             if not offset then
                 return nil
             end
@@ -271,7 +274,7 @@ local function dissect_Vendor(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Pair
-local function dissect_Pair(tvb, pinfo, tree, offset, site)
+function wd.dissect_Pair(tvb, pinfo, tree, offset, site)
     -- Field: a
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".a")
@@ -290,26 +293,26 @@ local function dissect_Pair(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_body__size, v_kind, v_mode
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: kind
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "kind")
         return nil
     end
-    tree:add(f_kind, tvb(offset, 1))
-    v_kind = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_kind, tvb(offset, 1))
+    v.kind = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Switch: body
     do
-        local subject = v_kind
+        local subject = v.kind
         local start = offset
-        local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
-        local name = wd_case_name(names_body, subject)
+        local tree = tree:add(wd.f_body, tvb(offset, tvb:len() - offset))
+        local name = wd_case_name(wd.names_body, subject)
         tree:append_text(": " .. name)
         wd_info_cases["body"] = name
         if subject == 1 then
-            offset = dissect_Login(tvb, pinfo, tree, offset, site_body__Login)
+            offset = wd.dissect_Login(tvb, pinfo, tree, offset, wd.site_body__Login)
             if not offset then
                 return nil
             end
@@ -319,19 +322,19 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.user_id")
                 return nil
             end
-            tree:add(f_body__user_id, tvb(offset, 4))
+            tree:add(wd.f_body__user_id, tvb(offset, 4))
             offset = offset + 4
             -- Field: body.size
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "body.size")
                 return nil
             end
-            tree:add(f_body__size, tvb(offset, 1))
-            v_body__size = string.unpack(">I1", tvb:raw(offset, 1))
+            tree:add(wd.f_body__size, tvb(offset, 1))
+            v.body__size = string.unpack(">I1", tvb:raw(offset, 1))
             offset = offset + 1
             -- Field: body.note
             do
-                local len = v_body__size
+                local len = v.body__size
                 if len < 0 then
                     wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "body.note")
                     return nil
@@ -340,11 +343,11 @@ local function dissect_top(tvb, pinfo, tree, offset)
                     wd_truncated(tree, wd_ei_truncated, "body.note")
                     return nil
                 end
-                tree:add(f_body__note, tvb(offset, len))
+                tree:add(wd.f_body__note, tvb(offset, len))
                 offset = offset + len
             end
         elseif (subject >= 16 and subject <= 31) then
-            offset = dissect_Vendor(tvb, pinfo, tree, offset, site_body__Vendor)
+            offset = wd.dissect_Vendor(tvb, pinfo, tree, offset, wd.site_body__Vendor)
             if not offset then
                 return nil
             end
@@ -354,7 +357,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.raw")
                 return nil
             end
-            tree:add(f_body__raw, tvb(offset, 1))
+            tree:add(wd.f_body__raw, tvb(offset, 1))
             offset = offset + 1
         end
         tree:set_len(offset - start)
@@ -364,18 +367,18 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "mode")
         return nil
     end
-    tree:add(f_mode, tvb(offset, 1))
-    v_mode = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_mode, tvb(offset, 1))
+    v.mode = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Switch: trailer
     do
-        local subject, fault = wd_evaluate(function() return wd_div(8, v_mode) end)
+        local subject, fault = wd_evaluate(function() return wd_div(8, v.mode) end)
         if not subject then
             wd_invalid(tree, wd_ei_invalid, fault, "trailer")
             return nil
         end
         local start = offset
-        local tree = tree:add(f_trailer, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_trailer, tvb(offset, tvb:len() - offset))
         tree:append_text(": " .. subject)
         if subject == 4 then
             -- Field: trailer.short
@@ -383,10 +386,10 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "trailer.short")
                 return nil
             end
-            tree:add(f_trailer__short, tvb(offset, 2))
+            tree:add(wd.f_trailer__short, tvb(offset, 2))
             offset = offset + 2
         elseif subject == 1 then
-            offset = dissect_Pair(tvb, pinfo, tree, offset, site_trailer__Pair)
+            offset = wd.dissect_Pair(tvb, pinfo, tree, offset, wd.site_trailer__Pair)
             if not offset then
                 return nil
             end
@@ -403,7 +406,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "SWITCH"
     wd_info_cases = {}
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "SWITCH")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     if wd_info_cases["body"] then
         pinfo.cols.info:clear_fence()
         pinfo.cols.info = wd_info_cases["body"]

@@ -33,62 +33,66 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("demo", "DEMO")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_req_hdr = ProtoField.none("demo.req_hdr", "Req hdr")
-local f_req_hdr__len = ProtoField.uint16("demo.req_hdr.len", "Len", base.DEC)
-local f_req_hdr__stamp = ProtoField.none("demo.req_hdr.stamp", "Stamp")
-local f_req_hdr__stamp__secs = ProtoField.uint32("demo.req_hdr.stamp.secs", "Secs", base.DEC)
-local f_resp_hdr = ProtoField.none("demo.resp_hdr", "Response header")
-local f_resp_hdr__len = ProtoField.uint16("demo.resp_hdr.len", "Len", base.DEC)
-local f_resp_hdr__stamp = ProtoField.none("demo.resp_hdr.stamp", "Stamp")
-local f_resp_hdr__stamp__secs = ProtoField.uint32("demo.resp_hdr.stamp.secs", "Secs", base.DEC)
-local f_body = ProtoField.none("demo.body", "Body")
-local f_body__stamp = ProtoField.none("demo.body.stamp", "Stamp")
-local f_body__stamp__secs = ProtoField.uint32("demo.body.stamp.secs", "Secs", base.DEC)
+wd.f_req_hdr = ProtoField.none("demo.req_hdr", "Req hdr")
+wd.f_req_hdr__len = ProtoField.uint16("demo.req_hdr.len", "Len", base.DEC)
+wd.f_req_hdr__stamp = ProtoField.none("demo.req_hdr.stamp", "Stamp")
+wd.f_req_hdr__stamp__secs = ProtoField.uint32("demo.req_hdr.stamp.secs", "Secs", base.DEC)
+wd.f_resp_hdr = ProtoField.none("demo.resp_hdr", "Response header")
+wd.f_resp_hdr__len = ProtoField.uint16("demo.resp_hdr.len", "Len", base.DEC)
+wd.f_resp_hdr__stamp = ProtoField.none("demo.resp_hdr.stamp", "Stamp")
+wd.f_resp_hdr__stamp__secs = ProtoField.uint32("demo.resp_hdr.stamp.secs", "Secs", base.DEC)
+wd.f_body = ProtoField.none("demo.body", "Body")
+wd.f_body__stamp = ProtoField.none("demo.body.stamp", "Stamp")
+wd.f_body__stamp__secs = ProtoField.uint32("demo.body.stamp.secs", "Secs", base.DEC)
 
 wd_proto.fields = {
-    f_req_hdr,
-    f_req_hdr__len,
-    f_req_hdr__stamp,
-    f_req_hdr__stamp__secs,
-    f_resp_hdr,
-    f_resp_hdr__len,
-    f_resp_hdr__stamp,
-    f_resp_hdr__stamp__secs,
-    f_body,
-    f_body__stamp,
-    f_body__stamp__secs,
+    wd.f_req_hdr,
+    wd.f_req_hdr__len,
+    wd.f_req_hdr__stamp,
+    wd.f_req_hdr__stamp__secs,
+    wd.f_resp_hdr,
+    wd.f_resp_hdr__len,
+    wd.f_resp_hdr__stamp,
+    wd.f_resp_hdr__stamp__secs,
+    wd.f_body,
+    wd.f_body__stamp,
+    wd.f_body__stamp__secs,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_req_hdr = {
+wd.site_req_hdr__stamp = {
+    path = "req_hdr.stamp",
+    f_secs = wd.f_req_hdr__stamp__secs,
+}
+wd.site_req_hdr = {
     path = "req_hdr",
-    f_len = f_req_hdr__len,
-    f_stamp = f_req_hdr__stamp,
-    t_stamp = {
-        path = "req_hdr.stamp",
-        f_secs = f_req_hdr__stamp__secs,
-    },
+    f_len = wd.f_req_hdr__len,
+    f_stamp = wd.f_req_hdr__stamp,
+    t_stamp = wd.site_req_hdr__stamp,
 }
-local site_resp_hdr = {
+wd.site_resp_hdr__stamp = {
+    path = "resp_hdr.stamp",
+    f_secs = wd.f_resp_hdr__stamp__secs,
+}
+wd.site_resp_hdr = {
     path = "resp_hdr",
-    f_len = f_resp_hdr__len,
-    f_stamp = f_resp_hdr__stamp,
-    t_stamp = {
-        path = "resp_hdr.stamp",
-        f_secs = f_resp_hdr__stamp__secs,
-    },
+    f_len = wd.f_resp_hdr__len,
+    f_stamp = wd.f_resp_hdr__stamp,
+    t_stamp = wd.site_resp_hdr__stamp,
 }
-local site_body__stamp = {
+wd.site_body__stamp = {
     path = "body.stamp",
-    f_secs = f_body__stamp__secs,
+    f_secs = wd.f_body__stamp__secs,
 }
 
 local wd_ei_truncated = wd_expert_truncated("demo")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Type: Stamp
-local function dissect_Stamp(tvb, pinfo, tree, offset, site)
+function wd.dissect_Stamp(tvb, pinfo, tree, offset, site)
     -- Field: secs
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".secs")
@@ -100,7 +104,7 @@ local function dissect_Stamp(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Header
-local function dissect_Header(tvb, pinfo, tree, offset, site)
+function wd.dissect_Header(tvb, pinfo, tree, offset, site)
     -- Field: len
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".len")
@@ -112,7 +116,7 @@ local function dissect_Header(tvb, pinfo, tree, offset, site)
     do
         local start = offset
         local tree = tree:add(site.f_stamp, tvb(offset, tvb:len() - offset))
-        offset = dissect_Stamp(tvb, pinfo, tree, offset, site.t_stamp)
+        offset = wd.dissect_Stamp(tvb, pinfo, tree, offset, site.t_stamp)
         if not offset then
             return nil
         end
@@ -122,12 +126,12 @@ local function dissect_Header(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: req_hdr
     do
         local start = offset
-        local tree = tree:add(f_req_hdr, tvb(offset, tvb:len() - offset))
-        offset = dissect_Header(tvb, pinfo, tree, offset, site_req_hdr)
+        local tree = tree:add(wd.f_req_hdr, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Header(tvb, pinfo, tree, offset, wd.site_req_hdr)
         if not offset then
             return nil
         end
@@ -136,8 +140,8 @@ local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: resp_hdr
     do
         local start = offset
-        local tree = tree:add(f_resp_hdr, tvb(offset, tvb:len() - offset))
-        offset = dissect_Header(tvb, pinfo, tree, offset, site_resp_hdr)
+        local tree = tree:add(wd.f_resp_hdr, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Header(tvb, pinfo, tree, offset, wd.site_resp_hdr)
         if not offset then
             return nil
         end
@@ -146,12 +150,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: body
     do
         local start = offset
-        local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_body, tvb(offset, tvb:len() - offset))
         -- Field: body.stamp
         do
             local start = offset
-            local tree = tree:add(f_body__stamp, tvb(offset, tvb:len() - offset))
-            offset = dissect_Stamp(tvb, pinfo, tree, offset, site_body__stamp)
+            local tree = tree:add(wd.f_body__stamp, tvb(offset, tvb:len() - offset))
+            offset = wd.dissect_Stamp(tvb, pinfo, tree, offset, wd.site_body__stamp)
             if not offset then
                 return nil
             end
@@ -165,7 +169,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "DEMO"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "DEMO")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

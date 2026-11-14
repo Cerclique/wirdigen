@@ -46,41 +46,43 @@ local function wd_terminated(tvb, offset, terminator, width)
 end
 
 local wd_proto = Proto("bytes", "BYTES")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_raw = ProtoField.bytes("bytes.raw", "Raw", base.NONE)
-local f_dotted = ProtoField.bytes("bytes.dotted", "Dotted", base.DOT)
-local f_dashed = ProtoField.bytes("bytes.dashed", "Dashed", base.DASH)
-local f_colons = ProtoField.bytes("bytes.colons", "Colons", base.COLON)
-local f_spaced = ProtoField.bytes("bytes.spaced", "Spaced", base.SPACE, "Ends at 0xff")
-local f_empty = ProtoField.bytes("bytes.empty", "Empty", base.NONE)
+wd.f_raw = ProtoField.bytes("bytes.raw", "Raw", base.NONE)
+wd.f_dotted = ProtoField.bytes("bytes.dotted", "Dotted", base.DOT)
+wd.f_dashed = ProtoField.bytes("bytes.dashed", "Dashed", base.DASH)
+wd.f_colons = ProtoField.bytes("bytes.colons", "Colons", base.COLON)
+wd.f_spaced = ProtoField.bytes("bytes.spaced", "Spaced", base.SPACE, "Ends at 0xff")
+wd.f_empty = ProtoField.bytes("bytes.empty", "Empty", base.NONE)
 
 wd_proto.fields = {
-    f_raw,
-    f_dotted,
-    f_dashed,
-    f_colons,
-    f_spaced,
-    f_empty,
+    wd.f_raw,
+    wd.f_dotted,
+    wd.f_dashed,
+    wd.f_colons,
+    wd.f_spaced,
+    wd.f_empty,
 }
 
 local wd_ei_truncated = wd_expert_truncated("bytes")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: raw
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "raw")
         return nil
     end
-    tree:add(f_raw, tvb(offset, 3))
+    tree:add(wd.f_raw, tvb(offset, 3))
     offset = offset + 3
     -- Field: dotted
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "dotted")
         return nil
     end
-    tree:add(f_dotted, tvb(offset, 3))
+    tree:add(wd.f_dotted, tvb(offset, 3))
     offset = offset + 3
     -- Field: dashed
     do
@@ -94,7 +96,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "dashed")
             return nil
         end
-        tree:add(f_dashed, tvb(offset, len))
+        tree:add(wd.f_dashed, tvb(offset, len))
         offset = offset + len
     end
     -- Field: colons
@@ -109,7 +111,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "colons")
             return nil
         end
-        tree:add(f_colons, tvb(offset, len))
+        tree:add(wd.f_colons, tvb(offset, len))
         offset = offset + len
     end
     -- Field: spaced
@@ -119,7 +121,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "spaced")
             return nil
         end
-        tree:add(f_spaced, tvb(offset, len))
+        tree:add(wd.f_spaced, tvb(offset, len))
         offset = offset + len + 1
     end
     -- Field: empty
@@ -127,7 +129,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "empty")
         return nil
     end
-    tree:add(f_empty, tvb(offset, 0))
+    tree:add(wd.f_empty, tvb(offset, 0))
     offset = offset + 0
     return offset
 end
@@ -135,7 +137,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "BYTES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "BYTES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

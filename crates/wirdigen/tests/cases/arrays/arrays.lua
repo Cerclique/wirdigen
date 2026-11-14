@@ -79,41 +79,43 @@ local function wd_empty(tree, expert_info, index, path)
 end
 
 local wd_proto = Proto("arrays", "ARRAYS")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_n = ProtoField.uint8("arrays.n", "N", base.DEC)
-local f_items = ProtoField.none("arrays.items", "Items")
-local f_items__id = ProtoField.uint8("arrays.items.id", "Id", base.DEC)
-local f_items__len = ProtoField.uint8("arrays.items.len", "Len", base.DEC)
-local f_items__data = ProtoField.bytes("arrays.items.data", "Data", base.NONE)
-local f_points = ProtoField.none("arrays.points", "Points")
-local f_points__dim = ProtoField.uint8("arrays.points.dim", "Dim", base.DEC)
-local f_points__coords = ProtoField.none("arrays.points.coords", "Coords")
-local f_points__coords__c = ProtoField.int8("arrays.points.coords.c", "C", base.DEC)
-local f_width = ProtoField.uint8("arrays.width", "Width", base.DEC)
-local f_chunks = ProtoField.none("arrays.chunks", "Chunks")
-local f_chunks__data = ProtoField.bytes("arrays.chunks.data", "Data", base.NONE)
+wd.f_n = ProtoField.uint8("arrays.n", "N", base.DEC)
+wd.f_items = ProtoField.none("arrays.items", "Items")
+wd.f_items__id = ProtoField.uint8("arrays.items.id", "Id", base.DEC)
+wd.f_items__len = ProtoField.uint8("arrays.items.len", "Len", base.DEC)
+wd.f_items__data = ProtoField.bytes("arrays.items.data", "Data", base.NONE)
+wd.f_points = ProtoField.none("arrays.points", "Points")
+wd.f_points__dim = ProtoField.uint8("arrays.points.dim", "Dim", base.DEC)
+wd.f_points__coords = ProtoField.none("arrays.points.coords", "Coords")
+wd.f_points__coords__c = ProtoField.int8("arrays.points.coords.c", "C", base.DEC)
+wd.f_width = ProtoField.uint8("arrays.width", "Width", base.DEC)
+wd.f_chunks = ProtoField.none("arrays.chunks", "Chunks")
+wd.f_chunks__data = ProtoField.bytes("arrays.chunks.data", "Data", base.NONE)
 
 wd_proto.fields = {
-    f_n,
-    f_items,
-    f_items__id,
-    f_items__len,
-    f_items__data,
-    f_points,
-    f_points__dim,
-    f_points__coords,
-    f_points__coords__c,
-    f_width,
-    f_chunks,
-    f_chunks__data,
+    wd.f_n,
+    wd.f_items,
+    wd.f_items__id,
+    wd.f_items__len,
+    wd.f_items__data,
+    wd.f_points,
+    wd.f_points__dim,
+    wd.f_points__coords,
+    wd.f_points__coords__c,
+    wd.f_width,
+    wd.f_chunks,
+    wd.f_chunks__data,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_points = {
+wd.site_points = {
     path = "points",
-    f_dim = f_points__dim,
-    f_coords = f_points__coords,
-    f_coords__c = f_points__coords__c,
+    f_dim = wd.f_points__dim,
+    f_coords = wd.f_points__coords,
+    f_coords__c = wd.f_points__coords__c,
 }
 
 local wd_ei_truncated = wd_expert_truncated("arrays")
@@ -122,19 +124,19 @@ local wd_ei_empty = wd_expert_empty("arrays")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty }
 
 -- Type: Point
-local function dissect_Point(tvb, pinfo, tree, offset, site)
-    local v_dim
+function wd.dissect_Point(tvb, pinfo, tree, offset, site)
+    local v = {}
     -- Field: dim
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".dim")
         return nil
     end
     tree:add(site.f_dim, tvb(offset, 1))
-    v_dim = string.unpack(">I1", tvb:raw(offset, 1))
+    v.dim = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: coords
     do
-        local count = wd_sub(v_dim, 1)
+        local count = wd_sub(v.dim, 1)
         if count < 0 then
             wd_invalid(tree, wd_ei_invalid, "count " .. count .. " is negative", site.path .. ".coords")
             return nil
@@ -161,45 +163,45 @@ local function dissect_Point(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_items__len, v_n, v_width
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: n
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "n")
         return nil
     end
-    tree:add(f_n, tvb(offset, 1))
-    v_n = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_n, tvb(offset, 1))
+    v.n = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: items
     do
-        local count = v_n
+        local count = v.n
         if count < 0 then
             wd_invalid(tree, wd_ei_invalid, "count " .. count .. " is negative", "items")
             return nil
         end
         for i = 0, count - 1 do
             local start = offset
-            local tree = tree:add(f_items, tvb(offset, tvb:len() - offset))
+            local tree = tree:add(wd.f_items, tvb(offset, tvb:len() - offset))
             tree:append_text(" [" .. i .. "]")
             -- Field: items.id
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "items.id")
                 return nil
             end
-            tree:add(f_items__id, tvb(offset, 1))
+            tree:add(wd.f_items__id, tvb(offset, 1))
             offset = offset + 1
             -- Field: items.len
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "items.len")
                 return nil
             end
-            tree:add(f_items__len, tvb(offset, 1))
-            v_items__len = string.unpack(">I1", tvb:raw(offset, 1))
+            tree:add(wd.f_items__len, tvb(offset, 1))
+            v.items__len = string.unpack(">I1", tvb:raw(offset, 1))
             offset = offset + 1
             -- Field: items.data
             do
-                local len = v_items__len
+                local len = v.items__len
                 if len < 0 then
                     wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "items.data")
                     return nil
@@ -208,7 +210,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                     wd_truncated(tree, wd_ei_truncated, "items.data")
                     return nil
                 end
-                tree:add(f_items__data, tvb(offset, len))
+                tree:add(wd.f_items__data, tvb(offset, len))
                 offset = offset + len
             end
             tree:set_len(offset - start)
@@ -223,9 +225,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
         local count = 2
         for i = 0, count - 1 do
             local start = offset
-            local tree = tree:add(f_points, tvb(offset, tvb:len() - offset))
+            local tree = tree:add(wd.f_points, tvb(offset, tvb:len() - offset))
             tree:append_text(" [" .. i .. "]")
-            offset = dissect_Point(tvb, pinfo, tree, offset, site_points)
+            offset = wd.dissect_Point(tvb, pinfo, tree, offset, wd.site_points)
             if not offset then
                 return nil
             end
@@ -241,19 +243,19 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "width")
         return nil
     end
-    tree:add(f_width, tvb(offset, 1))
-    v_width = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_width, tvb(offset, 1))
+    v.width = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: chunks
     do
         local i = 0
         while offset < tvb:len() do
             local start = offset
-            local tree = tree:add(f_chunks, tvb(offset, tvb:len() - offset))
+            local tree = tree:add(wd.f_chunks, tvb(offset, tvb:len() - offset))
             tree:append_text(" [" .. i .. "]")
             -- Field: chunks.data
             do
-                local len = v_width
+                local len = v.width
                 if len < 0 then
                     wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "chunks.data")
                     return nil
@@ -262,7 +264,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                     wd_truncated(tree, wd_ei_truncated, "chunks.data")
                     return nil
                 end
-                tree:add(f_chunks__data, tvb(offset, len))
+                tree:add(wd.f_chunks__data, tvb(offset, len))
                 offset = offset + len
             end
             tree:set_len(offset - start)
@@ -279,7 +281,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "ARRAYS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "ARRAYS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

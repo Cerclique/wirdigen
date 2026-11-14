@@ -33,87 +33,89 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("display", "DISPLAY")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_plain = ProtoField.uint8("display.plain", "Plain", base.DEC)
-local f_dec = ProtoField.uint8("display.dec", "Dec", base.DEC)
-local f_hex = ProtoField.uint16("display.hex", "Hex", base.HEX)
-local f_oct = ProtoField.uint8("display.oct", "Oct", base.OCT)
-local f_dec_hex = ProtoField.uint32("display.dec_hex", "Dec hex", base.DEC_HEX)
-local f_hex_dec = ProtoField.uint24("display.hex_dec", "Hex dec", base.HEX_DEC)
-local f_wide_hex = ProtoField.uint64("display.wide_hex", "Wide hex", base.HEX)
-local f_signed = ProtoField.int16("display.signed", "Signed", base.DEC)
+wd.f_plain = ProtoField.uint8("display.plain", "Plain", base.DEC)
+wd.f_dec = ProtoField.uint8("display.dec", "Dec", base.DEC)
+wd.f_hex = ProtoField.uint16("display.hex", "Hex", base.HEX)
+wd.f_oct = ProtoField.uint8("display.oct", "Oct", base.OCT)
+wd.f_dec_hex = ProtoField.uint32("display.dec_hex", "Dec hex", base.DEC_HEX)
+wd.f_hex_dec = ProtoField.uint24("display.hex_dec", "Hex dec", base.HEX_DEC)
+wd.f_wide_hex = ProtoField.uint64("display.wide_hex", "Wide hex", base.HEX)
+wd.f_signed = ProtoField.int16("display.signed", "Signed", base.DEC)
 
 wd_proto.fields = {
-    f_plain,
-    f_dec,
-    f_hex,
-    f_oct,
-    f_dec_hex,
-    f_hex_dec,
-    f_wide_hex,
-    f_signed,
+    wd.f_plain,
+    wd.f_dec,
+    wd.f_hex,
+    wd.f_oct,
+    wd.f_dec_hex,
+    wd.f_hex_dec,
+    wd.f_wide_hex,
+    wd.f_signed,
 }
 
 local wd_ei_truncated = wd_expert_truncated("display")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: plain
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "plain")
         return nil
     end
-    tree:add(f_plain, tvb(offset, 1))
+    tree:add(wd.f_plain, tvb(offset, 1))
     offset = offset + 1
     -- Field: dec
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "dec")
         return nil
     end
-    tree:add(f_dec, tvb(offset, 1))
+    tree:add(wd.f_dec, tvb(offset, 1))
     offset = offset + 1
     -- Field: hex
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "hex")
         return nil
     end
-    tree:add(f_hex, tvb(offset, 2))
+    tree:add(wd.f_hex, tvb(offset, 2))
     offset = offset + 2
     -- Field: oct
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "oct")
         return nil
     end
-    tree:add(f_oct, tvb(offset, 1))
+    tree:add(wd.f_oct, tvb(offset, 1))
     offset = offset + 1
     -- Field: dec_hex
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "dec_hex")
         return nil
     end
-    tree:add(f_dec_hex, tvb(offset, 4))
+    tree:add(wd.f_dec_hex, tvb(offset, 4))
     offset = offset + 4
     -- Field: hex_dec
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "hex_dec")
         return nil
     end
-    tree:add(f_hex_dec, tvb(offset, 3))
+    tree:add(wd.f_hex_dec, tvb(offset, 3))
     offset = offset + 3
     -- Field: wide_hex
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "wide_hex")
         return nil
     end
-    tree:add(f_wide_hex, tvb(offset, 6), tvb(offset, 6):uint64())
+    tree:add(wd.f_wide_hex, tvb(offset, 6), tvb(offset, 6):uint64())
     offset = offset + 6
     -- Field: signed
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "signed")
         return nil
     end
-    tree:add(f_signed, tvb(offset, 2))
+    tree:add(wd.f_signed, tvb(offset, 2))
     offset = offset + 2
     return offset
 end
@@ -121,7 +123,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "DISPLAY"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "DISPLAY")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

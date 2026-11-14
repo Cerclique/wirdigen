@@ -33,114 +33,116 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("timestamps-le", "TIMESTAMPS-LE")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_abs_secs = ProtoField.absolute_time("timestamps-le.abs_secs", "Abs secs", base.LOCAL)
-local f_abs_secs_nsecs = ProtoField.absolute_time("timestamps-le.abs_secs_nsecs", "Abs secs nsecs", base.LOCAL)
-local f_abs_ntp = ProtoField.absolute_time("timestamps-le.abs_ntp", "Abs ntp", base.LOCAL)
-local f_abs_msecs = ProtoField.absolute_time("timestamps-le.abs_msecs", "Abs msecs", base.LOCAL)
-local f_abs_usecs = ProtoField.absolute_time("timestamps-le.abs_usecs", "Abs usecs", base.LOCAL)
-local f_abs_nsecs = ProtoField.absolute_time("timestamps-le.abs_nsecs", "Abs nsecs", base.LOCAL)
-local f_rel_secs = ProtoField.relative_time("timestamps-le.rel_secs", "Rel secs")
-local f_rel_secs_nsecs = ProtoField.relative_time("timestamps-le.rel_secs_nsecs", "Rel secs nsecs")
-local f_rel_msecs = ProtoField.relative_time("timestamps-le.rel_msecs", "Rel msecs")
-local f_rel_usecs = ProtoField.relative_time("timestamps-le.rel_usecs", "Rel usecs")
-local f_rel_nsecs = ProtoField.relative_time("timestamps-le.rel_nsecs", "Rel nsecs")
+wd.f_abs_secs = ProtoField.absolute_time("timestamps-le.abs_secs", "Abs secs", base.LOCAL)
+wd.f_abs_secs_nsecs = ProtoField.absolute_time("timestamps-le.abs_secs_nsecs", "Abs secs nsecs", base.LOCAL)
+wd.f_abs_ntp = ProtoField.absolute_time("timestamps-le.abs_ntp", "Abs ntp", base.LOCAL)
+wd.f_abs_msecs = ProtoField.absolute_time("timestamps-le.abs_msecs", "Abs msecs", base.LOCAL)
+wd.f_abs_usecs = ProtoField.absolute_time("timestamps-le.abs_usecs", "Abs usecs", base.LOCAL)
+wd.f_abs_nsecs = ProtoField.absolute_time("timestamps-le.abs_nsecs", "Abs nsecs", base.LOCAL)
+wd.f_rel_secs = ProtoField.relative_time("timestamps-le.rel_secs", "Rel secs")
+wd.f_rel_secs_nsecs = ProtoField.relative_time("timestamps-le.rel_secs_nsecs", "Rel secs nsecs")
+wd.f_rel_msecs = ProtoField.relative_time("timestamps-le.rel_msecs", "Rel msecs")
+wd.f_rel_usecs = ProtoField.relative_time("timestamps-le.rel_usecs", "Rel usecs")
+wd.f_rel_nsecs = ProtoField.relative_time("timestamps-le.rel_nsecs", "Rel nsecs")
 
 wd_proto.fields = {
-    f_abs_secs,
-    f_abs_secs_nsecs,
-    f_abs_ntp,
-    f_abs_msecs,
-    f_abs_usecs,
-    f_abs_nsecs,
-    f_rel_secs,
-    f_rel_secs_nsecs,
-    f_rel_msecs,
-    f_rel_usecs,
-    f_rel_nsecs,
+    wd.f_abs_secs,
+    wd.f_abs_secs_nsecs,
+    wd.f_abs_ntp,
+    wd.f_abs_msecs,
+    wd.f_abs_usecs,
+    wd.f_abs_nsecs,
+    wd.f_rel_secs,
+    wd.f_rel_secs_nsecs,
+    wd.f_rel_msecs,
+    wd.f_rel_usecs,
+    wd.f_rel_nsecs,
 }
 
 local wd_ei_truncated = wd_expert_truncated("timestamps-le")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: abs_secs
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "abs_secs")
         return nil
     end
-    tree:add_packet_field(f_abs_secs, tvb(offset, 4), ENC_TIME_SECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_abs_secs, tvb(offset, 4), ENC_TIME_SECS + ENC_LITTLE_ENDIAN)
     offset = offset + 4
     -- Field: abs_secs_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_secs_nsecs")
         return nil
     end
-    tree:add_packet_field(f_abs_secs_nsecs, tvb(offset, 8), ENC_TIME_SECS_NSECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_abs_secs_nsecs, tvb(offset, 8), ENC_TIME_SECS_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_ntp
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_ntp")
         return nil
     end
-    tree:add_packet_field(f_abs_ntp, tvb(offset, 8), ENC_TIME_NTP + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_abs_ntp, tvb(offset, 8), ENC_TIME_NTP + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_msecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_msecs")
         return nil
     end
-    tree:add_packet_field(f_abs_msecs, tvb(offset, 8), ENC_TIME_MSECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_abs_msecs, tvb(offset, 8), ENC_TIME_MSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_usecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_usecs")
         return nil
     end
-    tree:add_packet_field(f_abs_usecs, tvb(offset, 8), ENC_TIME_USECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_abs_usecs, tvb(offset, 8), ENC_TIME_USECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: abs_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "abs_nsecs")
         return nil
     end
-    tree:add_packet_field(f_abs_nsecs, tvb(offset, 8), ENC_TIME_NSECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_abs_nsecs, tvb(offset, 8), ENC_TIME_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_secs
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "rel_secs")
         return nil
     end
-    tree:add_packet_field(f_rel_secs, tvb(offset, 4), ENC_TIME_SECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_rel_secs, tvb(offset, 4), ENC_TIME_SECS + ENC_LITTLE_ENDIAN)
     offset = offset + 4
     -- Field: rel_secs_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_secs_nsecs")
         return nil
     end
-    tree:add_packet_field(f_rel_secs_nsecs, tvb(offset, 8), ENC_TIME_SECS_NSECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_rel_secs_nsecs, tvb(offset, 8), ENC_TIME_SECS_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_msecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_msecs")
         return nil
     end
-    tree:add_packet_field(f_rel_msecs, tvb(offset, 8), ENC_TIME_MSECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_rel_msecs, tvb(offset, 8), ENC_TIME_MSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_usecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_usecs")
         return nil
     end
-    tree:add_packet_field(f_rel_usecs, tvb(offset, 8), ENC_TIME_USECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_rel_usecs, tvb(offset, 8), ENC_TIME_USECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     -- Field: rel_nsecs
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "rel_nsecs")
         return nil
     end
-    tree:add_packet_field(f_rel_nsecs, tvb(offset, 8), ENC_TIME_NSECS + ENC_LITTLE_ENDIAN)
+    tree:add_packet_field(wd.f_rel_nsecs, tvb(offset, 8), ENC_TIME_NSECS + ENC_LITTLE_ENDIAN)
     offset = offset + 8
     return offset
 end
@@ -148,7 +150,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "TIMESTAMPS-LE"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "TIMESTAMPS-LE")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

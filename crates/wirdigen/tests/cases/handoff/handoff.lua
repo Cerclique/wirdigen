@@ -94,27 +94,29 @@ local function wd_handoff(name, range, pinfo, tree, expert_info, path)
 end
 
 local wd_proto = Proto("handoff", "HANDOFF")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_len = ProtoField.uint8("handoff.len", "Len", base.DEC)
-local f_payload = ProtoField.bytes("handoff.payload", "Payload", base.NONE)
-local f_raw = ProtoField.bytes("handoff.raw", "Raw", base.NONE)
-local f_wrapped = ProtoField.none("handoff.wrapped", "Wrapped")
-local f_wrapped__body = ProtoField.bytes("handoff.wrapped.body", "Body", base.NONE)
-local f_rest = ProtoField.bytes("handoff.rest", "Rest", base.NONE)
+wd.f_len = ProtoField.uint8("handoff.len", "Len", base.DEC)
+wd.f_payload = ProtoField.bytes("handoff.payload", "Payload", base.NONE)
+wd.f_raw = ProtoField.bytes("handoff.raw", "Raw", base.NONE)
+wd.f_wrapped = ProtoField.none("handoff.wrapped", "Wrapped")
+wd.f_wrapped__body = ProtoField.bytes("handoff.wrapped.body", "Body", base.NONE)
+wd.f_rest = ProtoField.bytes("handoff.rest", "Rest", base.NONE)
 
 wd_proto.fields = {
-    f_len,
-    f_payload,
-    f_raw,
-    f_wrapped,
-    f_wrapped__body,
-    f_rest,
+    wd.f_len,
+    wd.f_payload,
+    wd.f_raw,
+    wd.f_wrapped,
+    wd.f_wrapped__body,
+    wd.f_rest,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_wrapped = {
+wd.site_wrapped = {
     path = "wrapped",
-    f_body = f_wrapped__body,
+    f_body = wd.f_wrapped__body,
 }
 
 local wd_ei_truncated = wd_expert_truncated("handoff")
@@ -123,7 +125,7 @@ local wd_ei_dissector = wd_expert_dissector("handoff")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_dissector }
 
 -- Type: Wrapper
-local function dissect_Wrapper(tvb, pinfo, tree, offset, site)
+function wd.dissect_Wrapper(tvb, pinfo, tree, offset, site)
     -- Field: body
     do
         if not wd_fits(tvb, offset, 1) then
@@ -144,19 +146,19 @@ local function dissect_Wrapper(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_len
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: len
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "len")
         return nil
     end
-    tree:add(f_len, tvb(offset, 1))
-    v_len = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_len, tvb(offset, 1))
+    v.len = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: payload
     do
-        local len = v_len
+        local len = v.len
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "payload")
             return nil
@@ -165,7 +167,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "payload")
             return nil
         end
-        tree:add(f_payload, tvb(offset, len))
+        tree:add(wd.f_payload, tvb(offset, len))
         wd_handoff("json", tvb(offset, len), pinfo, tree, wd_ei_dissector, "payload")
         offset = offset + len
     end
@@ -174,14 +176,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "raw")
         return nil
     end
-    tree:add(f_raw, tvb(offset, 2)):set_hidden(true)
+    tree:add(wd.f_raw, tvb(offset, 2)):set_hidden(true)
     wd_handoff("data", tvb(offset, 2), pinfo, tree, wd_ei_dissector, "raw")
     offset = offset + 2
     -- Field: wrapped
     do
         local start = offset
-        local tree = tree:add(f_wrapped, tvb(offset, tvb:len() - offset))
-        offset = dissect_Wrapper(tvb, pinfo, tree, offset, site_wrapped)
+        local tree = tree:add(wd.f_wrapped, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Wrapper(tvb, pinfo, tree, offset, wd.site_wrapped)
         if not offset then
             return nil
         end
@@ -198,7 +200,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "rest")
             return nil
         end
-        tree:add(f_rest, tvb(offset, len))
+        tree:add(wd.f_rest, tvb(offset, len))
         wd_handoff("no_such_dissector", tvb(offset, len), pinfo, tree, wd_ei_dissector, "rest")
         offset = offset + len
     end
@@ -208,7 +210,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "HANDOFF"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "HANDOFF")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

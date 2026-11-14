@@ -33,74 +33,76 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("structures", "STRUCTURES")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_id = ProtoField.uint8("structures.id", "Id", base.DEC)
-local f_header = ProtoField.none("structures.header", "Fixed header", "The header before every body")
-local f_header__id = ProtoField.uint16("structures.header.id", "Id", base.DEC)
-local f_header__flags = ProtoField.none("structures.header.flags", "Flags")
-local f_header__flags__kind = ProtoField.uint8("structures.header.flags.kind", "Kind", base.DEC, {
+wd.f_id = ProtoField.uint8("structures.id", "Id", base.DEC)
+wd.f_header = ProtoField.none("structures.header", "Fixed header", "The header before every body")
+wd.f_header__id = ProtoField.uint16("structures.header.id", "Id", base.DEC)
+wd.f_header__flags = ProtoField.none("structures.header.flags", "Flags")
+wd.f_header__flags__kind = ProtoField.uint8("structures.header.flags.kind", "Kind", base.DEC, {
     [1] = "Request",
     [2] = "Response",
 })
-local f_header__flags__extra = ProtoField.none("structures.header.flags.extra", "Extra")
-local f_header__flags__extra__id = ProtoField.uint16("structures.header.flags.extra.id", "Id", base.DEC)
-local f_name = ProtoField.string("structures.name", "Name", base.NONE)
+wd.f_header__flags__extra = ProtoField.none("structures.header.flags.extra", "Extra")
+wd.f_header__flags__extra__id = ProtoField.uint16("structures.header.flags.extra.id", "Id", base.DEC)
+wd.f_name = ProtoField.string("structures.name", "Name", base.NONE)
 
 wd_proto.fields = {
-    f_id,
-    f_header,
-    f_header__id,
-    f_header__flags,
-    f_header__flags__kind,
-    f_header__flags__extra,
-    f_header__flags__extra__id,
-    f_name,
+    wd.f_id,
+    wd.f_header,
+    wd.f_header__id,
+    wd.f_header__flags,
+    wd.f_header__flags__kind,
+    wd.f_header__flags__extra,
+    wd.f_header__flags__extra__id,
+    wd.f_name,
 }
 
 local wd_ei_truncated = wd_expert_truncated("structures")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: id
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "id")
         return nil
     end
-    tree:add(f_id, tvb(offset, 1))
+    tree:add(wd.f_id, tvb(offset, 1))
     offset = offset + 1
     -- Field: header
     do
         local start = offset
-        local tree = tree:add(f_header, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_header, tvb(offset, tvb:len() - offset))
         -- Field: header.id
         if not wd_fits(tvb, offset, 2) then
             wd_truncated(tree, wd_ei_truncated, "header.id")
             return nil
         end
-        tree:add_le(f_header__id, tvb(offset, 2))
+        tree:add_le(wd.f_header__id, tvb(offset, 2))
         offset = offset + 2
         -- Field: header.flags
         do
             local start = offset
-            local tree = tree:add(f_header__flags, tvb(offset, tvb:len() - offset))
+            local tree = tree:add(wd.f_header__flags, tvb(offset, tvb:len() - offset))
             -- Field: header.flags.kind
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "header.flags.kind")
                 return nil
             end
-            tree:add(f_header__flags__kind, tvb(offset, 1))
+            tree:add(wd.f_header__flags__kind, tvb(offset, 1))
             offset = offset + 1
             -- Field: header.flags.extra
             do
                 local start = offset
-                local tree = tree:add(f_header__flags__extra, tvb(offset, tvb:len() - offset))
+                local tree = tree:add(wd.f_header__flags__extra, tvb(offset, tvb:len() - offset))
                 -- Field: header.flags.extra.id
                 if not wd_fits(tvb, offset, 2) then
                     wd_truncated(tree, wd_ei_truncated, "header.flags.extra.id")
                     return nil
                 end
-                tree:add(f_header__flags__extra__id, tvb(offset, 2))
+                tree:add(wd.f_header__flags__extra__id, tvb(offset, 2))
                 offset = offset + 2
                 tree:set_len(offset - start)
             end
@@ -120,7 +122,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "name")
             return nil
         end
-        tree:add_packet_field(f_name, tvb(offset, len), ENC_UTF_8)
+        tree:add_packet_field(wd.f_name, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
     end
     return offset
@@ -129,7 +131,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "STRUCTURES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "STRUCTURES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

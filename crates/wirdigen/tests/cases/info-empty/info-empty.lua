@@ -92,58 +92,60 @@ local function wd_info_label(field, before, names)
 end
 
 local wd_proto = Proto("info-empty", "INFO-EMPTY")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_flag = ProtoField.uint8("info-empty.flag", "Flag", base.DEC)
-local f_opt = ProtoField.uint8("info-empty.opt", "Opt", base.DEC)
-local f_tiny = ProtoField.uint8("info-empty.tiny", "Tiny", base.HEX)
+wd.f_flag = ProtoField.uint8("info-empty.flag", "Flag", base.DEC)
+wd.f_opt = ProtoField.uint8("info-empty.opt", "Opt", base.DEC)
+wd.f_tiny = ProtoField.uint8("info-empty.tiny", "Tiny", base.HEX)
 
 wd_proto.fields = {
-    f_flag,
-    f_opt,
-    f_tiny,
+    wd.f_flag,
+    wd.f_opt,
+    wd.f_tiny,
 }
 
 -- The Fields the Info column shows, extracted from each packet once it is read
-local x_opt = Field.new("info-empty.opt")
-local x_tiny = Field.new("info-empty.tiny")
+wd.x_opt = Field.new("info-empty.opt")
+wd.x_tiny = Field.new("info-empty.tiny")
 
 local wd_ei_truncated = wd_expert_truncated("info-empty")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_flag
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: flag
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flag")
         return nil
     end
-    tree:add(f_flag, tvb(offset, 1))
-    v_flag = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_flag, tvb(offset, 1))
+    v.flag = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- If: opt
     do
-        local condition = v_flag
+        local condition = v.flag
         if condition ~= 0 then
             -- Field: opt
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "opt")
                 return nil
             end
-            tree:add(f_opt, tvb(offset, 1))
+            tree:add(wd.f_opt, tvb(offset, 1))
             offset = offset + 1
         end
     end
     -- If: tiny
     do
-        local condition = wd_eq(v_flag, 2)
+        local condition = wd_eq(v.flag, 2)
         if condition ~= 0 then
             -- Field: tiny
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "tiny")
                 return nil
             end
-            tree:add(f_tiny, tvb(offset, 1))
+            tree:add(wd.f_tiny, tvb(offset, 1))
             offset = offset + 1
         end
     end
@@ -152,11 +154,11 @@ end
 
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "INFO-EMPTY"
-    local before = wd_info_counts({ x_opt, x_tiny })
+    local before = wd_info_counts({ wd.x_opt, wd.x_tiny })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO-EMPTY")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     pinfo.cols.info:clear_fence()
-    pinfo.cols.info = wd_info_display(x_opt, before) .. wd_info_label(x_tiny, before, {})
+    pinfo.cols.info = wd_info_display(wd.x_opt, before) .. wd_info_label(wd.x_tiny, before, {})
     return tvb:len()
 end
 

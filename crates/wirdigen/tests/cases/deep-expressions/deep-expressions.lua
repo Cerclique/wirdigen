@@ -95,17 +95,19 @@ local function wd_evaluate(compute)
 end
 
 local wd_proto = Proto("deep_expressions", "DEEP_EXPRESSIONS")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_n = ProtoField.uint8("deep_expressions.n", "N", base.DEC)
-local f_unary = ProtoField.bytes("deep_expressions.unary", "Unary", base.NONE)
-local f_flat = ProtoField.bytes("deep_expressions.flat", "Flat", base.NONE)
-local f_tail = ProtoField.uint8("deep_expressions.tail", "Tail", base.DEC)
+wd.f_n = ProtoField.uint8("deep_expressions.n", "N", base.DEC)
+wd.f_unary = ProtoField.bytes("deep_expressions.unary", "Unary", base.NONE)
+wd.f_flat = ProtoField.bytes("deep_expressions.flat", "Flat", base.NONE)
+wd.f_tail = ProtoField.uint8("deep_expressions.tail", "Tail", base.DEC)
 
 wd_proto.fields = {
-    f_n,
-    f_unary,
-    f_flat,
-    f_tail,
+    wd.f_n,
+    wd.f_unary,
+    wd.f_flat,
+    wd.f_tail,
 }
 
 local wd_ei_truncated = wd_expert_truncated("deep_expressions")
@@ -113,19 +115,19 @@ local wd_ei_invalid = wd_expert_invalid("deep_expressions")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_n
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: n
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "n")
         return nil
     end
-    tree:add(f_n, tvb(offset, 1))
-    v_n = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_n, tvb(offset, 1))
+    v.n = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: unary
     do
-        local len = wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(v_n)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+        local len = wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(wd_bnot(wd_neg(v.n)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "unary")
             return nil
@@ -134,12 +136,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "unary")
             return nil
         end
-        tree:add(f_unary, tvb(offset, len))
+        tree:add(wd.f_unary, tvb(offset, len))
         offset = offset + len
     end
     -- Field: flat
     do
-        local len = wd_sub(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(v_n, 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 27)
+        local len = wd_sub(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(wd_mul(v.n, 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 1), 27)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "flat")
             return nil
@@ -148,7 +150,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "flat")
             return nil
         end
-        tree:add(f_flat, tvb(offset, len))
+        tree:add(wd.f_flat, tvb(offset, len))
         offset = offset + len
     end
     -- Field: tail
@@ -156,7 +158,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "tail")
         return nil
     end
-    tree:add(f_tail, tvb(offset, 1))
+    tree:add(wd.f_tail, tvb(offset, 1))
     offset = offset + 1
     return offset
 end
@@ -164,7 +166,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "DEEP_EXPRESSIONS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "DEEP_EXPRESSIONS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

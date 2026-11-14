@@ -110,75 +110,79 @@ local function wd_evaluate(compute)
 end
 
 local wd_proto = Proto("references", "REFERENCES")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_len = ProtoField.uint8("references.len", "Len", base.DEC)
-local f_data = ProtoField.bytes("references.data", "Data", base.NONE)
-local f_hdr = ProtoField.none("references.hdr", "Hdr")
-local f_hdr__len = ProtoField.uint16("references.hdr.len", "Len", base.DEC)
-local f_hdr__more = ProtoField.bool("references.hdr.more", "More", base.NONE)
-local f_hdr__body = ProtoField.bytes("references.hdr.body", "Body", base.NONE)
-local f_extra = ProtoField.bytes("references.extra", "Extra", base.NONE)
-local f_first = ProtoField.none("references.first", "First")
-local f_first__count = ProtoField.uint8("references.first.count", "Count", base.DEC)
-local f_first__items = ProtoField.none("references.first.items", "Items")
-local f_first__items__end = ProtoField.uint8("references.first.items.end", "End", base.DEC)
-local f_first__items__payload = ProtoField.bytes("references.first.items.payload", "Payload", base.NONE)
-local f_inner = ProtoField.none("references.inner", "Inner")
-local f_inner__len = ProtoField.uint8("references.inner.len", "Len", base.DEC)
-local f_inner__second = ProtoField.none("references.inner.second", "Second")
-local f_inner__second__count = ProtoField.uint8("references.inner.second.count", "Count", base.DEC)
-local f_inner__second__items = ProtoField.none("references.inner.second.items", "Items")
-local f_inner__second__items__end = ProtoField.uint8("references.inner.second.items.end", "End", base.DEC)
-local f_inner__second__items__payload = ProtoField.bytes("references.inner.second.items.payload", "Payload", base.NONE)
-local f_echo = ProtoField.bytes("references.echo", "Echo", base.NONE)
-local f_at = ProtoField.bytes("references.at", "At", base.NONE)
-local f_rest = ProtoField.bytes("references.rest", "Rest", base.NONE)
+wd.f_len = ProtoField.uint8("references.len", "Len", base.DEC)
+wd.f_data = ProtoField.bytes("references.data", "Data", base.NONE)
+wd.f_hdr = ProtoField.none("references.hdr", "Hdr")
+wd.f_hdr__len = ProtoField.uint16("references.hdr.len", "Len", base.DEC)
+wd.f_hdr__more = ProtoField.bool("references.hdr.more", "More", base.NONE)
+wd.f_hdr__body = ProtoField.bytes("references.hdr.body", "Body", base.NONE)
+wd.f_extra = ProtoField.bytes("references.extra", "Extra", base.NONE)
+wd.f_first = ProtoField.none("references.first", "First")
+wd.f_first__count = ProtoField.uint8("references.first.count", "Count", base.DEC)
+wd.f_first__items = ProtoField.none("references.first.items", "Items")
+wd.f_first__items__end = ProtoField.uint8("references.first.items.end", "End", base.DEC)
+wd.f_first__items__payload = ProtoField.bytes("references.first.items.payload", "Payload", base.NONE)
+wd.f_inner = ProtoField.none("references.inner", "Inner")
+wd.f_inner__len = ProtoField.uint8("references.inner.len", "Len", base.DEC)
+wd.f_inner__second = ProtoField.none("references.inner.second", "Second")
+wd.f_inner__second__count = ProtoField.uint8("references.inner.second.count", "Count", base.DEC)
+wd.f_inner__second__items = ProtoField.none("references.inner.second.items", "Items")
+wd.f_inner__second__items__end = ProtoField.uint8("references.inner.second.items.end", "End", base.DEC)
+wd.f_inner__second__items__payload = ProtoField.bytes("references.inner.second.items.payload", "Payload", base.NONE)
+wd.f_echo = ProtoField.bytes("references.echo", "Echo", base.NONE)
+wd.f_at = ProtoField.bytes("references.at", "At", base.NONE)
+wd.f_rest = ProtoField.bytes("references.rest", "Rest", base.NONE)
 
 wd_proto.fields = {
-    f_len,
-    f_data,
-    f_hdr,
-    f_hdr__len,
-    f_hdr__more,
-    f_hdr__body,
-    f_extra,
-    f_first,
-    f_first__count,
-    f_first__items,
-    f_first__items__end,
-    f_first__items__payload,
-    f_inner,
-    f_inner__len,
-    f_inner__second,
-    f_inner__second__count,
-    f_inner__second__items,
-    f_inner__second__items__end,
-    f_inner__second__items__payload,
-    f_echo,
-    f_at,
-    f_rest,
+    wd.f_len,
+    wd.f_data,
+    wd.f_hdr,
+    wd.f_hdr__len,
+    wd.f_hdr__more,
+    wd.f_hdr__body,
+    wd.f_extra,
+    wd.f_first,
+    wd.f_first__count,
+    wd.f_first__items,
+    wd.f_first__items__end,
+    wd.f_first__items__payload,
+    wd.f_inner,
+    wd.f_inner__len,
+    wd.f_inner__second,
+    wd.f_inner__second__count,
+    wd.f_inner__second__items,
+    wd.f_inner__second__items__end,
+    wd.f_inner__second__items__payload,
+    wd.f_echo,
+    wd.f_at,
+    wd.f_rest,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_first = {
-    path = "first",
-    f_count = f_first__count,
-    f_items = f_first__items,
-    t_items = {
-        path = "first.items",
-        f_end = f_first__items__end,
-        f_payload = f_first__items__payload,
-    },
+wd.site_first__items = {
+    path = "first.items",
+    f_end = wd.f_first__items__end,
+    f_payload = wd.f_first__items__payload,
 }
-local site_inner__second = {
+wd.site_first = {
+    path = "first",
+    f_count = wd.f_first__count,
+    f_items = wd.f_first__items,
+    t_items = wd.site_first__items,
+}
+wd.site_inner__second__items = {
+    path = "inner.second.items",
+    f_end = wd.f_inner__second__items__end,
+    f_payload = wd.f_inner__second__items__payload,
+}
+wd.site_inner__second = {
     path = "inner.second",
-    f_count = f_inner__second__count,
-    f_items = f_inner__second__items,
-    t_items = {
-        path = "inner.second.items",
-        f_end = f_inner__second__items__end,
-        f_payload = f_inner__second__items__payload,
-    },
+    f_count = wd.f_inner__second__count,
+    f_items = wd.f_inner__second__items,
+    t_items = wd.site_inner__second__items,
 }
 
 local wd_ei_truncated = wd_expert_truncated("references")
@@ -186,19 +190,19 @@ local wd_ei_invalid = wd_expert_invalid("references")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Items
-local function dissect_Items(tvb, pinfo, tree, offset, site, ctx)
-    local v_end
+function wd.dissect_Items(tvb, pinfo, tree, offset, site, ctx)
+    local v = {}
     -- Field: end
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".end")
         return nil
     end
     tree:add(site.f_end, tvb(offset, 1))
-    v_end = string.unpack(">I1", tvb:raw(offset, 1))
+    v["end"] = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: payload
     do
-        local len = wd_sub(wd_add(ctx.count, ctx.len), v_end)
+        local len = wd_sub(wd_add(ctx.count, ctx.len), v["end"])
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", site.path .. ".payload")
             return nil
@@ -210,47 +214,47 @@ local function dissect_Items(tvb, pinfo, tree, offset, site, ctx)
         tree:add(site.f_payload, tvb(offset, len))
         offset = offset + len
     end
-    return offset, { ["end"] = v_end }
+    return offset, { ["end"] = v["end"] }
 end
 
 -- Type: Record
-local function dissect_Record(tvb, pinfo, tree, offset, site, ctx)
-    local v_count, v_items
+function wd.dissect_Record(tvb, pinfo, tree, offset, site, ctx)
+    local v = {}
     -- Field: count
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".count")
         return nil
     end
     tree:add(site.f_count, tvb(offset, 1))
-    v_count = string.unpack(">I1", tvb:raw(offset, 1))
+    v.count = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: items
     do
         local start = offset
         local tree = tree:add(site.f_items, tvb(offset, tvb:len() - offset))
-        offset, v_items = dissect_Items(tvb, pinfo, tree, offset, site.t_items, { count = v_count, len = ctx.len })
+        offset, v.items = wd.dissect_Items(tvb, pinfo, tree, offset, site.t_items, { count = v.count, len = ctx.len })
         if not offset then
             return nil
         end
         tree:set_len(offset - start)
     end
-    return offset, { count = v_count, items = v_items }
+    return offset, { count = v.count, items = v.items }
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_first, v_hdr__len, v_hdr__more, v_inner__len, v_inner__second, v_len
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: len
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "len")
         return nil
     end
-    tree:add(f_len, tvb(offset, 1))
-    v_len = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_len, tvb(offset, 1))
+    v.len = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: data
     do
-        local len = v_len
+        local len = v.len
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "data")
             return nil
@@ -259,32 +263,32 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "data")
             return nil
         end
-        tree:add(f_data, tvb(offset, len))
+        tree:add(wd.f_data, tvb(offset, len))
         offset = offset + len
     end
     -- Field: hdr
     do
         local start = offset
-        local tree = tree:add(f_hdr, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_hdr, tvb(offset, tvb:len() - offset))
         -- Field: hdr.len
         if not wd_fits(tvb, offset, 2) then
             wd_truncated(tree, wd_ei_truncated, "hdr.len")
             return nil
         end
-        tree:add(f_hdr__len, tvb(offset, 2))
-        v_hdr__len = string.unpack(">I2", tvb:raw(offset, 2))
+        tree:add(wd.f_hdr__len, tvb(offset, 2))
+        v.hdr__len = string.unpack(">I2", tvb:raw(offset, 2))
         offset = offset + 2
         -- Field: hdr.more
         if not wd_fits(tvb, offset, 1) then
             wd_truncated(tree, wd_ei_truncated, "hdr.more")
             return nil
         end
-        tree:add(f_hdr__more, tvb(offset, 1))
-        v_hdr__more = wd_bool(tvb(offset, 1):uint() ~= 0)
+        tree:add(wd.f_hdr__more, tvb(offset, 1))
+        v.hdr__more = wd_bool(tvb(offset, 1):uint() ~= 0)
         offset = offset + 1
         -- Field: hdr.body
         do
-            local len = wd_sub(v_hdr__len, 1)
+            local len = wd_sub(v.hdr__len, 1)
             if len < 0 then
                 wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "hdr.body")
                 return nil
@@ -293,14 +297,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "hdr.body")
                 return nil
             end
-            tree:add(f_hdr__body, tvb(offset, len))
+            tree:add(wd.f_hdr__body, tvb(offset, len))
             offset = offset + len
         end
         tree:set_len(offset - start)
     end
     -- Field: extra
     do
-        local len = wd_mul(v_hdr__more, v_hdr__len)
+        local len = wd_mul(v.hdr__more, v.hdr__len)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "extra")
             return nil
@@ -309,14 +313,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "extra")
             return nil
         end
-        tree:add(f_extra, tvb(offset, len))
+        tree:add(wd.f_extra, tvb(offset, len))
         offset = offset + len
     end
     -- Field: first
     do
         local start = offset
-        local tree = tree:add(f_first, tvb(offset, tvb:len() - offset))
-        offset, v_first = dissect_Record(tvb, pinfo, tree, offset, site_first, { len = v_len })
+        local tree = tree:add(wd.f_first, tvb(offset, tvb:len() - offset))
+        offset, v.first = wd.dissect_Record(tvb, pinfo, tree, offset, wd.site_first, { len = v.len })
         if not offset then
             return nil
         end
@@ -325,20 +329,20 @@ local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: inner
     do
         local start = offset
-        local tree = tree:add(f_inner, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_inner, tvb(offset, tvb:len() - offset))
         -- Field: inner.len
         if not wd_fits(tvb, offset, 1) then
             wd_truncated(tree, wd_ei_truncated, "inner.len")
             return nil
         end
-        tree:add(f_inner__len, tvb(offset, 1))
-        v_inner__len = string.unpack(">I1", tvb:raw(offset, 1))
+        tree:add(wd.f_inner__len, tvb(offset, 1))
+        v.inner__len = string.unpack(">I1", tvb:raw(offset, 1))
         offset = offset + 1
         -- Field: inner.second
         do
             local start = offset
-            local tree = tree:add(f_inner__second, tvb(offset, tvb:len() - offset))
-            offset, v_inner__second = dissect_Record(tvb, pinfo, tree, offset, site_inner__second, { len = v_inner__len })
+            local tree = tree:add(wd.f_inner__second, tvb(offset, tvb:len() - offset))
+            offset, v.inner__second = wd.dissect_Record(tvb, pinfo, tree, offset, wd.site_inner__second, { len = v.inner__len })
             if not offset then
                 return nil
             end
@@ -348,7 +352,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- Field: echo
     do
-        local len = wd_add(v_first.items["end"], v_inner__second.count)
+        local len = wd_add(v.first.items["end"], v.inner__second.count)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "echo")
             return nil
@@ -357,7 +361,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "echo")
             return nil
         end
-        tree:add(f_echo, tvb(offset, len))
+        tree:add(wd.f_echo, tvb(offset, len))
         offset = offset + len
     end
     -- Field: at
@@ -375,7 +379,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "at")
             return nil
         end
-        tree:add(f_at, tvb(offset, len))
+        tree:add(wd.f_at, tvb(offset, len))
         offset = offset + len
     end
     -- Field: rest
@@ -389,7 +393,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "rest")
             return nil
         end
-        tree:add(f_rest, tvb(offset, len))
+        tree:add(wd.f_rest, tvb(offset, len))
         offset = offset + len
     end
     return offset
@@ -398,7 +402,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "REFERENCES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "REFERENCES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

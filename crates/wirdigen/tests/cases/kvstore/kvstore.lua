@@ -200,8 +200,10 @@ local function wd_info_label(field, before, names)
 end
 
 local wd_proto = Proto("kvstore", "Key-Value Store")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_Op = {
+wd.enum_Op = {
     [1] = "Get",
     [2] = "Put",
     [3] = "Delete",
@@ -209,76 +211,76 @@ local enum_Op = {
     [130] = "Done",
 }
 
-local enum_Status = {
+wd.enum_Status = {
     [0] = "Ok",
     [1] = "Not found",
     [2] = "Error",
 }
 
 -- The names of values, for switch Fields and the Info column
-local names_op = {
+wd.names_op = {
     { 1, 1, "Get" },
     { 2, 2, "Put" },
     { 3, 3, "Delete" },
     { 129, 129, "Value" },
     { 130, 130, "Done" },
 }
-local names_body__status = {
+wd.names_body__status = {
     { 0, 0, "Ok" },
     { 1, 1, "Not found" },
     { 2, 2, "Error" },
 }
 
-local f_version = ProtoField.uint8("kvstore.version", "Version", base.DEC)
-local f_op = ProtoField.uint8("kvstore.op", "Op", base.HEX, enum_Op)
-local f_length = ProtoField.uint16("kvstore.length", "Length", base.DEC, nil, nil, "Size of the body, after the header")
-local f_request_id = ProtoField.uint32("kvstore.request_id", "Request id", base.DEC, nil, nil, "Pairs a reply with its request")
-local f_body = ProtoField.none("kvstore.body", "Body")
-local f_body__key = ProtoField.string("kvstore.body.key", "Key", base.NONE)
-local f_body__value = ProtoField.string("kvstore.body.value", "Value", base.NONE)
-local f_body__status = ProtoField.uint8("kvstore.body.status", "Status", base.DEC, enum_Status)
-local f_body__data = ProtoField.bytes("kvstore.body.data", "Data", base.NONE)
+wd.f_version = ProtoField.uint8("kvstore.version", "Version", base.DEC)
+wd.f_op = ProtoField.uint8("kvstore.op", "Op", base.HEX, wd.enum_Op)
+wd.f_length = ProtoField.uint16("kvstore.length", "Length", base.DEC, nil, nil, "Size of the body, after the header")
+wd.f_request_id = ProtoField.uint32("kvstore.request_id", "Request id", base.DEC, nil, nil, "Pairs a reply with its request")
+wd.f_body = ProtoField.none("kvstore.body", "Body")
+wd.f_body__key = ProtoField.string("kvstore.body.key", "Key", base.NONE)
+wd.f_body__value = ProtoField.string("kvstore.body.value", "Value", base.NONE)
+wd.f_body__status = ProtoField.uint8("kvstore.body.status", "Status", base.DEC, wd.enum_Status)
+wd.f_body__data = ProtoField.bytes("kvstore.body.data", "Data", base.NONE)
 
 wd_proto.fields = {
-    f_version,
-    f_op,
-    f_length,
-    f_request_id,
-    f_body,
-    f_body__key,
-    f_body__value,
-    f_body__status,
-    f_body__data,
+    wd.f_version,
+    wd.f_op,
+    wd.f_length,
+    wd.f_request_id,
+    wd.f_body,
+    wd.f_body__key,
+    wd.f_body__value,
+    wd.f_body__status,
+    wd.f_body__data,
 }
 
 -- The Fields the Info column shows, extracted from each packet once it is read
-local x_op = Field.new("kvstore.op")
-local x_request_id = Field.new("kvstore.request_id")
-local x_body__key = Field.new("kvstore.body.key")
-local x_body__status = Field.new("kvstore.body.status")
+wd.x_op = Field.new("kvstore.op")
+wd.x_request_id = Field.new("kvstore.request_id")
+wd.x_body__key = Field.new("kvstore.body.key")
+wd.x_body__status = Field.new("kvstore.body.status")
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_body__Get = {
+wd.site_body__Get = {
     path = "body",
-    f_key = f_body__key,
+    f_key = wd.f_body__key,
 }
-local site_body__Put = {
+wd.site_body__Put = {
     path = "body",
-    f_key = f_body__key,
-    f_value = f_body__value,
+    f_key = wd.f_body__key,
+    f_value = wd.f_body__value,
 }
-local site_body__Delete = {
+wd.site_body__Delete = {
     path = "body",
-    f_key = f_body__key,
+    f_key = wd.f_body__key,
 }
-local site_body__Value = {
+wd.site_body__Value = {
     path = "body",
-    f_status = f_body__status,
-    f_value = f_body__value,
+    f_status = wd.f_body__status,
+    f_value = wd.f_body__value,
 }
-local site_body__Done = {
+wd.site_body__Done = {
     path = "body",
-    f_status = f_body__status,
+    f_status = wd.f_body__status,
 }
 
 local wd_ei_truncated = wd_expert_truncated("kvstore")
@@ -286,7 +288,7 @@ local wd_ei_invalid = wd_expert_invalid("kvstore")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Get
-local function dissect_Get(tvb, pinfo, tree, offset, site)
+function wd.dissect_Get(tvb, pinfo, tree, offset, site)
     -- Field: key
     do
         if not wd_fits(tvb, offset, 1) then
@@ -306,7 +308,7 @@ local function dissect_Get(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Put
-local function dissect_Put(tvb, pinfo, tree, offset, site)
+function wd.dissect_Put(tvb, pinfo, tree, offset, site)
     -- Field: key
     do
         if not wd_fits(tvb, offset, 1) then
@@ -341,7 +343,7 @@ local function dissect_Put(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Delete
-local function dissect_Delete(tvb, pinfo, tree, offset, site)
+function wd.dissect_Delete(tvb, pinfo, tree, offset, site)
     -- Field: key
     do
         if not wd_fits(tvb, offset, 1) then
@@ -361,7 +363,7 @@ local function dissect_Delete(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Value
-local function dissect_Value(tvb, pinfo, tree, offset, site)
+function wd.dissect_Value(tvb, pinfo, tree, offset, site)
     -- Field: status
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".status")
@@ -388,7 +390,7 @@ local function dissect_Value(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Done
-local function dissect_Done(tvb, pinfo, tree, offset, site)
+function wd.dissect_Done(tvb, pinfo, tree, offset, site)
     -- Field: status
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".status")
@@ -400,65 +402,65 @@ local function dissect_Done(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_op
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: version
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "version")
         return nil
     end
-    tree:add(f_version, tvb(offset, 1))
+    tree:add(wd.f_version, tvb(offset, 1))
     offset = offset + 1
     -- Field: op
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "op")
         return nil
     end
-    tree:add(f_op, tvb(offset, 1))
-    v_op = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_op, tvb(offset, 1))
+    v.op = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: length
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "length")
         return nil
     end
-    tree:add(f_length, tvb(offset, 2))
+    tree:add(wd.f_length, tvb(offset, 2))
     offset = offset + 2
     -- Field: request_id
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "request_id")
         return nil
     end
-    tree:add(f_request_id, tvb(offset, 4))
+    tree:add(wd.f_request_id, tvb(offset, 4))
     offset = offset + 4
     -- Switch: body
     do
-        local subject = v_op
+        local subject = v.op
         local start = offset
-        local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
-        tree:append_text(": " .. wd_case_name(names_op, subject))
+        local tree = tree:add(wd.f_body, tvb(offset, tvb:len() - offset))
+        tree:append_text(": " .. wd_case_name(wd.names_op, subject))
         if subject == 1 then
-            offset = dissect_Get(tvb, pinfo, tree, offset, site_body__Get)
+            offset = wd.dissect_Get(tvb, pinfo, tree, offset, wd.site_body__Get)
             if not offset then
                 return nil
             end
         elseif subject == 2 then
-            offset = dissect_Put(tvb, pinfo, tree, offset, site_body__Put)
+            offset = wd.dissect_Put(tvb, pinfo, tree, offset, wd.site_body__Put)
             if not offset then
                 return nil
             end
         elseif subject == 3 then
-            offset = dissect_Delete(tvb, pinfo, tree, offset, site_body__Delete)
+            offset = wd.dissect_Delete(tvb, pinfo, tree, offset, wd.site_body__Delete)
             if not offset then
                 return nil
             end
         elseif subject == 129 then
-            offset = dissect_Value(tvb, pinfo, tree, offset, site_body__Value)
+            offset = wd.dissect_Value(tvb, pinfo, tree, offset, wd.site_body__Value)
             if not offset then
                 return nil
             end
         elseif subject == 130 then
-            offset = dissect_Done(tvb, pinfo, tree, offset, site_body__Done)
+            offset = wd.dissect_Done(tvb, pinfo, tree, offset, wd.site_body__Done)
             if not offset then
                 return nil
             end
@@ -474,7 +476,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                     wd_truncated(tree, wd_ei_truncated, "body.data")
                     return nil
                 end
-                tree:add(f_body__data, tvb(offset, len))
+                tree:add(wd.f_body__data, tvb(offset, len))
                 offset = offset + len
             end
         end
@@ -485,8 +487,9 @@ end
 
 -- Framing: the length of the Message at `offset`, from its 4-byte header
 local function wd_message_length(tvb, offset)
-    local v_length = string.unpack(">I2", tvb:raw(offset + 2, 2))
-    return wd_add(v_length, 8)
+    local v = {}
+    v.length = string.unpack(">I2", tvb:raw(offset + 2, 2))
+    return wd_add(v.length, 8)
 end
 
 local function wd_dissect_message(tvb, pinfo, tree, malformed)
@@ -495,11 +498,11 @@ local function wd_dissect_message(tvb, pinfo, tree, malformed)
         wd_invalid(root, wd_ei_invalid, malformed, "framing")
         return
     end
-    local before = wd_info_counts({ x_op, x_request_id, x_body__key, x_body__status })
+    local before = wd_info_counts({ wd.x_op, wd.x_request_id, wd.x_body__key, wd.x_body__status })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "Key-Value Store")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     pinfo.cols.info:clear_fence()
-    pinfo.cols.info = wd_info_label(x_op, before, names_op) .. " #" .. wd_info_display(x_request_id, before) .. ": " .. wd_info_display(x_body__key, before) .. wd_info_label(x_body__status, before, names_body__status)
+    pinfo.cols.info = wd_info_label(wd.x_op, before, wd.names_op) .. " #" .. wd_info_display(wd.x_request_id, before) .. ": " .. wd_info_display(wd.x_body__key, before) .. wd_info_label(wd.x_body__status, before, wd.names_body__status)
 end
 
 function wd_proto.dissector(tvb, pinfo, tree)

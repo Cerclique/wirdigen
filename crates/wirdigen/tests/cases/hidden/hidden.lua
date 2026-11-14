@@ -148,59 +148,61 @@ end
 local wd_info_cases = {}
 
 local wd_proto = Proto("hidden", "HIDDEN")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_len = ProtoField.uint8("hidden.len", "Len", base.DEC)
-local f_data = ProtoField.bytes("hidden.data", "Data", base.NONE)
-local f_sized = ProtoField.bytes("hidden.sized", "Sized", base.NONE)
-local f_label = ProtoField.string("hidden.label", "Label", base.NONE)
-local f_text = ProtoField.stringz("hidden.text", "Text", base.NONE)
-local f_flags = ProtoField.uint8("hidden.flags", "Flags", base.DEC)
-local f_header = ProtoField.none("hidden.header", "Header")
-local f_header__version = ProtoField.uint8("hidden.header.version", "Version", base.DEC)
-local f_point = ProtoField.none("hidden.point", "Point")
-local f_point__x = ProtoField.uint8("hidden.point.x", "X", base.DEC)
-local f_point__y = ProtoField.uint8("hidden.point.y", "Y", base.DEC)
-local f_body = ProtoField.none("hidden.body", "Body")
-local f_body__one = ProtoField.uint8("hidden.body.one", "One", base.DEC)
-local f_body__x = ProtoField.uint8("hidden.body.x", "X", base.DEC)
-local f_body__y = ProtoField.uint8("hidden.body.y", "Y", base.DEC)
-local f_items = ProtoField.none("hidden.items", "Items")
-local f_items__id = ProtoField.uint8("hidden.items.id", "Id", base.DEC)
-local f_extra = ProtoField.uint16("hidden.extra", "Extra", base.DEC)
+wd.f_len = ProtoField.uint8("hidden.len", "Len", base.DEC)
+wd.f_data = ProtoField.bytes("hidden.data", "Data", base.NONE)
+wd.f_sized = ProtoField.bytes("hidden.sized", "Sized", base.NONE)
+wd.f_label = ProtoField.string("hidden.label", "Label", base.NONE)
+wd.f_text = ProtoField.stringz("hidden.text", "Text", base.NONE)
+wd.f_flags = ProtoField.uint8("hidden.flags", "Flags", base.DEC)
+wd.f_header = ProtoField.none("hidden.header", "Header")
+wd.f_header__version = ProtoField.uint8("hidden.header.version", "Version", base.DEC)
+wd.f_point = ProtoField.none("hidden.point", "Point")
+wd.f_point__x = ProtoField.uint8("hidden.point.x", "X", base.DEC)
+wd.f_point__y = ProtoField.uint8("hidden.point.y", "Y", base.DEC)
+wd.f_body = ProtoField.none("hidden.body", "Body")
+wd.f_body__one = ProtoField.uint8("hidden.body.one", "One", base.DEC)
+wd.f_body__x = ProtoField.uint8("hidden.body.x", "X", base.DEC)
+wd.f_body__y = ProtoField.uint8("hidden.body.y", "Y", base.DEC)
+wd.f_items = ProtoField.none("hidden.items", "Items")
+wd.f_items__id = ProtoField.uint8("hidden.items.id", "Id", base.DEC)
+wd.f_extra = ProtoField.uint16("hidden.extra", "Extra", base.DEC)
 local wd_f_unmatched = wd_field_unmatched("hidden")
 
 wd_proto.fields = {
-    f_len,
-    f_data,
-    f_sized,
-    f_label,
-    f_text,
-    f_flags,
-    f_header,
-    f_header__version,
-    f_point,
-    f_point__x,
-    f_point__y,
-    f_body,
-    f_body__one,
-    f_body__x,
-    f_body__y,
-    f_items,
-    f_items__id,
-    f_extra,
+    wd.f_len,
+    wd.f_data,
+    wd.f_sized,
+    wd.f_label,
+    wd.f_text,
+    wd.f_flags,
+    wd.f_header,
+    wd.f_header__version,
+    wd.f_point,
+    wd.f_point__x,
+    wd.f_point__y,
+    wd.f_body,
+    wd.f_body__one,
+    wd.f_body__x,
+    wd.f_body__y,
+    wd.f_items,
+    wd.f_items__id,
+    wd.f_extra,
     wd_f_unmatched,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_point = {
+wd.site_point = {
     path = "point",
-    f_x = f_point__x,
-    f_y = f_point__y,
+    f_x = wd.f_point__x,
+    f_y = wd.f_point__y,
 }
-local site_body__Point = {
+wd.site_body__Point = {
     path = "body",
-    f_x = f_body__x,
-    f_y = f_body__y,
+    f_x = wd.f_body__x,
+    f_y = wd.f_body__y,
 }
 
 local wd_ei_truncated = wd_expert_truncated("hidden")
@@ -210,15 +212,15 @@ local wd_ei_unmatched = wd_expert_unmatched("hidden")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty, wd_ei_unmatched }
 
 -- Type: Point
-local function dissect_Point(tvb, pinfo, tree, offset, site)
-    local v_x
+function wd.dissect_Point(tvb, pinfo, tree, offset, site)
+    local v = {}
     -- Field: x
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".x")
         return nil
     end
     tree:add(site.f_x, tvb(offset, 1))
-    v_x = string.unpack(">I1", tvb:raw(offset, 1))
+    v.x = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: y
     if not wd_fits(tvb, offset, 1) then
@@ -227,23 +229,23 @@ local function dissect_Point(tvb, pinfo, tree, offset, site)
     end
     tree:add(site.f_y, tvb(offset, 1)):set_hidden(true)
     offset = offset + 1
-    return offset, { x = v_x }
+    return offset, { x = v.x }
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_flags, v_header__version, v_len, v_point
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: len
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "len")
         return nil
     end
-    tree:add(f_len, tvb(offset, 1)):set_hidden(true)
-    v_len = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_len, tvb(offset, 1)):set_hidden(true)
+    v.len = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: data
     do
-        local len = v_len
+        local len = v.len
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "data")
             return nil
@@ -252,12 +254,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "data")
             return nil
         end
-        tree:add(f_data, tvb(offset, len))
+        tree:add(wd.f_data, tvb(offset, len))
         offset = offset + len
     end
     -- Field: sized
     do
-        local len = wd_add(v_len, 1)
+        local len = wd_add(v.len, 1)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "sized")
             return nil
@@ -266,7 +268,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "sized")
             return nil
         end
-        tree:add(f_sized, tvb(offset, len)):set_hidden(true)
+        tree:add(wd.f_sized, tvb(offset, len)):set_hidden(true)
         offset = offset + len
     end
     -- Field: label
@@ -281,7 +283,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "label")
             return nil
         end
-        tree:add_packet_field(f_label, tvb(offset, len), ENC_UTF_8):set_hidden(true)
+        tree:add_packet_field(wd.f_label, tvb(offset, len), ENC_UTF_8):set_hidden(true)
         offset = offset + len
     end
     -- Field: text
@@ -291,7 +293,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "text")
             return nil
         end
-        tree:add_packet_field(f_text, tvb(offset, len), ENC_UTF_8):set_hidden(true)
+        tree:add_packet_field(wd.f_text, tvb(offset, len), ENC_UTF_8):set_hidden(true)
         offset = offset + len + 1
     end
     -- Field: flags
@@ -299,30 +301,30 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "flags")
         return nil
     end
-    tree:add(f_flags, tvb(offset, 1))
-    v_flags = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_flags, tvb(offset, 1))
+    v.flags = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: header
     do
         local start = offset
-        local tree = tree:add(f_header, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_header, tvb(offset, tvb:len() - offset))
         tree:set_hidden(true)
         -- Field: header.version
         if not wd_fits(tvb, offset, 1) then
             wd_truncated(tree, wd_ei_truncated, "header.version")
             return nil
         end
-        tree:add(f_header__version, tvb(offset, 1))
-        v_header__version = string.unpack(">I1", tvb:raw(offset, 1))
+        tree:add(wd.f_header__version, tvb(offset, 1))
+        v.header__version = string.unpack(">I1", tvb:raw(offset, 1))
         offset = offset + 1
         tree:set_len(offset - start)
     end
     -- Field: point
     do
         local start = offset
-        local tree = tree:add(f_point, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_point, tvb(offset, tvb:len() - offset))
         tree:set_hidden(true)
-        offset, v_point = dissect_Point(tvb, pinfo, tree, offset, site_point)
+        offset, v.point = wd.dissect_Point(tvb, pinfo, tree, offset, wd.site_point)
         if not offset then
             return nil
         end
@@ -330,9 +332,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- Switch: body
     do
-        local subject = v_header__version
+        local subject = v.header__version
         local start = offset
-        local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_body, tvb(offset, tvb:len() - offset))
         tree:set_hidden(true)
         local name = tostring(subject)
         tree:append_text(": " .. name)
@@ -343,10 +345,10 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.one")
                 return nil
             end
-            tree:add(f_body__one, tvb(offset, 1))
+            tree:add(wd.f_body__one, tvb(offset, 1))
             offset = offset + 1
         elseif subject == 2 then
-            offset = dissect_Point(tvb, pinfo, tree, offset, site_body__Point)
+            offset = wd.dissect_Point(tvb, pinfo, tree, offset, wd.site_body__Point)
             if not offset then
                 return nil
             end
@@ -358,14 +360,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- Field: items
     do
-        local count = v_point.x
+        local count = v.point.x
         if count < 0 then
             wd_invalid(tree, wd_ei_invalid, "count " .. count .. " is negative", "items")
             return nil
         end
         for i = 0, count - 1 do
             local start = offset
-            local tree = tree:add(f_items, tvb(offset, tvb:len() - offset))
+            local tree = tree:add(wd.f_items, tvb(offset, tvb:len() - offset))
             tree:set_hidden(true)
             tree:append_text(" [" .. i .. "]")
             -- Field: items.id
@@ -373,7 +375,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "items.id")
                 return nil
             end
-            tree:add(f_items__id, tvb(offset, 1))
+            tree:add(wd.f_items__id, tvb(offset, 1))
             offset = offset + 1
             tree:set_len(offset - start)
             if offset == start then
@@ -384,14 +386,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- If: extra
     do
-        local condition = wd_band(v_flags, 1)
+        local condition = wd_band(v.flags, 1)
         if condition ~= 0 then
             -- Field: extra
             if not wd_fits(tvb, offset, 2) then
                 wd_truncated(tree, wd_ei_truncated, "extra")
                 return nil
             end
-            tree:add(f_extra, tvb(offset, 2)):set_hidden(true)
+            tree:add(wd.f_extra, tvb(offset, 2)):set_hidden(true)
             offset = offset + 2
         end
     end
@@ -402,7 +404,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "HIDDEN"
     wd_info_cases = {}
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "HIDDEN")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     if wd_info_cases["body"] then
         pinfo.cols.info:clear_fence()
         pinfo.cols.info = wd_info_cases["body"]

@@ -33,87 +33,89 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("fixed-types", "FIXED-TYPES")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_is_set = ProtoField.bool("fixed-types.is_set", "Is set", base.NONE)
-local f_ratio = ProtoField.float("fixed-types.ratio", "Ratio")
-local f_precise_ratio = ProtoField.double("fixed-types.precise_ratio", "Precise ratio")
-local f_ipv4_addr = ProtoField.ipv4("fixed-types.ipv4_addr", "Ipv4 addr")
-local f_ipv6_addr = ProtoField.ipv6("fixed-types.ipv6_addr", "Ipv6 addr")
-local f_mac_addr = ProtoField.ether("fixed-types.mac_addr", "Mac addr")
-local f_eui64_addr = ProtoField.eui64("fixed-types.eui64_addr", "Eui64 addr")
-local f_uuid = ProtoField.guid("fixed-types.uuid", "Uuid")
+wd.f_is_set = ProtoField.bool("fixed-types.is_set", "Is set", base.NONE)
+wd.f_ratio = ProtoField.float("fixed-types.ratio", "Ratio")
+wd.f_precise_ratio = ProtoField.double("fixed-types.precise_ratio", "Precise ratio")
+wd.f_ipv4_addr = ProtoField.ipv4("fixed-types.ipv4_addr", "Ipv4 addr")
+wd.f_ipv6_addr = ProtoField.ipv6("fixed-types.ipv6_addr", "Ipv6 addr")
+wd.f_mac_addr = ProtoField.ether("fixed-types.mac_addr", "Mac addr")
+wd.f_eui64_addr = ProtoField.eui64("fixed-types.eui64_addr", "Eui64 addr")
+wd.f_uuid = ProtoField.guid("fixed-types.uuid", "Uuid")
 
 wd_proto.fields = {
-    f_is_set,
-    f_ratio,
-    f_precise_ratio,
-    f_ipv4_addr,
-    f_ipv6_addr,
-    f_mac_addr,
-    f_eui64_addr,
-    f_uuid,
+    wd.f_is_set,
+    wd.f_ratio,
+    wd.f_precise_ratio,
+    wd.f_ipv4_addr,
+    wd.f_ipv6_addr,
+    wd.f_mac_addr,
+    wd.f_eui64_addr,
+    wd.f_uuid,
 }
 
 local wd_ei_truncated = wd_expert_truncated("fixed-types")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: is_set
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "is_set")
         return nil
     end
-    tree:add(f_is_set, tvb(offset, 1))
+    tree:add(wd.f_is_set, tvb(offset, 1))
     offset = offset + 1
     -- Field: ratio
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "ratio")
         return nil
     end
-    tree:add(f_ratio, tvb(offset, 4))
+    tree:add(wd.f_ratio, tvb(offset, 4))
     offset = offset + 4
     -- Field: precise_ratio
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "precise_ratio")
         return nil
     end
-    tree:add(f_precise_ratio, tvb(offset, 8))
+    tree:add(wd.f_precise_ratio, tvb(offset, 8))
     offset = offset + 8
     -- Field: ipv4_addr
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "ipv4_addr")
         return nil
     end
-    tree:add(f_ipv4_addr, tvb(offset, 4))
+    tree:add(wd.f_ipv4_addr, tvb(offset, 4))
     offset = offset + 4
     -- Field: ipv6_addr
     if not wd_fits(tvb, offset, 16) then
         wd_truncated(tree, wd_ei_truncated, "ipv6_addr")
         return nil
     end
-    tree:add(f_ipv6_addr, tvb(offset, 16))
+    tree:add(wd.f_ipv6_addr, tvb(offset, 16))
     offset = offset + 16
     -- Field: mac_addr
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "mac_addr")
         return nil
     end
-    tree:add(f_mac_addr, tvb(offset, 6))
+    tree:add(wd.f_mac_addr, tvb(offset, 6))
     offset = offset + 6
     -- Field: eui64_addr
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "eui64_addr")
         return nil
     end
-    tree:add(f_eui64_addr, tvb(offset, 8))
+    tree:add(wd.f_eui64_addr, tvb(offset, 8))
     offset = offset + 8
     -- Field: uuid
     if not wd_fits(tvb, offset, 16) then
         wd_truncated(tree, wd_ei_truncated, "uuid")
         return nil
     end
-    tree:add(f_uuid, tvb(offset, 16))
+    tree:add(wd.f_uuid, tvb(offset, 16))
     offset = offset + 16
     return offset
 end
@@ -121,7 +123,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "FIXED-TYPES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "FIXED-TYPES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

@@ -175,29 +175,31 @@ end
 local wd_info_cases = {}
 
 local wd_proto = Proto("info-framing", "INFO-FRAMING")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_kind = ProtoField.uint8("info-framing.kind", "Kind", base.DEC)
-local f_len = ProtoField.uint8("info-framing.len", "Len", base.DEC)
-local f_body = ProtoField.none("info-framing.body", "Body")
-local f_body__code = ProtoField.uint8("info-framing.body.code", "Code", base.DEC)
-local f_body__other = ProtoField.uint8("info-framing.body.other", "Other", base.DEC)
-local f_note = ProtoField.uint8("info-framing.note", "Note", base.DEC)
+wd.f_kind = ProtoField.uint8("info-framing.kind", "Kind", base.DEC)
+wd.f_len = ProtoField.uint8("info-framing.len", "Len", base.DEC)
+wd.f_body = ProtoField.none("info-framing.body", "Body")
+wd.f_body__code = ProtoField.uint8("info-framing.body.code", "Code", base.DEC)
+wd.f_body__other = ProtoField.uint8("info-framing.body.other", "Other", base.DEC)
+wd.f_note = ProtoField.uint8("info-framing.note", "Note", base.DEC)
 local wd_f_unmatched = wd_field_unmatched("info-framing")
 
 wd_proto.fields = {
-    f_kind,
-    f_len,
-    f_body,
-    f_body__code,
-    f_body__other,
-    f_note,
+    wd.f_kind,
+    wd.f_len,
+    wd.f_body,
+    wd.f_body__code,
+    wd.f_body__other,
+    wd.f_note,
     wd_f_unmatched,
 }
 
 -- The Fields the Info column shows, extracted from each packet once it is read
-local x_kind = Field.new("info-framing.kind")
-local x_body__code = Field.new("info-framing.body.code")
-local x_note = Field.new("info-framing.note")
+wd.x_kind = Field.new("info-framing.kind")
+wd.x_body__code = Field.new("info-framing.body.code")
+wd.x_note = Field.new("info-framing.note")
 
 local wd_ei_truncated = wd_expert_truncated("info-framing")
 local wd_ei_invalid = wd_expert_invalid("info-framing")
@@ -205,28 +207,28 @@ local wd_ei_unmatched = wd_expert_unmatched("info-framing")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_unmatched }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_kind
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: kind
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "kind")
         return nil
     end
-    tree:add(f_kind, tvb(offset, 1))
-    v_kind = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_kind, tvb(offset, 1))
+    v.kind = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: len
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "len")
         return nil
     end
-    tree:add(f_len, tvb(offset, 1))
+    tree:add(wd.f_len, tvb(offset, 1))
     offset = offset + 1
     -- Switch: body
     do
-        local subject = v_kind
+        local subject = v.kind
         local start = offset
-        local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_body, tvb(offset, tvb:len() - offset))
         local name = tostring(subject)
         tree:append_text(": " .. name)
         wd_info_cases["body"] = name
@@ -236,7 +238,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.code")
                 return nil
             end
-            tree:add(f_body__code, tvb(offset, 1))
+            tree:add(wd.f_body__code, tvb(offset, 1))
             offset = offset + 1
         elseif subject == 2 then
             -- Field: body.other
@@ -244,7 +246,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.other")
                 return nil
             end
-            tree:add(f_body__other, tvb(offset, 1))
+            tree:add(wd.f_body__other, tvb(offset, 1))
             offset = offset + 1
         else
             wd_unmatched(tree, wd_f_unmatched, wd_ei_unmatched, tvb, offset, subject, "body")
@@ -254,14 +256,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- If: note
     do
-        local condition = wd_eq(v_kind, 1)
+        local condition = wd_eq(v.kind, 1)
         if condition ~= 0 then
             -- Field: note
             if not wd_fits(tvb, offset, 1) then
                 wd_truncated(tree, wd_ei_truncated, "note")
                 return nil
             end
-            tree:add(f_note, tvb(offset, 1))
+            tree:add(wd.f_note, tvb(offset, 1))
             offset = offset + 1
         end
     end
@@ -270,8 +272,9 @@ end
 
 -- Framing: the length of the Message at `offset`, from its 2-byte header
 local function wd_message_length(tvb, offset)
-    local v_len = string.unpack(">I1", tvb:raw(offset + 1, 1))
-    return v_len
+    local v = {}
+    v.len = string.unpack(">I1", tvb:raw(offset + 1, 1))
+    return v.len
 end
 
 local function wd_dissect_message(tvb, pinfo, tree, malformed)
@@ -281,11 +284,11 @@ local function wd_dissect_message(tvb, pinfo, tree, malformed)
         return
     end
     wd_info_cases = {}
-    local before = wd_info_counts({ x_kind, x_body__code, x_note })
+    local before = wd_info_counts({ wd.x_kind, wd.x_body__code, wd.x_note })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO-FRAMING")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     pinfo.cols.info:clear_fence()
-    pinfo.cols.info = wd_info_display(x_kind, before) .. " " .. (wd_info_cases["body"] or "") .. " code=" .. wd_info_display(x_body__code, before) .. " note=" .. wd_info_display(x_note, before)
+    pinfo.cols.info = wd_info_display(wd.x_kind, before) .. " " .. (wd_info_cases["body"] or "") .. " code=" .. wd_info_display(wd.x_body__code, before) .. " note=" .. wd_info_display(wd.x_note, before)
 end
 
 function wd_proto.dissector(tvb, pinfo, tree)

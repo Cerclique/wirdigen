@@ -103,42 +103,44 @@ end
 local wd_info_cases = {}
 
 local wd_proto = Proto("padding", "PADDING")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_kind = ProtoField.uint8("padding.kind", "Kind", base.DEC)
-local f_length = ProtoField.uint8("padding.length", "Length", base.DEC)
-local f_text = ProtoField.string("padding.text", "Text", base.NONE)
-local f_inner = ProtoField.none("padding.inner", "Inner")
-local f_inner__a = ProtoField.uint8("padding.inner.a", "A", base.DEC)
-local f_rec = ProtoField.none("padding.rec", "Rec")
-local f_rec__n = ProtoField.uint8("padding.rec.n", "N", base.DEC)
-local f_rec__v = ProtoField.uint8("padding.rec.v", "V", base.DEC)
-local f_body = ProtoField.none("padding.body", "Body")
-local f_body__b = ProtoField.uint8("padding.body.b", "B", base.DEC)
-local f_body__c = ProtoField.uint8("padding.body.c", "C", base.DEC)
-local f_skip = ProtoField.int8("padding.skip", "Skip", base.DEC)
-local f_tail = ProtoField.uint8("padding.tail", "Tail", base.DEC)
+wd.f_kind = ProtoField.uint8("padding.kind", "Kind", base.DEC)
+wd.f_length = ProtoField.uint8("padding.length", "Length", base.DEC)
+wd.f_text = ProtoField.string("padding.text", "Text", base.NONE)
+wd.f_inner = ProtoField.none("padding.inner", "Inner")
+wd.f_inner__a = ProtoField.uint8("padding.inner.a", "A", base.DEC)
+wd.f_rec = ProtoField.none("padding.rec", "Rec")
+wd.f_rec__n = ProtoField.uint8("padding.rec.n", "N", base.DEC)
+wd.f_rec__v = ProtoField.uint8("padding.rec.v", "V", base.DEC)
+wd.f_body = ProtoField.none("padding.body", "Body")
+wd.f_body__b = ProtoField.uint8("padding.body.b", "B", base.DEC)
+wd.f_body__c = ProtoField.uint8("padding.body.c", "C", base.DEC)
+wd.f_skip = ProtoField.int8("padding.skip", "Skip", base.DEC)
+wd.f_tail = ProtoField.uint8("padding.tail", "Tail", base.DEC)
 
 wd_proto.fields = {
-    f_kind,
-    f_length,
-    f_text,
-    f_inner,
-    f_inner__a,
-    f_rec,
-    f_rec__n,
-    f_rec__v,
-    f_body,
-    f_body__b,
-    f_body__c,
-    f_skip,
-    f_tail,
+    wd.f_kind,
+    wd.f_length,
+    wd.f_text,
+    wd.f_inner,
+    wd.f_inner__a,
+    wd.f_rec,
+    wd.f_rec__n,
+    wd.f_rec__v,
+    wd.f_body,
+    wd.f_body__b,
+    wd.f_body__c,
+    wd.f_skip,
+    wd.f_tail,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_rec = {
+wd.site_rec = {
     path = "rec",
-    f_n = f_rec__n,
-    f_v = f_rec__v,
+    f_n = wd.f_rec__n,
+    f_v = wd.f_rec__v,
 }
 
 local wd_ei_truncated = wd_expert_truncated("padding")
@@ -146,19 +148,19 @@ local wd_ei_invalid = wd_expert_invalid("padding")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Record
-local function dissect_Record(tvb, pinfo, tree, offset, site)
-    local v_n
+function wd.dissect_Record(tvb, pinfo, tree, offset, site)
+    local v = {}
     -- Field: n
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".n")
         return nil
     end
     tree:add(site.f_n, tvb(offset, 1))
-    v_n = string.unpack(">I1", tvb:raw(offset, 1))
+    v.n = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Padding
     do
-        local len = v_n
+        local len = v.n
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "padding " .. len .. " is negative", "Padding in " .. site.path)
             return nil
@@ -181,15 +183,15 @@ local function dissect_Record(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_kind, v_length, v_skip
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: kind
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "kind")
         return nil
     end
-    tree:add(f_kind, tvb(offset, 1))
-    v_kind = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_kind, tvb(offset, 1))
+    v.kind = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Padding
     if not wd_fits(tvb, offset, 3) then
@@ -203,12 +205,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "length")
         return nil
     end
-    tree:add(f_length, tvb(offset, 1))
-    v_length = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_length, tvb(offset, 1))
+    v.length = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: text
     do
-        local len = v_length
+        local len = v.length
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "text")
             return nil
@@ -217,12 +219,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "text")
             return nil
         end
-        tree:add_packet_field(f_text, tvb(offset, len), ENC_UTF_8)
+        tree:add_packet_field(wd.f_text, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
     end
     -- Padding
     do
-        local len, fault = wd_evaluate(function() return wd_mod(wd_sub(4, wd_mod(v_length, 4)), 4) end)
+        local len, fault = wd_evaluate(function() return wd_mod(wd_sub(4, wd_mod(v.length, 4)), 4) end)
         if not len then
             wd_invalid(tree, wd_ei_invalid, fault, "Padding")
             return nil
@@ -241,7 +243,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: inner
     do
         local start = offset
-        local tree = tree:add(f_inner, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_inner, tvb(offset, tvb:len() - offset))
         -- Padding in inner
         if not wd_fits(tvb, offset, 1) then
             wd_truncated(tree, wd_ei_truncated, "Padding in inner")
@@ -254,15 +256,15 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "inner.a")
             return nil
         end
-        tree:add(f_inner__a, tvb(offset, 1))
+        tree:add(wd.f_inner__a, tvb(offset, 1))
         offset = offset + 1
         tree:set_len(offset - start)
     end
     -- Field: rec
     do
         local start = offset
-        local tree = tree:add(f_rec, tvb(offset, tvb:len() - offset))
-        offset = dissect_Record(tvb, pinfo, tree, offset, site_rec)
+        local tree = tree:add(wd.f_rec, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Record(tvb, pinfo, tree, offset, wd.site_rec)
         if not offset then
             return nil
         end
@@ -270,9 +272,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- Switch: body
     do
-        local subject = v_kind
+        local subject = v.kind
         local start = offset
-        local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_body, tvb(offset, tvb:len() - offset))
         local name = tostring(subject)
         tree:append_text(": " .. name)
         wd_info_cases["body"] = name
@@ -289,7 +291,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.b")
                 return nil
             end
-            tree:add(f_body__b, tvb(offset, 1))
+            tree:add(wd.f_body__b, tvb(offset, 1))
             offset = offset + 1
         else
             -- Field: body.c
@@ -297,7 +299,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.c")
                 return nil
             end
-            tree:add(f_body__c, tvb(offset, 1))
+            tree:add(wd.f_body__c, tvb(offset, 1))
             offset = offset + 1
         end
         tree:set_len(offset - start)
@@ -307,12 +309,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "skip")
         return nil
     end
-    tree:add(f_skip, tvb(offset, 1))
-    v_skip = string.unpack(">i1", tvb:raw(offset, 1))
+    tree:add(wd.f_skip, tvb(offset, 1))
+    v.skip = string.unpack(">i1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Padding
     do
-        local len = v_skip
+        local len = v.skip
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "padding " .. len .. " is negative", "Padding")
             return nil
@@ -329,7 +331,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "tail")
         return nil
     end
-    tree:add(f_tail, tvb(offset, 1))
+    tree:add(wd.f_tail, tvb(offset, 1))
     offset = offset + 1
     return offset
 end
@@ -338,7 +340,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "PADDING"
     wd_info_cases = {}
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "PADDING")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     if wd_info_cases["body"] then
         pinfo.cols.info:clear_fence()
         pinfo.cols.info = wd_info_cases["body"]

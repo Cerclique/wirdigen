@@ -40,14 +40,14 @@ pub(crate) struct Dissector {
     pub(crate) names: Vec<NamesTable>,
     /// The `ProtoField`s to register, each once.
     pub(crate) proto_fields: Vec<ProtoField>,
-    /// The site tables of the uses of Types outside any Type, each declared once.
+    /// The site tables of the uses of Types, each declared once after the site tables it holds.
     pub(crate) sites: Vec<SharedSite>,
     /// The dissect functions of the Types, each after the Types it calls (spec §7.3).
     pub(crate) types: Vec<TypeFunction>,
     /// The statements of the top-level layout.
     pub(crate) layout: Vec<Stmt>,
-    /// The locals the top-level layout keeps values Expressions read in, declared up front.
-    pub(crate) locals: Vec<String>,
+    /// The keys the top-level layout keeps values Expressions read under, in its values table.
+    pub(crate) values: Vec<String>,
     /// The range preference of each transport with declared ports (spec §3.12, §5.5).
     pub(crate) port_preferences: Vec<PortPreference>,
     /// The field extractors of the Fields the Info column shows, each declared once.
@@ -63,9 +63,9 @@ pub(crate) struct Dissector {
 pub(crate) struct FramedMessages {
     /// The bytes the length is computed from.
     pub(crate) header: usize,
-    /// The header Fields the length reads, each into a local of the length function.
+    /// The header Fields the length reads, each into the values table of the length function.
     pub(crate) reads: Vec<HeaderRead>,
-    /// The length of the Message, from those locals. Its sign and its size against the header
+    /// The length of the Message, from those values. Its sign and its size against the header
     /// are checked by the prelude.
     pub(crate) length: Computed,
 }
@@ -73,8 +73,8 @@ pub(crate) struct FramedMessages {
 /// A top-level Field of the header, read for the Message's length.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct HeaderRead {
-    /// The local of the length function its value is kept in.
-    pub(crate) local: String,
+    /// The key its value is kept under in the length function's values table.
+    pub(crate) key: String,
     /// Its offset from the start of the Message.
     pub(crate) offset: usize,
     /// The bytes it reads.
@@ -86,8 +86,8 @@ pub(crate) struct HeaderRead {
 /// A field extractor (`Field.new`): the values a `ProtoField` took in the packet being read.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Extractor {
-    /// The Lua local (`x_msg_type`).
-    pub(crate) local: String,
+    /// Its key in the Dissector's table (`x_msg_type`).
+    pub(crate) key: String,
     /// The filter name of the `ProtoField` (`demo.msg_type`).
     pub(crate) abbrev: String,
 }
@@ -166,8 +166,8 @@ impl PortPreference {
 /// A `ProtoField` to register.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ProtoField {
-    /// The mangled Lua local (`f_length`).
-    pub(crate) local: String,
+    /// Its mangled key in the Dissector's table (`f_length`).
+    pub(crate) key: String,
     /// The filter name (`demo.length`).
     pub(crate) abbrev: String,
     /// The tree text.
@@ -206,7 +206,7 @@ pub(crate) enum Strings {
 pub(crate) enum TableRef {
     /// In the `ProtoField`'s constructor call.
     Inline(LuaTable),
-    /// In a local declared once: an index into [`Dissector::tables`].
+    /// In the Dissector's table, declared once: an index into [`Dissector::tables`].
     Shared(usize),
 }
 
@@ -231,8 +231,8 @@ impl LuaTable {
 /// The table of an Enum for the `ProtoField`s of one width and signedness.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SharedTable {
-    /// The Lua local (`enum_MsgType`).
-    pub(crate) local: String,
+    /// Its key in the Dissector's table (`enum_MsgType`).
+    pub(crate) key: String,
     /// The Enum it comes from.
     enum_name: String,
     pub(crate) table: LuaTable,
@@ -242,8 +242,8 @@ pub(crate) struct SharedTable {
 /// column (§3.14), as an Expression has them: signed 64-bit integers.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct NamesTable {
-    /// The Lua local (`names_body`).
-    pub(crate) local: String,
+    /// Its key in the Dissector's table (`names_body`).
+    pub(crate) key: String,
     /// `(low, high, label)`, in table order.
     pub(crate) entries: Vec<(i64, i64, String)>,
 }
@@ -287,18 +287,18 @@ pub(crate) struct TypeFunction {
     pub(crate) body: Vec<Stmt>,
     /// Whether it takes a context table: the values of names it reads but does not declare.
     pub(crate) context: bool,
-    /// The locals it keeps values Expressions read in, declared up front.
-    pub(crate) locals: Vec<String>,
+    /// The keys it keeps values Expressions read under, in its values table.
+    pub(crate) values: Vec<String>,
     /// What it returns after the offset, for callers whose Expressions read inside it: by key,
-    /// a local, or a table of them. Empty when no caller reads inside it.
+    /// a value, or a table of them. Empty when no caller reads inside it.
     pub(crate) exports: BTreeMap<String, Export>,
 }
 
 /// An entry of the table a Type's dissect function returns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Export {
-    /// The local holding a value, or the table a Type's function returned.
-    Local(String),
+    /// The key in the values table of a value, or of the table a Type's function returned.
+    Value(String),
     /// The entries of an inline structure.
     Table(BTreeMap<String, Export>),
 }
@@ -319,22 +319,22 @@ pub(crate) struct Site {
 pub(crate) enum SiteEntry {
     /// Index into [`Dissector::proto_fields`].
     Field(usize),
-    /// The site table of a use of a Type inside the Type.
-    Site(Site),
+    /// The site table of a use of a Type inside the Type: an index into [`Dissector::sites`].
+    Site(usize),
 }
 
-/// The site table of a use of a Type outside any Type, declared once as a Lua local.
+/// The site table of a use of a Type, declared once in the Dissector's table.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SharedSite {
-    /// The Lua local (`site_req_hdr`).
-    pub(crate) local: String,
+    /// Its key in the Dissector's table (`site_req_hdr`).
+    pub(crate) key: String,
     pub(crate) site: Site,
 }
 
 /// How a statement reaches a `ProtoField` or a site table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Ref {
-    /// A Lua local, outside any Type: an index into [`Dissector::proto_fields`] or
+    /// An entry of the Dissector's table, outside any Type: an index into [`Dissector::proto_fields`] or
     /// [`Dissector::sites`].
     Local(usize),
     /// A slot of the site table, inside a Type's dissect function.
@@ -360,7 +360,7 @@ pub(crate) enum Stmt {
         decode: Decode,
         /// The Field's path, for the comment and the truncation report.
         path: String,
-        /// The local its value is kept in, when an Expression reads it.
+        /// The key its value is kept under in the values table, when an Expression reads it.
         value: Option<Value>,
         /// Whether the item is hidden: left out of the tree, still filtered.
         hidden: bool,
@@ -400,7 +400,8 @@ pub(crate) enum Stmt {
         site: Ref,
         /// The context table passed, by key, when the Type reads names it does not declare.
         context: Vec<(String, LuaExpr)>,
-        /// The local the table the Type returns is kept in, when an Expression reads inside it.
+        /// The key the table the Type returns is kept under in the values table, when an
+        /// Expression reads inside it.
         result: Option<String>,
     },
     /// An array (spec §3.7): its element, a [`Stmt::Structure`] or a [`Stmt::Call`], repeated,
@@ -441,6 +442,14 @@ pub(crate) enum Stmt {
         /// raw with a note.
         default: Option<Branch>,
     },
+}
+
+impl Stmt {
+    /// Whether it holds statements of its own: an `if:`, a `switch`, an inline structure or an
+    /// array.
+    pub(crate) const fn nests(&self) -> bool {
+        matches!(self, Self::If { .. } | Self::Switch { .. } | Self::Structure { .. } | Self::Array { .. })
+    }
 }
 
 /// What a `switch` case reads, straight into the `switch` Field's subtree.
@@ -517,7 +526,7 @@ pub(crate) struct ExpectCheck {
 /// Where the value of a read is kept for Expressions, and how it is read (spec §4.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Value {
-    pub(crate) local: String,
+    pub(crate) key: String,
     pub(crate) read: ValueRead,
 }
 
@@ -561,8 +570,12 @@ pub(crate) enum LuaExpr {
     /// A sub-Field `width` bits wide, `shift` bits above the least significant bit of `value`,
     /// its container's value: shifted down and masked.
     SubField { value: Box<LuaExpr>, shift: u32, width: u32 },
-    /// A value kept in a local, or inside the table a Type returned, by the keys down to it.
-    Local { local: String, keys: Vec<String> },
+    /// A value kept in the function's values table under `key`, or inside the table a Type
+    /// returned kept there, by the keys down to it.
+    Value { key: String, keys: Vec<String> },
+    /// The value an `expect:` check reads: the local `value` its container's bytes are read
+    /// into (spec §3.10).
+    Checked,
     /// A value of the context table, by its key.
     Context(String),
     /// `_offset`: the offset of the Field being read.
@@ -598,6 +611,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         names: Vec::new(),
         slots: BTreeMap::new(),
         sites: Vec::new(),
+        case_sites: BTreeMap::new(),
         current_type: None,
         info_cases: BTreeSet::new(),
         extractors: Vec::new(),
@@ -614,12 +628,12 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         lowering.slots.insert(t.id, slots);
         let plan = &lowering.plan;
         let exports = plan.export_table();
-        types.push(TypeFunction { name: t.name.clone(), body, context: plan.context, locals: plan.locals(), exports });
+        types.push(TypeFunction { name: t.name.clone(), body, context: plan.context, values: plan.keys(), exports });
     }
     lowering.plan = top;
     lowering.current_type = None;
     let layout = lowering.structure(&protocol.fields, &[]);
-    let locals = lowering.plan.locals();
+    let values = lowering.plan.keys();
     let framing = protocol.framing.as_ref().map(|framing| lowering.framing(framing));
     let Lowering { proto_fields, tables, names, sites, extractors, .. } = lowering;
 
@@ -637,7 +651,7 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
         sites,
         types,
         layout,
-        locals,
+        values,
         port_preferences,
         extractors,
         info,
@@ -645,12 +659,13 @@ pub(crate) fn lower(protocol: &Protocol, source_name: &str) -> Dissector {
     }
 }
 
-/// What one dissect function keeps in locals, and for a Type, takes and returns (spec §7.3).
+/// What one dissect function keeps in its values table, and for a Type, takes and returns
+/// (spec §7.3).
 #[derive(Debug, Default)]
 struct Plan {
-    /// The locals of values Expressions read, by the path of the Field from the function's root.
+    /// The keys of values Expressions read, by the path of the Field from the function's root.
     values: BTreeMap<Vec<String>, String>,
-    /// The locals of the tables Types return, by the path of the Field of the Type.
+    /// The keys of the tables Types return, by the path of the Field of the Type.
     results: BTreeMap<Vec<String>, String>,
     /// For a Type: the paths inside it its callers read, which it returns.
     exports: BTreeSet<Vec<String>>,
@@ -697,39 +712,37 @@ impl Plan {
         plan
     }
 
-    /// Gives the value at `path` a local: the Field's own, or the table of the Field of a Type
+    /// Gives the value at `path` a key: the Field's own, or the table of the Field of a Type
     /// among `uses` the path goes into.
     fn keep(&mut self, path: &[String], uses: &[(Vec<String>, TypeId)], demands: &mut Demands) {
         let into = uses.iter().find(|(prefix, _)| prefix.len() < path.len() && path.starts_with(prefix));
         let Some((prefix, ty)) = into else {
             if !self.values.contains_key(path) {
-                let local = self.local(path);
-                self.values.insert(path.to_vec(), local);
+                let key = self.key(path);
+                self.values.insert(path.to_vec(), key);
             }
             return;
         };
         if !self.results.contains_key(prefix) {
-            let local = self.local(prefix);
-            self.results.insert(prefix.clone(), local);
+            let key = self.key(prefix);
+            self.results.insert(prefix.clone(), key);
         }
         demands.entry(*ty).or_default().insert(path[prefix.len()..].to_vec());
     }
 
-    /// A fresh local for the value at `path`: `v_` then the segments joined by `__`.
-    fn local(&self, path: &[String]) -> String {
-        unique(&format!("v_{}", path.join("__")), |name| {
-            self.values.values().chain(self.results.values()).any(|l| l == name)
-        })
+    /// A fresh key for the value at `path`: the segments joined by `__`.
+    fn key(&self, path: &[String]) -> String {
+        unique(&path.join("__"), |name| self.values.values().chain(self.results.values()).any(|l| l == name))
     }
 
-    /// Every local, in path order.
-    fn locals(&self) -> Vec<String> {
+    /// Every key, in path order.
+    fn keys(&self) -> Vec<String> {
         let mut all: Vec<(&Vec<String>, &String)> = self.values.iter().chain(&self.results).collect();
         all.sort();
-        all.into_iter().map(|(_, local)| local.clone()).collect()
+        all.into_iter().map(|(_, key)| key.clone()).collect()
     }
 
-    /// The Field of a Type on `path` whose returned table holds the value, with its local.
+    /// The Field of a Type on `path` whose returned table holds the value, with its key.
     fn result_for(&self, path: &[String]) -> Option<(&Vec<String>, &String)> {
         self.results.iter().find(|(prefix, _)| path.starts_with(prefix))
     }
@@ -747,12 +760,12 @@ impl Plan {
         }
     }
 
-    /// The value of the Field at `path`: its own local, or its key in the table of the Type it
+    /// The value of the Field at `path`: its own key, or its key in the table of the Type it
     /// is in.
     fn value(&self, path: &[String]) -> LuaExpr {
         match self.result_for(path) {
-            Some((prefix, local)) => LuaExpr::Local { local: local.clone(), keys: path[prefix.len()..].to_vec() },
-            None => LuaExpr::Local { local: self.values[path].clone(), keys: Vec::new() },
+            Some((prefix, key)) => LuaExpr::Value { key: key.clone(), keys: path[prefix.len()..].to_vec() },
+            None => LuaExpr::Value { key: self.values[path].clone(), keys: Vec::new() },
         }
     }
 
@@ -760,8 +773,8 @@ impl Plan {
     fn export_table(&self) -> BTreeMap<String, Export> {
         let mut table = BTreeMap::new();
         for path in &self.exports {
-            let (keys, local) = match self.result_for(path) {
-                Some((prefix, local)) => (prefix.as_slice(), local),
+            let (keys, key) = match self.result_for(path) {
+                Some((prefix, key)) => (prefix.as_slice(), key),
                 None => (path.as_slice(), &self.values[path]),
             };
             let (last, parents) = keys.split_last().expect("an export has a path");
@@ -771,7 +784,7 @@ impl Plan {
                 let Export::Table(inner) = entry else { unreachable!("a structure is not a value") };
                 entries = inner;
             }
-            entries.insert(last.clone(), Export::Local(local.clone()));
+            entries.insert(last.clone(), Export::Value(key.clone()));
         }
         table
     }
@@ -875,6 +888,9 @@ struct Lowering<'p> {
     /// The slots of each Type's site tables, in the Type's layout order.
     slots: BTreeMap<TypeId, Vec<Slot<'p>>>,
     sites: Vec<SharedSite>,
+    /// The site table of each case outside any Type using a Type, by the path of its `switch`
+    /// Field and the Type's name: one serves every case using that Type.
+    case_sites: BTreeMap<(Vec<String>, String), usize>,
     /// The Type whose dissect function is being lowered, `None` for the top-level layout.
     current_type: Option<TypeId>,
     /// The `switch` Fields whose subject value label the Info column shows.
@@ -943,8 +959,8 @@ impl<'p> Lowering<'p> {
         if let Some(index) = self.extractors.iter().position(|x| x.abbrev == abbrev) {
             return index;
         }
-        let local = unique(&format!("x_{}", path.join("__")), |name| self.extractors.iter().any(|x| x.local == name));
-        self.extractors.push(Extractor { local, abbrev });
+        let key = unique(&format!("x_{}", path.join("__")), |name| self.extractors.iter().any(|x| x.key == name));
+        self.extractors.push(Extractor { key, abbrev });
         self.extractors.len() - 1
     }
 
@@ -990,10 +1006,7 @@ impl<'p> Lowering<'p> {
             }
             FieldKind::Type(TypeUse { id, .. }) => {
                 let site = self.site(*id, &segments);
-                let local =
-                    unique(&format!("site_{}", segments.join("__")), |n| self.sites.iter().any(|s| s.local == n));
-                self.sites.push(SharedSite { local, site });
-                let site = Ref::Local(self.sites.len() - 1);
+                let site = Ref::Local(self.share_site(&format!("site_{}", segments.join("__")), site));
                 self.call(Ref::Local(index), field, &segments, site)
             }
             FieldKind::Switch(switch) => self.switch(Ref::Local(index), field, switch, &segments, None),
@@ -1042,13 +1055,15 @@ impl<'p> Lowering<'p> {
                     }
                     Ref::Slot(key)
                 } else {
-                    let local = format!("site_{}__{name}", segments.join("__"));
-                    let index = self.sites.iter().position(|s| s.local == local).unwrap_or_else(|| {
+                    let key = (owned(segments), name.clone());
+                    if let Some(&index) = self.case_sites.get(&key) {
+                        Ref::Local(index)
+                    } else {
                         let site = self.site(*id, segments);
-                        self.sites.push(SharedSite { local, site });
-                        self.sites.len() - 1
-                    });
-                    Ref::Local(index)
+                        let index = self.share_site(&format!("site_{}__{name}", segments.join("__")), site);
+                        self.case_sites.insert(key, index);
+                        Ref::Local(index)
+                    }
                 };
                 let context = context.iter().map(|(key, r)| (key.clone(), self.reference(r))).collect();
                 Branch::Call { ty: name.clone(), site, context }
@@ -1072,7 +1087,7 @@ impl<'p> Lowering<'p> {
     }
 
     /// The table naming the values in `range` of a Field with the table `values`, declared once,
-    /// when the table labels some of them. The local is named after the path `segments` that
+    /// when the table labels some of them. The key is named after the path `segments` that
     /// first needs it.
     fn names_table(&mut self, values: &Values, range: &RangeInclusive<i128>, segments: &[&str]) -> Option<usize> {
         let table = match values {
@@ -1084,9 +1099,9 @@ impl<'p> Lowering<'p> {
             return None;
         }
         Some(self.names.iter().position(|n| n.entries == entries).unwrap_or_else(|| {
-            let local =
-                unique(&format!("names_{}", segments.join("__")), |name| self.names.iter().any(|n| n.local == name));
-            self.names.push(NamesTable { local, entries });
+            let key =
+                unique(&format!("names_{}", segments.join("__")), |name| self.names.iter().any(|n| n.key == name));
+            self.names.push(NamesTable { key, entries });
             self.names.len() - 1
         }))
     }
@@ -1188,12 +1203,22 @@ impl<'p> Lowering<'p> {
                 let entry = match slot.kind {
                     SlotKind::Field(field) => SiteEntry::Field(self.proto_field(field, &path)),
                     SlotKind::Bit(bytes, bit) => SiteEntry::Field(self.proto_field_bit(bytes, bit, &path)),
-                    SlotKind::Site(ty) => SiteEntry::Site(self.site(ty, &path)),
+                    SlotKind::Site(ty) => {
+                        let site = self.site(ty, &path);
+                        SiteEntry::Site(self.share_site(&format!("site_{}", path.join("__")), site))
+                    }
                 };
                 (slot.key, entry)
             })
             .collect();
         Site { path: segments.join("."), entries }
+    }
+
+    /// Declares `site` once under a fresh key from `base`, and returns its index in the sites.
+    fn share_site(&mut self, base: &str, site: Site) -> usize {
+        let key = unique(base, |n| self.sites.iter().any(|s| s.key == n));
+        self.sites.push(SharedSite { key, site });
+        self.sites.len() - 1
     }
 
     /// The statement calling the dissect function of the Type of `field`, a Field of a Type at
@@ -1209,15 +1234,15 @@ impl<'p> Lowering<'p> {
     }
 
     /// The model of `framing:`: its length is computed in a function of its own, which keeps
-    /// each header Field it reads in a local.
+    /// each header Field it reads in its values table.
     fn framing(&mut self, framing: &Framing) -> FramedMessages {
         let mut plan = Plan::default();
         let mut reads = Vec::new();
         for (name, &HeaderField { target, extent: Extent { offset, size } }) in &framing.reads {
-            let local = format!("v_{name}");
+            let key = name.clone();
             let read = value_read(builtin(self.index.field(target)));
-            plan.values.insert(vec![name.clone()], local.clone());
-            reads.push(HeaderRead { local, offset, size, read });
+            plan.values.insert(vec![name.clone()], key.clone());
+            reads.push(HeaderRead { key, offset, size, read });
         }
         let layout = std::mem::replace(&mut self.plan, plan);
         let length = match &framing.length {
@@ -1250,9 +1275,9 @@ impl<'p> Lowering<'p> {
             _ => length(field_value),
         };
         let value =
-            self.plan.values.get(&owned(segments)).cloned().map(|local| Value { local, read: value_read(field_value) });
+            self.plan.values.get(&owned(segments)).cloned().map(|key| Value { key, read: value_read(field_value) });
         let little = field_value.endian == Endian::Little && field_value.kind.builtin().has_byte_order();
-        let whole = LuaExpr::Local { local: "value".to_owned(), keys: Vec::new() };
+        let whole = LuaExpr::Checked;
         let path = segments.join(".");
         let (expect, handoff) = match &field_value.kind {
             BuiltinKind::Unsigned { expect, .. }
@@ -1326,7 +1351,7 @@ impl<'p> Lowering<'p> {
             }
         };
         self.proto_fields.push(ProtoField {
-            local: self.local(segments),
+            key: self.key(segments),
             abbrev,
             label: field.label.clone().unwrap_or_else(|| default_label(&field.name)),
             description: field.description.clone(),
@@ -1378,7 +1403,7 @@ impl<'p> Lowering<'p> {
             }
         };
         self.proto_fields.push(ProtoField {
-            local: self.local(segments),
+            key: self.key(segments),
             abbrev,
             label: bit.label.clone().unwrap_or_else(|| default_label(&bit.name)),
             description: bit.description.clone(),
@@ -1389,10 +1414,10 @@ impl<'p> Lowering<'p> {
         self.proto_fields.len() - 1
     }
 
-    /// The Lua local of the `ProtoField` at a path: `f_` then the segments joined by `__`
+    /// The key of the `ProtoField` at a path: `f_` then the segments joined by `__`
     /// (`f_options__ttl`).
-    fn local(&self, segments: &[&str]) -> String {
-        unique(&format!("f_{}", segments.join("__")), |name| self.proto_fields.iter().any(|f| f.local == name))
+    fn key(&self, segments: &[&str]) -> String {
+        unique(&format!("f_{}", segments.join("__")), |name| self.proto_fields.iter().any(|f| f.key == name))
     }
 }
 
@@ -1640,9 +1665,8 @@ fn table_strings(
             let index = tables.iter().position(|t| t.enum_name == *name && t.table == lua).unwrap_or_else(|| {
                 // An Enum lowers to another table only when a Field's type cuts off some keys.
                 let variants = tables.iter().filter(|t| t.enum_name == *name).count();
-                let local =
-                    if variants == 0 { format!("enum_{name}") } else { format!("enum_{name}_{}", variants + 1) };
-                tables.push(SharedTable { local, enum_name: name.clone(), table: lua });
+                let key = if variants == 0 { format!("enum_{name}") } else { format!("enum_{name}_{}", variants + 1) };
+                tables.push(SharedTable { key, enum_name: name.clone(), table: lua });
                 tables.len() - 1
             });
             Strings::Table { table: TableRef::Shared(index), range: mapping::has_range(table) }
@@ -1880,7 +1904,7 @@ mod tests {
             .map(|f| match &f.strings {
                 Some(Strings::Table { table: TableRef::Inline(t), .. }) => t.clone(),
                 Some(Strings::Table { table: TableRef::Shared(i), .. }) => d.tables[*i].table.clone(),
-                other => panic!("{} has no table: {other:?}", f.local),
+                other => panic!("{} has no table: {other:?}", f.key),
             })
             .collect()
     }
@@ -1964,7 +1988,7 @@ mod tests {
         let fields: Vec<&Field> = protocol.fields.iter().filter_map(field::Entry::field).collect();
         assert_eq!(mapping(fields[0]), mapping(fields[1]));
         let d = lower(&protocol, "x");
-        let locals: Vec<&str> = d.tables.iter().map(|t| t.local.as_str()).collect();
+        let locals: Vec<&str> = d.tables.iter().map(|t| t.key.as_str()).collect();
         assert_eq!(locals, ["enum_Kind", "enum_Kind_2"]);
         let refs: Vec<Option<Strings>> = d.proto_fields.iter().map(|f| f.strings.clone()).collect();
         let shared = |i| Some(Strings::Table { table: TableRef::Shared(i), range: false });
@@ -2011,7 +2035,7 @@ mod tests {
             "name: demo\nfields:\n  - name: a\n    fields: [ {name: b, type: uint8} ]\n  - {name: a__b, type: uint8}\n",
             "x",
         );
-        let names: Vec<(&str, &str)> = d.proto_fields.iter().map(|f| (f.local.as_str(), f.abbrev.as_str())).collect();
+        let names: Vec<(&str, &str)> = d.proto_fields.iter().map(|f| (f.key.as_str(), f.abbrev.as_str())).collect();
         assert_eq!(names, [("f_a", "demo.a"), ("f_a__b", "demo.a.b"), ("f_a__b_2", "demo.a__b")]);
     }
 
@@ -2079,7 +2103,7 @@ mod tests {
         fn slots(stmts: &[Stmt]) -> Vec<(String, String)> {
             let slot = |r: &Ref, path: &str| match r {
                 Ref::Slot(key) => (key.clone(), path.to_owned()),
-                Ref::Local(_) => panic!("{path} reads a local inside a Type"),
+                Ref::Local(_) => panic!("{path} reads an entry of the Dissector's table inside a Type"),
             };
             stmts
                 .iter()
@@ -2104,14 +2128,14 @@ mod tests {
             }
             for (_, entry) in &site.entries {
                 if let SiteEntry::Site(nested) = entry {
-                    check(d, nested, "Stamp");
+                    check(d, &d.sites[*nested].site, "Stamp");
                 }
             }
         }
         let d = lowered(TYPES, "x");
         let paths: Vec<&str> = d.sites.iter().map(|s| s.site.path.as_str()).collect();
-        assert_eq!(paths, ["req", "resp"]);
-        for shared in &d.sites {
+        assert_eq!(paths, ["req.stamp", "req", "resp.stamp", "resp"]);
+        for shared in d.sites.iter().filter(|s| !s.site.path.contains('.')) {
             check(&d, &shared.site, "Header");
         }
     }
@@ -2251,9 +2275,9 @@ mod tests {
             "x",
         );
         let Some(Info::Template(parts)) = &d.info else { panic!("a template") };
-        let label = |extractor, local: &str| InfoPart::Label {
+        let label = |extractor, key: &str| InfoPart::Label {
             extractor,
-            names: Some(d.names.iter().position(|n| n.local == local).unwrap()),
+            names: Some(d.names.iter().position(|n| n.key == key).unwrap()),
         };
         assert_eq!(
             parts,
@@ -2299,8 +2323,8 @@ mod tests {
         }
     }
 
-    fn local(name: &str, keys: &[&str]) -> LuaExpr {
-        LuaExpr::Local { local: name.to_owned(), keys: keys.iter().map(|k| (*k).to_owned()).collect() }
+    fn key(name: &str, keys: &[&str]) -> LuaExpr {
+        LuaExpr::Value { key: name.to_owned(), keys: keys.iter().map(|k| (*k).to_owned()).collect() }
     }
 
     fn function<'d>(d: &'d Dissector, ty: &str) -> &'d TypeFunction {
@@ -2315,9 +2339,9 @@ mod tests {
             "name: demo\nfields:\n  - {name: len, type: uint8}\n  - name: hdr\n    fields:\n      - {name: len, type: uint16}\n      - {name: body, type: bytes, size: len}\n  - {name: data, type: bytes, size: len}\n  - {name: tail, type: bytes, size: hdr.len}\n",
             "x",
         );
-        assert_eq!(size(&d.layout, "hdr.body"), &local("v_hdr__len", &[]));
-        assert_eq!(size(&d.layout, "data"), &local("v_len", &[]));
-        assert_eq!(size(&d.layout, "tail"), &local("v_hdr__len", &[]));
+        assert_eq!(size(&d.layout, "hdr.body"), &key("hdr__len", &[]));
+        assert_eq!(size(&d.layout, "data"), &key("len", &[]));
+        assert_eq!(size(&d.layout, "tail"), &key("hdr__len", &[]));
     }
 
     /// Spec §7.3: locals only for the Fields Expressions read, each read as a signed 64-bit
@@ -2328,7 +2352,7 @@ mod tests {
             "name: demo\nendian: little\nfields:\n  - {name: a, type: uint8}\n  - {name: b, type: int48}\n  - {name: c, type: uint64, endian: big}\n  - {name: d, type: bool}\n  - {name: e, type: uint16}\n  - {name: data, type: bytes, size: \"b + c + d\"}\n",
             "x",
         );
-        assert_eq!(d.locals, ["v_b", "v_c", "v_d"]);
+        assert_eq!(d.values, ["b", "c", "d"]);
         let values: Vec<(&str, Option<&Value>)> = ["a", "b", "c", "d", "e"]
             .into_iter()
             .map(|path| match stmt(&d.layout, path) {
@@ -2336,14 +2360,14 @@ mod tests {
                 other => panic!("{other:?}"),
             })
             .collect();
-        let value = |local: &str, read| Value { local: local.to_owned(), read };
+        let value = |key: &str, read| Value { key: key.to_owned(), read };
         assert_eq!(
             values,
             [
                 ("a", None),
-                ("b", Some(&value("v_b", ValueRead::Integer("<i6".to_owned())))),
-                ("c", Some(&value("v_c", ValueRead::Integer(">I8".to_owned())))),
-                ("d", Some(&value("v_d", ValueRead::Bool))),
+                ("b", Some(&value("b", ValueRead::Integer("<i6".to_owned())))),
+                ("c", Some(&value("c", ValueRead::Integer(">I8".to_owned())))),
+                ("d", Some(&value("d", ValueRead::Bool))),
                 ("e", None),
             ]
         );
@@ -2370,12 +2394,12 @@ mod tests {
         let d = lowered(CONTEXT, "x");
         let record = function(&d, "Record");
         assert!(record.context);
-        assert_eq!(record.locals, ["v_count"]);
+        assert_eq!(record.values, ["count"]);
         assert_eq!(
             size(&record.body, "items"),
             &LuaExpr::Binary {
                 op: BinaryOp::Add,
-                left: Box::new(local("v_count", &[])),
+                left: Box::new(key("count", &[])),
                 right: Box::new(LuaExpr::Context("len".to_owned()))
             }
         );
@@ -2383,8 +2407,8 @@ mod tests {
             Stmt::Call { context, .. } => context.clone(),
             other => panic!("{other:?}"),
         };
-        assert_eq!(context("first"), [("len".to_owned(), local("v_len", &[]))]);
-        assert_eq!(context("inner.second"), [("len".to_owned(), local("v_inner__len", &[]))]);
+        assert_eq!(context("first"), [("len".to_owned(), key("len", &[]))]);
+        assert_eq!(context("inner.second"), [("len".to_owned(), key("inner__len", &[]))]);
     }
 
     /// A Type that does not resolve a name passes on the value its own caller gave.
@@ -2411,7 +2435,7 @@ mod tests {
     fn a_self_contained_type_takes_and_returns_only_the_offset() {
         let d = lowered(TYPES, "x");
         for t in &d.types {
-            assert!(!t.context && t.locals.is_empty() && t.exports.is_empty(), "{}", t.name);
+            assert!(!t.context && t.values.is_empty() && t.exports.is_empty(), "{}", t.name);
         }
     }
 
@@ -2427,25 +2451,25 @@ mod tests {
             size(&d.layout, "data"),
             &LuaExpr::Binary {
                 op: BinaryOp::Add,
-                left: Box::new(local("v_o", &["inner", "n"])),
-                right: Box::new(local("v_o", &["opts", "m"]))
+                left: Box::new(key("o", &["inner", "n"])),
+                right: Box::new(key("o", &["opts", "m"]))
             }
         );
         match stmt(&d.layout, "o") {
-            Stmt::Call { result, .. } => assert_eq!(result.as_deref(), Some("v_o")),
+            Stmt::Call { result, .. } => assert_eq!(result.as_deref(), Some("o")),
             other => panic!("{other:?}"),
         }
         let outer = function(&d, "Outer");
-        assert_eq!(outer.locals, ["v_inner", "v_opts__m"]);
+        assert_eq!(outer.values, ["inner", "opts__m"]);
         let table = |entries: &[(&str, Export)]| {
             entries.iter().map(|(k, e)| ((*k).to_owned(), e.clone())).collect::<BTreeMap<_, _>>()
         };
-        let export = |local: &str| Export::Local(local.to_owned());
+        let export = |key: &str| Export::Value(key.to_owned());
         assert_eq!(
             outer.exports,
-            table(&[("inner", export("v_inner")), ("opts", Export::Table(table(&[("m", export("v_opts__m"))])))])
+            table(&[("inner", export("inner")), ("opts", Export::Table(table(&[("m", export("opts__m"))])))])
         );
-        assert_eq!(function(&d, "Inner").exports, table(&[("n", export("v_n"))]));
+        assert_eq!(function(&d, "Inner").exports, table(&[("n", export("n"))]));
     }
 
     /// Spec §4.4, §7.3: a size known only at runtime is checked for a negative value, under the
@@ -2495,9 +2519,9 @@ mod tests {
         let abbrevs: Vec<&str> = d.proto_fields.iter().map(|f| f.abbrev.as_str()).collect();
         assert_eq!(abbrevs, ["demo.n", "demo.items", "demo.items.len", "demo.items.data"]);
         let (repeat, element) = array(&d.layout, "items");
-        assert_eq!(repeat, &Repeat::Count(Computed { value: local("v_n", &[]), checked: true, faults: false }));
+        assert_eq!(repeat, &Repeat::Count(Computed { value: key("n", &[]), checked: true, faults: false }));
         assert!(matches!(element, Stmt::Structure { path, .. } if path == "items"));
-        assert_eq!(size(&d.layout, "items.data"), &local("v_items__len", &[]));
+        assert_eq!(size(&d.layout, "items.data"), &key("items__len", &[]));
         assert!(chunks_in(&emit(&d)).contains(&"empty"), "an empty element is reported as malformed");
     }
 

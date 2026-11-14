@@ -46,38 +46,40 @@ local function wd_terminated(tvb, offset, terminator, width)
 end
 
 local wd_proto = Proto("strings", "STRINGS")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_fixed = ProtoField.string("strings.fixed", "Fixed", base.NONE)
-local f_user = ProtoField.string("strings.user", "User", base.NONE)
-local f_note = ProtoField.string("strings.note", "Note", base.NONE)
-local f_path = ProtoField.stringz("strings.path", "Path", base.NONE)
-local f_line = ProtoField.string("strings.line", "Line", base.NONE)
-local f_wide = ProtoField.stringz("strings.wide", "Wide", base.NONE)
-local f_wide_be = ProtoField.string("strings.wide_be", "Wide be", base.NONE)
-local f_legacy = ProtoField.string("strings.legacy", "Legacy name", base.NONE, "Shown as ISO 8859-1")
+wd.f_fixed = ProtoField.string("strings.fixed", "Fixed", base.NONE)
+wd.f_user = ProtoField.string("strings.user", "User", base.NONE)
+wd.f_note = ProtoField.string("strings.note", "Note", base.NONE)
+wd.f_path = ProtoField.stringz("strings.path", "Path", base.NONE)
+wd.f_line = ProtoField.string("strings.line", "Line", base.NONE)
+wd.f_wide = ProtoField.stringz("strings.wide", "Wide", base.NONE)
+wd.f_wide_be = ProtoField.string("strings.wide_be", "Wide be", base.NONE)
+wd.f_legacy = ProtoField.string("strings.legacy", "Legacy name", base.NONE, "Shown as ISO 8859-1")
 
 wd_proto.fields = {
-    f_fixed,
-    f_user,
-    f_note,
-    f_path,
-    f_line,
-    f_wide,
-    f_wide_be,
-    f_legacy,
+    wd.f_fixed,
+    wd.f_user,
+    wd.f_note,
+    wd.f_path,
+    wd.f_line,
+    wd.f_wide,
+    wd.f_wide_be,
+    wd.f_legacy,
 }
 
 local wd_ei_truncated = wd_expert_truncated("strings")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: fixed
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "fixed")
         return nil
     end
-    tree:add_packet_field(f_fixed, tvb(offset, 4), ENC_UTF_8)
+    tree:add_packet_field(wd.f_fixed, tvb(offset, 4), ENC_UTF_8)
     offset = offset + 4
     -- Field: user
     do
@@ -91,7 +93,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "user")
             return nil
         end
-        tree:add_packet_field(f_user, tvb(offset, len), ENC_UTF_8)
+        tree:add_packet_field(wd.f_user, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
     end
     -- Field: note
@@ -106,7 +108,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "note")
             return nil
         end
-        tree:add_packet_field(f_note, tvb(offset, len), ENC_UTF_8)
+        tree:add_packet_field(wd.f_note, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
     end
     -- Field: path
@@ -116,7 +118,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "path")
             return nil
         end
-        tree:add_packet_field(f_path, tvb(offset, len), ENC_UTF_8)
+        tree:add_packet_field(wd.f_path, tvb(offset, len), ENC_UTF_8)
         offset = offset + len + 1
     end
     -- Field: line
@@ -126,7 +128,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "line")
             return nil
         end
-        tree:add_packet_field(f_line, tvb(offset, len), ENC_ASCII)
+        tree:add_packet_field(wd.f_line, tvb(offset, len), ENC_ASCII)
         offset = offset + len + 1
     end
     -- Field: wide
@@ -136,7 +138,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "wide")
             return nil
         end
-        tree:add_packet_field(f_wide, tvb(offset, len), ENC_UTF_16 + ENC_LITTLE_ENDIAN)
+        tree:add_packet_field(wd.f_wide, tvb(offset, len), ENC_UTF_16 + ENC_LITTLE_ENDIAN)
         offset = offset + len + 2
     end
     -- Field: wide_be
@@ -144,14 +146,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "wide_be")
         return nil
     end
-    tree:add_packet_field(f_wide_be, tvb(offset, 4), ENC_UCS_2 + ENC_BIG_ENDIAN)
+    tree:add_packet_field(wd.f_wide_be, tvb(offset, 4), ENC_UCS_2 + ENC_BIG_ENDIAN)
     offset = offset + 4
     -- Field: legacy
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "legacy")
         return nil
     end
-    tree:add_packet_field(f_legacy, tvb(offset, 3), ENC_ISO_8859_1)
+    tree:add_packet_field(wd.f_legacy, tvb(offset, 3), ENC_ISO_8859_1)
     offset = offset + 3
     return offset
 end
@@ -159,7 +161,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "STRINGS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "STRINGS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

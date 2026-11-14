@@ -33,159 +33,161 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("integers", "INTEGERS")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_u8 = ProtoField.uint8("integers.u8", "U8", base.DEC)
-local f_u16 = ProtoField.uint16("integers.u16", "U16", base.DEC)
-local f_u24 = ProtoField.uint24("integers.u24", "U24", base.DEC)
-local f_u32 = ProtoField.uint32("integers.u32", "U32", base.DEC)
-local f_u40 = ProtoField.uint64("integers.u40", "U40", base.DEC)
-local f_u48 = ProtoField.uint64("integers.u48", "U48", base.DEC)
-local f_u56 = ProtoField.uint64("integers.u56", "U56", base.DEC)
-local f_u64 = ProtoField.uint64("integers.u64", "U64", base.DEC)
-local f_i8 = ProtoField.int8("integers.i8", "I8", base.DEC)
-local f_i16 = ProtoField.int16("integers.i16", "I16", base.DEC)
-local f_i24 = ProtoField.int24("integers.i24", "I24", base.DEC)
-local f_i32 = ProtoField.int32("integers.i32", "I32", base.DEC)
-local f_i40 = ProtoField.int64("integers.i40", "I40", base.DEC)
-local f_i48 = ProtoField.int64("integers.i48", "I48", base.DEC)
-local f_i56 = ProtoField.int64("integers.i56", "I56", base.DEC)
-local f_i64 = ProtoField.int64("integers.i64", "I64", base.DEC)
+wd.f_u8 = ProtoField.uint8("integers.u8", "U8", base.DEC)
+wd.f_u16 = ProtoField.uint16("integers.u16", "U16", base.DEC)
+wd.f_u24 = ProtoField.uint24("integers.u24", "U24", base.DEC)
+wd.f_u32 = ProtoField.uint32("integers.u32", "U32", base.DEC)
+wd.f_u40 = ProtoField.uint64("integers.u40", "U40", base.DEC)
+wd.f_u48 = ProtoField.uint64("integers.u48", "U48", base.DEC)
+wd.f_u56 = ProtoField.uint64("integers.u56", "U56", base.DEC)
+wd.f_u64 = ProtoField.uint64("integers.u64", "U64", base.DEC)
+wd.f_i8 = ProtoField.int8("integers.i8", "I8", base.DEC)
+wd.f_i16 = ProtoField.int16("integers.i16", "I16", base.DEC)
+wd.f_i24 = ProtoField.int24("integers.i24", "I24", base.DEC)
+wd.f_i32 = ProtoField.int32("integers.i32", "I32", base.DEC)
+wd.f_i40 = ProtoField.int64("integers.i40", "I40", base.DEC)
+wd.f_i48 = ProtoField.int64("integers.i48", "I48", base.DEC)
+wd.f_i56 = ProtoField.int64("integers.i56", "I56", base.DEC)
+wd.f_i64 = ProtoField.int64("integers.i64", "I64", base.DEC)
 
 wd_proto.fields = {
-    f_u8,
-    f_u16,
-    f_u24,
-    f_u32,
-    f_u40,
-    f_u48,
-    f_u56,
-    f_u64,
-    f_i8,
-    f_i16,
-    f_i24,
-    f_i32,
-    f_i40,
-    f_i48,
-    f_i56,
-    f_i64,
+    wd.f_u8,
+    wd.f_u16,
+    wd.f_u24,
+    wd.f_u32,
+    wd.f_u40,
+    wd.f_u48,
+    wd.f_u56,
+    wd.f_u64,
+    wd.f_i8,
+    wd.f_i16,
+    wd.f_i24,
+    wd.f_i32,
+    wd.f_i40,
+    wd.f_i48,
+    wd.f_i56,
+    wd.f_i64,
 }
 
 local wd_ei_truncated = wd_expert_truncated("integers")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: u8
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "u8")
         return nil
     end
-    tree:add(f_u8, tvb(offset, 1))
+    tree:add(wd.f_u8, tvb(offset, 1))
     offset = offset + 1
     -- Field: u16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "u16")
         return nil
     end
-    tree:add(f_u16, tvb(offset, 2))
+    tree:add(wd.f_u16, tvb(offset, 2))
     offset = offset + 2
     -- Field: u24
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "u24")
         return nil
     end
-    tree:add(f_u24, tvb(offset, 3))
+    tree:add(wd.f_u24, tvb(offset, 3))
     offset = offset + 3
     -- Field: u32
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "u32")
         return nil
     end
-    tree:add(f_u32, tvb(offset, 4))
+    tree:add(wd.f_u32, tvb(offset, 4))
     offset = offset + 4
     -- Field: u40
     if not wd_fits(tvb, offset, 5) then
         wd_truncated(tree, wd_ei_truncated, "u40")
         return nil
     end
-    tree:add(f_u40, tvb(offset, 5), tvb(offset, 5):uint64())
+    tree:add(wd.f_u40, tvb(offset, 5), tvb(offset, 5):uint64())
     offset = offset + 5
     -- Field: u48
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "u48")
         return nil
     end
-    tree:add(f_u48, tvb(offset, 6), tvb(offset, 6):uint64())
+    tree:add(wd.f_u48, tvb(offset, 6), tvb(offset, 6):uint64())
     offset = offset + 6
     -- Field: u56
     if not wd_fits(tvb, offset, 7) then
         wd_truncated(tree, wd_ei_truncated, "u56")
         return nil
     end
-    tree:add(f_u56, tvb(offset, 7), tvb(offset, 7):uint64())
+    tree:add(wd.f_u56, tvb(offset, 7), tvb(offset, 7):uint64())
     offset = offset + 7
     -- Field: u64
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "u64")
         return nil
     end
-    tree:add(f_u64, tvb(offset, 8))
+    tree:add(wd.f_u64, tvb(offset, 8))
     offset = offset + 8
     -- Field: i8
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "i8")
         return nil
     end
-    tree:add(f_i8, tvb(offset, 1))
+    tree:add(wd.f_i8, tvb(offset, 1))
     offset = offset + 1
     -- Field: i16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "i16")
         return nil
     end
-    tree:add(f_i16, tvb(offset, 2))
+    tree:add(wd.f_i16, tvb(offset, 2))
     offset = offset + 2
     -- Field: i24
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, "i24")
         return nil
     end
-    tree:add(f_i24, tvb(offset, 3))
+    tree:add(wd.f_i24, tvb(offset, 3))
     offset = offset + 3
     -- Field: i32
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "i32")
         return nil
     end
-    tree:add(f_i32, tvb(offset, 4))
+    tree:add(wd.f_i32, tvb(offset, 4))
     offset = offset + 4
     -- Field: i40
     if not wd_fits(tvb, offset, 5) then
         wd_truncated(tree, wd_ei_truncated, "i40")
         return nil
     end
-    tree:add(f_i40, tvb(offset, 5), tvb(offset, 5):int64())
+    tree:add(wd.f_i40, tvb(offset, 5), tvb(offset, 5):int64())
     offset = offset + 5
     -- Field: i48
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "i48")
         return nil
     end
-    tree:add(f_i48, tvb(offset, 6), tvb(offset, 6):int64())
+    tree:add(wd.f_i48, tvb(offset, 6), tvb(offset, 6):int64())
     offset = offset + 6
     -- Field: i56
     if not wd_fits(tvb, offset, 7) then
         wd_truncated(tree, wd_ei_truncated, "i56")
         return nil
     end
-    tree:add(f_i56, tvb(offset, 7), tvb(offset, 7):int64())
+    tree:add(wd.f_i56, tvb(offset, 7), tvb(offset, 7):int64())
     offset = offset + 7
     -- Field: i64
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "i64")
         return nil
     end
-    tree:add(f_i64, tvb(offset, 8))
+    tree:add(wd.f_i64, tvb(offset, 8))
     offset = offset + 8
     return offset
 end
@@ -193,7 +195,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "INTEGERS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INTEGERS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

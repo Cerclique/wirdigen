@@ -33,42 +33,44 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("uints", "UINTS")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_small = ProtoField.uint8("uints.small", "Small", base.DEC)
-local f_medium = ProtoField.uint16("uints.medium", "Medium", base.DEC)
-local f_large = ProtoField.uint32("uints.large", "Large", base.DEC)
+wd.f_small = ProtoField.uint8("uints.small", "Small", base.DEC)
+wd.f_medium = ProtoField.uint16("uints.medium", "Medium", base.DEC)
+wd.f_large = ProtoField.uint32("uints.large", "Large", base.DEC)
 
 wd_proto.fields = {
-    f_small,
-    f_medium,
-    f_large,
+    wd.f_small,
+    wd.f_medium,
+    wd.f_large,
 }
 
 local wd_ei_truncated = wd_expert_truncated("uints")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: small
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "small")
         return nil
     end
-    tree:add(f_small, tvb(offset, 1))
+    tree:add(wd.f_small, tvb(offset, 1))
     offset = offset + 1
     -- Field: medium
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "medium")
         return nil
     end
-    tree:add(f_medium, tvb(offset, 2))
+    tree:add(wd.f_medium, tvb(offset, 2))
     offset = offset + 2
     -- Field: large
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "large")
         return nil
     end
-    tree:add(f_large, tvb(offset, 4))
+    tree:add(wd.f_large, tvb(offset, 4))
     offset = offset + 4
     return offset
 end
@@ -76,7 +78,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "UINTS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "UINTS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

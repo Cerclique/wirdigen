@@ -33,76 +33,78 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("bitfields", "BITFIELDS")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_Kind = {
+wd.enum_Kind = {
     { 0, 0, "Data" },
     { 1, 1, "Control" },
     { 2, 7, "Reserved" },
 }
 
-local f_flags = ProtoField.uint8("bitfields.flags", "Flags", base.HEX)
-local f_flags__version = ProtoField.uint8("bitfields.flags.version", "Version", base.DEC, nil, 0xE0)
-local f_flags__ext = ProtoField.bool("bitfields.flags.ext", "Ext", 8, { "Extended", "Basic" }, 0x08)
-local f_flags__kind = ProtoField.uint8("bitfields.flags.kind", "Kind", base.DEC + base.RANGE_STRING, enum_Kind, 0x07)
-local f_word = ProtoField.uint16("bitfields.word", "Word", base.DEC)
-local f_word__high = ProtoField.uint16("bitfields.word.high", "High", base.HEX, nil, 0xF000)
-local f_word__mid = ProtoField.uint16("bitfields.word.mid", "Mid", base.DEC + base.UNIT_STRING, { " step", " steps" }, 0x0FF0)
-local f_word__flag = ProtoField.uint16("bitfields.word.flag", "Flag", base.DEC, nil, 0x0008)
-local f_word__low = ProtoField.uint16("bitfields.word.low", "Low bits", base.DEC, nil, 0x0007, "The three lowest bits")
-local f_triple = ProtoField.uint24("bitfields.triple", "Triple", base.DEC, {
+wd.f_flags = ProtoField.uint8("bitfields.flags", "Flags", base.HEX)
+wd.f_flags__version = ProtoField.uint8("bitfields.flags.version", "Version", base.DEC, nil, 0xE0)
+wd.f_flags__ext = ProtoField.bool("bitfields.flags.ext", "Ext", 8, { "Extended", "Basic" }, 0x08)
+wd.f_flags__kind = ProtoField.uint8("bitfields.flags.kind", "Kind", base.DEC + base.RANGE_STRING, wd.enum_Kind, 0x07)
+wd.f_word = ProtoField.uint16("bitfields.word", "Word", base.DEC)
+wd.f_word__high = ProtoField.uint16("bitfields.word.high", "High", base.HEX, nil, 0xF000)
+wd.f_word__mid = ProtoField.uint16("bitfields.word.mid", "Mid", base.DEC + base.UNIT_STRING, { " step", " steps" }, 0x0FF0)
+wd.f_word__flag = ProtoField.uint16("bitfields.word.flag", "Flag", base.DEC, nil, 0x0008)
+wd.f_word__low = ProtoField.uint16("bitfields.word.low", "Low bits", base.DEC, nil, 0x0007, "The three lowest bits")
+wd.f_triple = ProtoField.uint24("bitfields.triple", "Triple", base.DEC, {
     [0] = "Empty",
 })
-local f_triple__middle = ProtoField.uint24("bitfields.triple.middle", "Middle", base.HEX_DEC, nil, 0x0FFFF0)
-local f_triple__tail = ProtoField.uint24("bitfields.triple.tail", "Tail", base.DEC, {
+wd.f_triple__middle = ProtoField.uint24("bitfields.triple.middle", "Middle", base.HEX_DEC, nil, 0x0FFFF0)
+wd.f_triple__tail = ProtoField.uint24("bitfields.triple.tail", "Tail", base.DEC, {
     [15] = "All",
 }, 0x00000F)
-local f_wide = ProtoField.uint64("bitfields.wide", "Wide", base.DEC)
-local f_wide__top = ProtoField.bool("bitfields.wide.top", "Top", 40, { "Set", "Not set" }, 0x8000000000)
-local f_wide__rest = ProtoField.uint64("bitfields.wide.rest", "Rest", base.DEC, nil, 0x7FFFFFFFFF)
-local f_huge = ProtoField.uint64("bitfields.huge", "Huge", base.DEC)
-local f_huge__sign = ProtoField.bool("bitfields.huge.sign", "Sign", 64, { "Set", "Not set" }, 0x8000000000000000)
-local f_huge__value = ProtoField.uint64("bitfields.huge.value", "Value", base.HEX, nil, 0x7FFFFFFFFFFFFFFF)
-local f_whole = ProtoField.uint32("bitfields.whole", "Whole", base.DEC)
-local f_whole__all = ProtoField.uint32("bitfields.whole.all", "All", base.DEC, nil, 0xFFFFFFFF)
+wd.f_wide = ProtoField.uint64("bitfields.wide", "Wide", base.DEC)
+wd.f_wide__top = ProtoField.bool("bitfields.wide.top", "Top", 40, { "Set", "Not set" }, 0x8000000000)
+wd.f_wide__rest = ProtoField.uint64("bitfields.wide.rest", "Rest", base.DEC, nil, 0x7FFFFFFFFF)
+wd.f_huge = ProtoField.uint64("bitfields.huge", "Huge", base.DEC)
+wd.f_huge__sign = ProtoField.bool("bitfields.huge.sign", "Sign", 64, { "Set", "Not set" }, 0x8000000000000000)
+wd.f_huge__value = ProtoField.uint64("bitfields.huge.value", "Value", base.HEX, nil, 0x7FFFFFFFFFFFFFFF)
+wd.f_whole = ProtoField.uint32("bitfields.whole", "Whole", base.DEC)
+wd.f_whole__all = ProtoField.uint32("bitfields.whole.all", "All", base.DEC, nil, 0xFFFFFFFF)
 
 wd_proto.fields = {
-    f_flags,
-    f_flags__version,
-    f_flags__ext,
-    f_flags__kind,
-    f_word,
-    f_word__high,
-    f_word__mid,
-    f_word__flag,
-    f_word__low,
-    f_triple,
-    f_triple__middle,
-    f_triple__tail,
-    f_wide,
-    f_wide__top,
-    f_wide__rest,
-    f_huge,
-    f_huge__sign,
-    f_huge__value,
-    f_whole,
-    f_whole__all,
+    wd.f_flags,
+    wd.f_flags__version,
+    wd.f_flags__ext,
+    wd.f_flags__kind,
+    wd.f_word,
+    wd.f_word__high,
+    wd.f_word__mid,
+    wd.f_word__flag,
+    wd.f_word__low,
+    wd.f_triple,
+    wd.f_triple__middle,
+    wd.f_triple__tail,
+    wd.f_wide,
+    wd.f_wide__top,
+    wd.f_wide__rest,
+    wd.f_huge,
+    wd.f_huge__sign,
+    wd.f_huge__value,
+    wd.f_whole,
+    wd.f_whole__all,
 }
 
 local wd_ei_truncated = wd_expert_truncated("bitfields")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: flags
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flags")
         return nil
     end
     do
-        local item = tree:add(f_flags, tvb(offset, 1))
-        item:add(f_flags__version, tvb(offset, 1))
-        item:add(f_flags__ext, tvb(offset, 1))
-        item:add(f_flags__kind, tvb(offset, 1))
+        local item = tree:add(wd.f_flags, tvb(offset, 1))
+        item:add(wd.f_flags__version, tvb(offset, 1))
+        item:add(wd.f_flags__ext, tvb(offset, 1))
+        item:add(wd.f_flags__kind, tvb(offset, 1))
     end
     offset = offset + 1
     -- Field: word
@@ -111,11 +113,11 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add_le(f_word, tvb(offset, 2))
-        item:add_le(f_word__high, tvb(offset, 2))
-        item:add_le(f_word__mid, tvb(offset, 2))
-        item:add_le(f_word__flag, tvb(offset, 2))
-        item:add_le(f_word__low, tvb(offset, 2))
+        local item = tree:add_le(wd.f_word, tvb(offset, 2))
+        item:add_le(wd.f_word__high, tvb(offset, 2))
+        item:add_le(wd.f_word__mid, tvb(offset, 2))
+        item:add_le(wd.f_word__flag, tvb(offset, 2))
+        item:add_le(wd.f_word__low, tvb(offset, 2))
     end
     offset = offset + 2
     -- Field: triple
@@ -124,9 +126,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_triple, tvb(offset, 3))
-        item:add(f_triple__middle, tvb(offset, 3))
-        item:add(f_triple__tail, tvb(offset, 3))
+        local item = tree:add(wd.f_triple, tvb(offset, 3))
+        item:add(wd.f_triple__middle, tvb(offset, 3))
+        item:add(wd.f_triple__tail, tvb(offset, 3))
     end
     offset = offset + 3
     -- Field: wide
@@ -135,9 +137,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_wide, tvb(offset, 5), tvb(offset, 5):uint64())
-        item:add(f_wide__top, tvb(offset, 5))
-        item:add(f_wide__rest, tvb(offset, 5))
+        local item = tree:add(wd.f_wide, tvb(offset, 5), tvb(offset, 5):uint64())
+        item:add(wd.f_wide__top, tvb(offset, 5))
+        item:add(wd.f_wide__rest, tvb(offset, 5))
     end
     offset = offset + 5
     -- Field: huge
@@ -146,9 +148,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_huge, tvb(offset, 8))
-        item:add(f_huge__sign, tvb(offset, 8))
-        item:add(f_huge__value, tvb(offset, 8))
+        local item = tree:add(wd.f_huge, tvb(offset, 8))
+        item:add(wd.f_huge__sign, tvb(offset, 8))
+        item:add(wd.f_huge__value, tvb(offset, 8))
     end
     offset = offset + 8
     -- Field: whole
@@ -157,8 +159,8 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_whole, tvb(offset, 4))
-        item:add(f_whole__all, tvb(offset, 4))
+        local item = tree:add(wd.f_whole, tvb(offset, 4))
+        item:add(wd.f_whole__all, tvb(offset, 4))
     end
     offset = offset + 4
     return offset
@@ -167,7 +169,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "BITFIELDS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "BITFIELDS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 
