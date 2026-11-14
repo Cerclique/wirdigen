@@ -111,44 +111,46 @@ local function wd_ge(a, b) return wd_bool(a >= b) end
 local function wd_not(a) return wd_bool(a == 0) end
 
 local wd_proto = Proto("expressions", "EXPRESSIONS")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_precedence = ProtoField.bytes("expressions.precedence", "Precedence", base.NONE)
-local f_division = ProtoField.bytes("expressions.division", "Division", base.NONE)
-local f_remainder = ProtoField.bytes("expressions.remainder", "Remainder", base.NONE)
-local f_shifts = ProtoField.bytes("expressions.shifts", "Shifts", base.NONE)
-local f_arithmetic_shift = ProtoField.bytes("expressions.arithmetic_shift", "Arithmetic shift", base.NONE)
-local f_bitwise = ProtoField.bytes("expressions.bitwise", "Bitwise", base.NONE)
-local f_wide_mask = ProtoField.bytes("expressions.wide_mask", "Wide mask", base.NONE)
-local f_complement = ProtoField.bytes("expressions.complement", "Complement", base.NONE)
-local f_comparisons = ProtoField.bytes("expressions.comparisons", "Comparisons", base.NONE)
-local f_logic = ProtoField.bytes("expressions.logic", "Logic", base.NONE)
-local f_wrapping = ProtoField.bytes("expressions.wrapping", "Wrapping", base.NONE)
-local f_literals = ProtoField.bytes("expressions.literals", "Literals", base.NONE)
-local f_plain = ProtoField.bytes("expressions.plain", "Plain", base.NONE)
-local f_tail = ProtoField.uint8("expressions.tail", "Tail", base.DEC)
+wd.f_precedence = ProtoField.bytes("expressions.precedence", "Precedence", base.NONE)
+wd.f_division = ProtoField.bytes("expressions.division", "Division", base.NONE)
+wd.f_remainder = ProtoField.bytes("expressions.remainder", "Remainder", base.NONE)
+wd.f_shifts = ProtoField.bytes("expressions.shifts", "Shifts", base.NONE)
+wd.f_arithmetic_shift = ProtoField.bytes("expressions.arithmetic_shift", "Arithmetic shift", base.NONE)
+wd.f_bitwise = ProtoField.bytes("expressions.bitwise", "Bitwise", base.NONE)
+wd.f_wide_mask = ProtoField.bytes("expressions.wide_mask", "Wide mask", base.NONE)
+wd.f_complement = ProtoField.bytes("expressions.complement", "Complement", base.NONE)
+wd.f_comparisons = ProtoField.bytes("expressions.comparisons", "Comparisons", base.NONE)
+wd.f_logic = ProtoField.bytes("expressions.logic", "Logic", base.NONE)
+wd.f_wrapping = ProtoField.bytes("expressions.wrapping", "Wrapping", base.NONE)
+wd.f_literals = ProtoField.bytes("expressions.literals", "Literals", base.NONE)
+wd.f_plain = ProtoField.bytes("expressions.plain", "Plain", base.NONE)
+wd.f_tail = ProtoField.uint8("expressions.tail", "Tail", base.DEC)
 
 wd_proto.fields = {
-    f_precedence,
-    f_division,
-    f_remainder,
-    f_shifts,
-    f_arithmetic_shift,
-    f_bitwise,
-    f_wide_mask,
-    f_complement,
-    f_comparisons,
-    f_logic,
-    f_wrapping,
-    f_literals,
-    f_plain,
-    f_tail,
+    wd.f_precedence,
+    wd.f_division,
+    wd.f_remainder,
+    wd.f_shifts,
+    wd.f_arithmetic_shift,
+    wd.f_bitwise,
+    wd.f_wide_mask,
+    wd.f_complement,
+    wd.f_comparisons,
+    wd.f_logic,
+    wd.f_wrapping,
+    wd.f_literals,
+    wd.f_plain,
+    wd.f_tail,
 }
 
 local wd_ei_truncated = wd_expert_truncated("expressions")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: precedence
     do
         local len = wd_sub(wd_add(1, wd_mul(2, 3)), 6)
@@ -156,7 +158,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "precedence")
             return nil
         end
-        tree:add(f_precedence, tvb(offset, len))
+        tree:add(wd.f_precedence, tvb(offset, len))
         offset = offset + len
     end
     -- Field: division
@@ -166,7 +168,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "division")
             return nil
         end
-        tree:add(f_division, tvb(offset, len))
+        tree:add(wd.f_division, tvb(offset, len))
         offset = offset + len
     end
     -- Field: remainder
@@ -176,7 +178,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "remainder")
             return nil
         end
-        tree:add(f_remainder, tvb(offset, len))
+        tree:add(wd.f_remainder, tvb(offset, len))
         offset = offset + len
     end
     -- Field: shifts
@@ -186,7 +188,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "shifts")
             return nil
         end
-        tree:add(f_shifts, tvb(offset, len))
+        tree:add(wd.f_shifts, tvb(offset, len))
         offset = offset + len
     end
     -- Field: arithmetic_shift
@@ -196,7 +198,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "arithmetic_shift")
             return nil
         end
-        tree:add(f_arithmetic_shift, tvb(offset, len))
+        tree:add(wd.f_arithmetic_shift, tvb(offset, len))
         offset = offset + len
     end
     -- Field: bitwise
@@ -206,7 +208,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "bitwise")
             return nil
         end
-        tree:add(f_bitwise, tvb(offset, len))
+        tree:add(wd.f_bitwise, tvb(offset, len))
         offset = offset + len
     end
     -- Field: wide_mask
@@ -216,7 +218,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "wide_mask")
             return nil
         end
-        tree:add(f_wide_mask, tvb(offset, len))
+        tree:add(wd.f_wide_mask, tvb(offset, len))
         offset = offset + len
     end
     -- Field: complement
@@ -226,7 +228,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "complement")
             return nil
         end
-        tree:add(f_complement, tvb(offset, len))
+        tree:add(wd.f_complement, tvb(offset, len))
         offset = offset + len
     end
     -- Field: comparisons
@@ -236,7 +238,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "comparisons")
             return nil
         end
-        tree:add(f_comparisons, tvb(offset, len))
+        tree:add(wd.f_comparisons, tvb(offset, len))
         offset = offset + len
     end
     -- Field: logic
@@ -246,7 +248,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "logic")
             return nil
         end
-        tree:add(f_logic, tvb(offset, len))
+        tree:add(wd.f_logic, tvb(offset, len))
         offset = offset + len
     end
     -- Field: wrapping
@@ -256,7 +258,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "wrapping")
             return nil
         end
-        tree:add(f_wrapping, tvb(offset, len))
+        tree:add(wd.f_wrapping, tvb(offset, len))
         offset = offset + len
     end
     -- Field: literals
@@ -266,7 +268,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "literals")
             return nil
         end
-        tree:add(f_literals, tvb(offset, len))
+        tree:add(wd.f_literals, tvb(offset, len))
         offset = offset + len
     end
     -- Field: plain
@@ -274,14 +276,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "plain")
         return nil
     end
-    tree:add(f_plain, tvb(offset, 4))
+    tree:add(wd.f_plain, tvb(offset, 4))
     offset = offset + 4
     -- Field: tail
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "tail")
         return nil
     end
-    tree:add(f_tail, tvb(offset, 1))
+    tree:add(wd.f_tail, tvb(offset, 1))
     offset = offset + 1
     return offset
 end
@@ -289,7 +291,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "EXPRESSIONS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "EXPRESSIONS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

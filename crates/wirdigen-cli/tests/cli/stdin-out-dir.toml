@@ -38,24 +38,26 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("demo", "DEMO")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_a = ProtoField.uint8("demo.a", "A", base.DEC)
+wd.f_a = ProtoField.uint8("demo.a", "A", base.DEC)
 
 wd_proto.fields = {
-    f_a,
+    wd.f_a,
 }
 
 local wd_ei_truncated = wd_expert_truncated("demo")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: a
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "a")
         return nil
     end
-    tree:add(f_a, tvb(offset, 1))
+    tree:add(wd.f_a, tvb(offset, 1))
     offset = offset + 1
     return offset
 end
@@ -63,7 +65,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "DEMO"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "DEMO")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

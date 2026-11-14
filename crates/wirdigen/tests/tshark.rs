@@ -29,6 +29,8 @@ use serde_json::Value;
 
 #[path = "tshark/bad_input.rs"]
 mod bad_input;
+#[path = "tshark/large.rs"]
+mod large;
 
 /// The UDP destination port decoded as the protocol under test.
 const PORT: u16 = 9999;

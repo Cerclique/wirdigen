@@ -95,47 +95,49 @@ local function wd_evaluate(compute)
 end
 
 local wd_proto = Proto("bitfield-references", "BITFIELD-REFERENCES")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_flags = ProtoField.uint8("bitfield-references.flags", "Flags", base.DEC)
-local f_flags__has_extra = ProtoField.bool("bitfield-references.flags.has_extra", "Has extra", 8, { "Set", "Not set" }, 0x80)
-local f_flags__count = ProtoField.uint8("bitfield-references.flags.count", "Count", base.DEC, nil, 0x70)
-local f_flags__shift = ProtoField.uint8("bitfield-references.flags.shift", "Shift", base.DEC, nil, 0x0F)
-local f_extra = ProtoField.bytes("bitfield-references.extra", "Extra", base.NONE)
-local f_items = ProtoField.bytes("bitfield-references.items", "Items", base.NONE)
-local f_options = ProtoField.uint16("bitfield-references.options", "Options", base.DEC)
-local f_options__secret = ProtoField.uint16("bitfield-references.options.secret", "Secret", base.DEC, nil, 0xF000)
-local f_options__len = ProtoField.uint16("bitfield-references.options.len", "Len", base.DEC, nil, 0x0FFF)
-local f_opt = ProtoField.bytes("bitfield-references.opt", "Opt", base.NONE)
-local f_rec = ProtoField.none("bitfield-references.rec", "Rec")
-local f_rec__head = ProtoField.uint8("bitfield-references.rec.head", "Head", base.DEC)
-local f_rec__head__size = ProtoField.uint8("bitfield-references.rec.head.size", "Size", base.DEC, nil, 0xF0)
-local f_rec__body = ProtoField.bytes("bitfield-references.rec.body", "Body", base.NONE)
-local f_tail = ProtoField.bytes("bitfield-references.tail", "Tail", base.NONE)
+wd.f_flags = ProtoField.uint8("bitfield-references.flags", "Flags", base.DEC)
+wd.f_flags__has_extra = ProtoField.bool("bitfield-references.flags.has_extra", "Has extra", 8, { "Set", "Not set" }, 0x80)
+wd.f_flags__count = ProtoField.uint8("bitfield-references.flags.count", "Count", base.DEC, nil, 0x70)
+wd.f_flags__shift = ProtoField.uint8("bitfield-references.flags.shift", "Shift", base.DEC, nil, 0x0F)
+wd.f_extra = ProtoField.bytes("bitfield-references.extra", "Extra", base.NONE)
+wd.f_items = ProtoField.bytes("bitfield-references.items", "Items", base.NONE)
+wd.f_options = ProtoField.uint16("bitfield-references.options", "Options", base.DEC)
+wd.f_options__secret = ProtoField.uint16("bitfield-references.options.secret", "Secret", base.DEC, nil, 0xF000)
+wd.f_options__len = ProtoField.uint16("bitfield-references.options.len", "Len", base.DEC, nil, 0x0FFF)
+wd.f_opt = ProtoField.bytes("bitfield-references.opt", "Opt", base.NONE)
+wd.f_rec = ProtoField.none("bitfield-references.rec", "Rec")
+wd.f_rec__head = ProtoField.uint8("bitfield-references.rec.head", "Head", base.DEC)
+wd.f_rec__head__size = ProtoField.uint8("bitfield-references.rec.head.size", "Size", base.DEC, nil, 0xF0)
+wd.f_rec__body = ProtoField.bytes("bitfield-references.rec.body", "Body", base.NONE)
+wd.f_tail = ProtoField.bytes("bitfield-references.tail", "Tail", base.NONE)
 
 wd_proto.fields = {
-    f_flags,
-    f_flags__has_extra,
-    f_flags__count,
-    f_flags__shift,
-    f_extra,
-    f_items,
-    f_options,
-    f_options__secret,
-    f_options__len,
-    f_opt,
-    f_rec,
-    f_rec__head,
-    f_rec__head__size,
-    f_rec__body,
-    f_tail,
+    wd.f_flags,
+    wd.f_flags__has_extra,
+    wd.f_flags__count,
+    wd.f_flags__shift,
+    wd.f_extra,
+    wd.f_items,
+    wd.f_options,
+    wd.f_options__secret,
+    wd.f_options__len,
+    wd.f_opt,
+    wd.f_rec,
+    wd.f_rec__head,
+    wd.f_rec__head__size,
+    wd.f_rec__body,
+    wd.f_tail,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_rec = {
+wd.site_rec = {
     path = "rec",
-    f_head = f_rec__head,
-    f_head__size = f_rec__head__size,
-    f_body = f_rec__body,
+    f_head = wd.f_rec__head,
+    f_head__size = wd.f_rec__head__size,
+    f_body = wd.f_rec__body,
 }
 
 local wd_ei_truncated = wd_expert_truncated("bitfield-references")
@@ -143,8 +145,8 @@ local wd_ei_invalid = wd_expert_invalid("bitfield-references")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Type: Record
-local function dissect_Record(tvb, pinfo, tree, offset, site, ctx)
-    local v_head
+function wd.dissect_Record(tvb, pinfo, tree, offset, site, ctx)
+    local v = {}
     -- Field: head
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".head")
@@ -154,11 +156,11 @@ local function dissect_Record(tvb, pinfo, tree, offset, site, ctx)
         local item = tree:add(site.f_head, tvb(offset, 1))
         item:add(site.f_head__size, tvb(offset, 1))
     end
-    v_head = string.unpack(">I1", tvb:raw(offset, 1))
+    v.head = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: body
     do
-        local len = wd_add(wd_band(wd_shr(v_head, 4), 15), ctx["flags.shift"])
+        local len = wd_add(wd_band(wd_shr(v.head, 4), 15), ctx["flags.shift"])
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", site.path .. ".body")
             return nil
@@ -170,29 +172,29 @@ local function dissect_Record(tvb, pinfo, tree, offset, site, ctx)
         tree:add(site.f_body, tvb(offset, len))
         offset = offset + len
     end
-    return offset, { head = v_head }
+    return offset, { head = v.head }
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_flags, v_options, v_rec
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: flags
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flags")
         return nil
     end
     do
-        local item = tree:add(f_flags, tvb(offset, 1))
+        local item = tree:add(wd.f_flags, tvb(offset, 1))
         item:set_hidden(true)
-        item:add(f_flags__has_extra, tvb(offset, 1)):set_hidden(true)
-        item:add(f_flags__count, tvb(offset, 1)):set_hidden(true)
-        item:add(f_flags__shift, tvb(offset, 1)):set_hidden(true)
+        item:add(wd.f_flags__has_extra, tvb(offset, 1)):set_hidden(true)
+        item:add(wd.f_flags__count, tvb(offset, 1)):set_hidden(true)
+        item:add(wd.f_flags__shift, tvb(offset, 1)):set_hidden(true)
     end
-    v_flags = string.unpack(">I1", tvb:raw(offset, 1))
+    v.flags = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: extra
     do
-        local len = wd_mul(wd_band(wd_shr(v_flags, 7), 1), 2)
+        local len = wd_mul(wd_band(wd_shr(v.flags, 7), 1), 2)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "extra")
             return nil
@@ -201,12 +203,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "extra")
             return nil
         end
-        tree:add(f_extra, tvb(offset, len))
+        tree:add(wd.f_extra, tvb(offset, len))
         offset = offset + len
     end
     -- Field: items
     do
-        local len = wd_band(wd_shr(v_flags, 4), 7)
+        local len = wd_band(wd_shr(v.flags, 4), 7)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "items")
             return nil
@@ -215,7 +217,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "items")
             return nil
         end
-        tree:add(f_items, tvb(offset, len))
+        tree:add(wd.f_items, tvb(offset, len))
         offset = offset + len
     end
     -- Field: options
@@ -224,15 +226,15 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_options, tvb(offset, 2))
-        item:add(f_options__secret, tvb(offset, 2)):set_hidden(true)
-        item:add(f_options__len, tvb(offset, 2))
+        local item = tree:add(wd.f_options, tvb(offset, 2))
+        item:add(wd.f_options__secret, tvb(offset, 2)):set_hidden(true)
+        item:add(wd.f_options__len, tvb(offset, 2))
     end
-    v_options = string.unpack(">I2", tvb:raw(offset, 2))
+    v.options = string.unpack(">I2", tvb:raw(offset, 2))
     offset = offset + 2
     -- Field: opt
     do
-        local len = wd_band(v_options, 4095)
+        local len = wd_band(v.options, 4095)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "opt")
             return nil
@@ -241,14 +243,14 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "opt")
             return nil
         end
-        tree:add(f_opt, tvb(offset, len))
+        tree:add(wd.f_opt, tvb(offset, len))
         offset = offset + len
     end
     -- Field: rec
     do
         local start = offset
-        local tree = tree:add(f_rec, tvb(offset, tvb:len() - offset))
-        offset, v_rec = dissect_Record(tvb, pinfo, tree, offset, site_rec, { ["flags.shift"] = wd_band(v_flags, 15) })
+        local tree = tree:add(wd.f_rec, tvb(offset, tvb:len() - offset))
+        offset, v.rec = wd.dissect_Record(tvb, pinfo, tree, offset, wd.site_rec, { ["flags.shift"] = wd_band(v.flags, 15) })
         if not offset then
             return nil
         end
@@ -256,7 +258,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- Field: tail
     do
-        local len = wd_band(wd_shr(v_rec.head, 4), 15)
+        local len = wd_band(wd_shr(v.rec.head, 4), 15)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "tail")
             return nil
@@ -265,7 +267,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "tail")
             return nil
         end
-        tree:add(f_tail, tvb(offset, len))
+        tree:add(wd.f_tail, tvb(offset, len))
         offset = offset + len
     end
     return offset
@@ -274,7 +276,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "BITFIELD-REFERENCES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "BITFIELD-REFERENCES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

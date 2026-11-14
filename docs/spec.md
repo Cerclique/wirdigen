@@ -590,9 +590,10 @@ Source ─► YAML parse ─► strict deserialize ─► parse Expressions ─�
 
 ### 7.3 Generated code
 
-- **Types**: one `local function dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Locals exist only for Fields some Expression references; the `info:` template reads its Fields through field extractors once the Message is read (§3.14). Outer scopes are reached through a context table.
+- **Types**: one dissect function `wd.dissect_<Type>` per Type, in dependency order, taking and returning the offset. Each also takes the site table of the use it reads: the ProtoFields registered for that use (§5.2) and its path, for truncation reports. Every dissect function returns `nil` once it stopped on a truncated packet, so its callers stop too. Values are kept, in the function's table `v`, only for Fields some Expression references; the `info:` template reads its Fields through field extractors once the Message is read (§3.14). Outer scopes are reached through a context table.
 - **Prelude**: a hand-written Lua runtime embedded with `include_str!`, split into named chunks, each needing the chunks whose names its code uses. It holds the version guard, bounds-checked readers, C-style division and modulo, 64-bit bitwise operators, string readers, the Framing loop and malformed-packet reporting. Only the chunks whose names a Dissector's emitted Lua uses, plus the chunks they need, are emitted, in the prelude's fixed order. The version guard and malformed-packet reporting are always included.
 - **Names**: user names are always mangled (`f_<name>`, `dissect_<Type>`), and prelude names start with `wd_`, so a Field called `end` or `type` is safe.
+- **Size**: however many Fields or Types a description has, and however deep it nests, every generated function stays within Lua's limits of 200 locals, 255 upvalues and 255 registers, and within its parser's nesting limit: the Dissector's declarations are entries of one table, `wd`, the values a function reads are entries of its table `v`, and a statement nested too deep is a function of its own ([ADR 0019](adr/0019-generated-lua-within-lua-function-limits.md)).
 - **Format**: 4-space indent, fixed by the emitter (no external formatter). Comments name each Type (`-- Type: X`) and each Field's path, with no source line numbers.
 - **Header**: the Wirdigen version, the Source name's last `/`- or `\`-separated component, and "Requires Wireshark >= 4.4".
 - **Determinism**: the same description bytes and Wirdigen version give byte-identical Lua on every OS: no timestamps or paths, ordered maps, `\n` line endings, a trailing newline. The Lua text itself is not under semver (§13).
@@ -950,5 +951,6 @@ These are not open design questions, but the spec deliberately leaves them to th
 | Documentation | [Documentation set for v1](https://github.com/Cerclique/wirdigen/issues/37) | — |
 | Field declaration | [Field declaration: types, display and value mappings](https://github.com/Cerclique/wirdigen/issues/41) | [0015](adr/0015-own-field-vocabulary.md) |
 | Expression depth | [Deeply nested Expressions or Type chains abort the process](https://github.com/Cerclique/wirdigen/issues/191) | [0018](adr/0018-expression-depth-limit.md) |
+| Lua limits | [A Dissector with more than ~200 Fields or ~95 Types fails to load](https://github.com/Cerclique/wirdigen/issues/199) | [0019](adr/0019-generated-lua-within-lua-function-limits.md) |
 
 Research notes behind the first three rows live in [`docs/research/`](research/).

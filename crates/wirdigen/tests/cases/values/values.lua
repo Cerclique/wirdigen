@@ -33,180 +33,182 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("values", "VALUES")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_MsgType = {
+wd.enum_MsgType = {
     { 1, 1, "Request" },
     { 2, 2, "Response" },
     { 16, 31, "Vendor" },
 }
 
-local enum_Level = {
+wd.enum_Level = {
     [0] = "Off",
 }
 
-local enum_Level_2 = {
+wd.enum_Level_2 = {
     [0] = "Off",
     [300] = "Overdrive",
 }
 
-local f_msg_type = ProtoField.uint8("values.msg_type", "Msg type", base.DEC + base.RANGE_STRING, enum_MsgType)
-local f_reply_type = ProtoField.uint8("values.reply_type", "Reply type", base.DEC + base.RANGE_STRING, enum_MsgType, nil, "The type this message answers")
-local f_status = ProtoField.uint16("values.status", "Status", base.HEX, {
+wd.f_msg_type = ProtoField.uint8("values.msg_type", "Msg type", base.DEC + base.RANGE_STRING, wd.enum_MsgType)
+wd.f_reply_type = ProtoField.uint8("values.reply_type", "Reply type", base.DEC + base.RANGE_STRING, wd.enum_MsgType, nil, "The type this message answers")
+wd.f_status = ProtoField.uint16("values.status", "Status", base.HEX, {
     [0] = "OK",
     [1] = "Retry",
     [65535] = "Failed",
 })
-local f_delta = ProtoField.int8("values.delta", "Delta", base.DEC + base.RANGE_STRING, {
+wd.f_delta = ProtoField.int8("values.delta", "Delta", base.DEC + base.RANGE_STRING, {
     { 4294967168, 4294967295, "Behind" },
     { 0, 0, "Even" },
     { 1, 127, "Ahead" },
 })
-local f_drift = ProtoField.int32("values.drift", "Drift", base.DEC + base.RANGE_STRING, {
+wd.f_drift = ProtoField.int32("values.drift", "Drift", base.DEC + base.RANGE_STRING, {
     { 4294967286, 4294967295, "Small" },
     { 0, 10, "Small" },
 })
-local f_level8 = ProtoField.uint8("values.level8", "Level8", base.DEC, enum_Level)
-local f_level16 = ProtoField.uint16("values.level16", "Level16", base.DEC, enum_Level_2)
-local f_huge = ProtoField.uint64("values.huge", "Huge", base.DEC, {
+wd.f_level8 = ProtoField.uint8("values.level8", "Level8", base.DEC, wd.enum_Level)
+wd.f_level16 = ProtoField.uint16("values.level16", "Level16", base.DEC, wd.enum_Level_2)
+wd.f_huge = ProtoField.uint64("values.huge", "Huge", base.DEC, {
     [-1] = "All ones",
 })
-local f_id48 = ProtoField.uint64("values.id48", "Id48", base.DEC + base.RANGE_STRING, {
+wd.f_id48 = ProtoField.uint64("values.id48", "Id48", base.DEC + base.RANGE_STRING, {
     { 0, 65535, "Low" },
 })
-local f_enabled = ProtoField.bool("values.enabled", "Enabled", base.NONE, { "Enabled", "Disabled" })
-local f_urgent = ProtoField.bool("values.urgent", "Urgent", base.NONE, { "Urgent", "False" })
-local f_length = ProtoField.uint16("values.length", "Length", base.DEC + base.UNIT_STRING, { " byte", " bytes" })
-local f_timeout = ProtoField.int16("values.timeout", "Timeout", base.DEC + base.UNIT_STRING, { " ms" })
-local f_distance = ProtoField.float("values.distance", "Distance", { " metre", " metres" }, "Distance to the sender")
-local f_ratio = ProtoField.double("values.ratio", "Ratio", { " %" })
+wd.f_enabled = ProtoField.bool("values.enabled", "Enabled", base.NONE, { "Enabled", "Disabled" })
+wd.f_urgent = ProtoField.bool("values.urgent", "Urgent", base.NONE, { "Urgent", "False" })
+wd.f_length = ProtoField.uint16("values.length", "Length", base.DEC + base.UNIT_STRING, { " byte", " bytes" })
+wd.f_timeout = ProtoField.int16("values.timeout", "Timeout", base.DEC + base.UNIT_STRING, { " ms" })
+wd.f_distance = ProtoField.float("values.distance", "Distance", { " metre", " metres" }, "Distance to the sender")
+wd.f_ratio = ProtoField.double("values.ratio", "Ratio", { " %" })
 
 wd_proto.fields = {
-    f_msg_type,
-    f_reply_type,
-    f_status,
-    f_delta,
-    f_drift,
-    f_level8,
-    f_level16,
-    f_huge,
-    f_id48,
-    f_enabled,
-    f_urgent,
-    f_length,
-    f_timeout,
-    f_distance,
-    f_ratio,
+    wd.f_msg_type,
+    wd.f_reply_type,
+    wd.f_status,
+    wd.f_delta,
+    wd.f_drift,
+    wd.f_level8,
+    wd.f_level16,
+    wd.f_huge,
+    wd.f_id48,
+    wd.f_enabled,
+    wd.f_urgent,
+    wd.f_length,
+    wd.f_timeout,
+    wd.f_distance,
+    wd.f_ratio,
 }
 
 local wd_ei_truncated = wd_expert_truncated("values")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: msg_type
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "msg_type")
         return nil
     end
-    tree:add(f_msg_type, tvb(offset, 1))
+    tree:add(wd.f_msg_type, tvb(offset, 1))
     offset = offset + 1
     -- Field: reply_type
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "reply_type")
         return nil
     end
-    tree:add(f_reply_type, tvb(offset, 1))
+    tree:add(wd.f_reply_type, tvb(offset, 1))
     offset = offset + 1
     -- Field: status
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "status")
         return nil
     end
-    tree:add(f_status, tvb(offset, 2))
+    tree:add(wd.f_status, tvb(offset, 2))
     offset = offset + 2
     -- Field: delta
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "delta")
         return nil
     end
-    tree:add(f_delta, tvb(offset, 1))
+    tree:add(wd.f_delta, tvb(offset, 1))
     offset = offset + 1
     -- Field: drift
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "drift")
         return nil
     end
-    tree:add(f_drift, tvb(offset, 4))
+    tree:add(wd.f_drift, tvb(offset, 4))
     offset = offset + 4
     -- Field: level8
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "level8")
         return nil
     end
-    tree:add(f_level8, tvb(offset, 1))
+    tree:add(wd.f_level8, tvb(offset, 1))
     offset = offset + 1
     -- Field: level16
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "level16")
         return nil
     end
-    tree:add(f_level16, tvb(offset, 2))
+    tree:add(wd.f_level16, tvb(offset, 2))
     offset = offset + 2
     -- Field: huge
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "huge")
         return nil
     end
-    tree:add(f_huge, tvb(offset, 8))
+    tree:add(wd.f_huge, tvb(offset, 8))
     offset = offset + 8
     -- Field: id48
     if not wd_fits(tvb, offset, 6) then
         wd_truncated(tree, wd_ei_truncated, "id48")
         return nil
     end
-    tree:add(f_id48, tvb(offset, 6), tvb(offset, 6):uint64())
+    tree:add(wd.f_id48, tvb(offset, 6), tvb(offset, 6):uint64())
     offset = offset + 6
     -- Field: enabled
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "enabled")
         return nil
     end
-    tree:add(f_enabled, tvb(offset, 1))
+    tree:add(wd.f_enabled, tvb(offset, 1))
     offset = offset + 1
     -- Field: urgent
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "urgent")
         return nil
     end
-    tree:add(f_urgent, tvb(offset, 1))
+    tree:add(wd.f_urgent, tvb(offset, 1))
     offset = offset + 1
     -- Field: length
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "length")
         return nil
     end
-    tree:add(f_length, tvb(offset, 2))
+    tree:add(wd.f_length, tvb(offset, 2))
     offset = offset + 2
     -- Field: timeout
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "timeout")
         return nil
     end
-    tree:add(f_timeout, tvb(offset, 2))
+    tree:add(wd.f_timeout, tvb(offset, 2))
     offset = offset + 2
     -- Field: distance
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "distance")
         return nil
     end
-    tree:add(f_distance, tvb(offset, 4))
+    tree:add(wd.f_distance, tvb(offset, 4))
     offset = offset + 4
     -- Field: ratio
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "ratio")
         return nil
     end
-    tree:add(f_ratio, tvb(offset, 8))
+    tree:add(wd.f_ratio, tvb(offset, 8))
     offset = offset + 8
     return offset
 end
@@ -214,7 +216,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "VALUES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "VALUES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

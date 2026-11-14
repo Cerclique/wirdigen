@@ -4,10 +4,11 @@ Wirdigen turns a validated Protocol Description into Lua in two steps. A **lower
 
 The `arise` branch did placeholder substitution on a flat `template.lua`. That cannot express nested Types, `if`/`switch`, arrays and Framing, which all recurse, and a template engine would split the logic that decides what code a Field needs between template and Rust.
 
-- **Types**: each becomes one `local function dissect_<Type>`, defined in dependency order (recursive Types are a validation error), taking and returning the offset. Locals are created only for Fields some Expression or `info:` template references; outer scopes are reached through a context table.
+- **Types**: each becomes one dissect function, `wd.dissect_<Type>` (ADR 0019), defined in dependency order (recursive Types are a validation error), taking and returning the offset. Values are kept only for Fields some Expression or `info:` template references; outer scopes are reached through a context table.
 - **Prelude**: split into named chunks. A chunk's dependencies are worked out from its own text: the chunks defining the `wd_` names it uses. A Dissector's chunks are worked out from its emitted Lua the same way: the emitter prints the body first, then the header (the prelude, ProtoFields and expert infos) from the chunks the body uses plus their dependencies, in the prelude's own fixed order. The version guard and malformed-packet reporting are always included. Lowering names no helper and picks no chunk.
 - **Determinism**: the same description bytes and Wirdigen version produce byte-identical Lua on every OS: no timestamps or paths, ordered maps only, `\n` line endings, a trailing newline. A header comment names the Wirdigen version, the description's file name and "Requires Wireshark >= 4.4".
 - **Readability**: the emitter owns a fixed format (4-space indent, no external formatter). Comments name each Type and each Field's path, but no source line numbers. User names are always mangled (`f_<name>`, `dissect_<Type>`) and prelude names start with `wd_`, so a Field called `end` or `type` cannot clash with Lua or the prelude.
+- **Lua's limits**: how the emitted Lua stays within Lua's per-function limits of locals, upvalues, registers and nesting, whatever the size of the description, is ADR 0019.
 - **Boundary**: the lowered model and the emitter are not public API. Generation from a validated description cannot fail: everything lowering relies on is a validation check, so a lowering failure is a Wirdigen bug, not a Diagnostic.
 
 ## Consequences

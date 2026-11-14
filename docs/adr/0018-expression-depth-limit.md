@@ -10,14 +10,14 @@ The value comes from the target, not from Rust's stack. Operators are lowered to
 | 10 | 150 |
 | 20 | 60 to 100 |
 
-At 64, an Expression loads under 20 nested Structures, which is about as deep as the generated code itself can nest (#199). That is still far above anything written by hand. Parentheses alone add no Lua nesting, but they count anyway: that keeps the parser to a single counter, and no description needs 64 of them.
+At 64, an Expression loads under 20 nested Structures. Since ADR 0019, a dissect function never holds more than a few levels of blocks, so it loads however deeply it is nested in the description. That is still far above anything written by hand. Parentheses alone add no Lua nesting, but they count anyway: that keeps the parser to a single counter, and no description needs 64 of them.
 
 ## Consequences
 
 - Raising the limit later is a minor change. Lowering it rejects descriptions that used to be accepted, which is a major change (ADR 0008).
 - Every pass after the parser can stay recursive, because no Expression it receives is deeper than 64.
-- The limit does not guarantee that a Dissector loads. The Lua locals limit (#199) is a separate constraint on how large a description can be.
-- The Type dependency walk and the walk of the names a Type reads are made iterative. This does not make long chains of Types safe: other passes still recurse once per Type, and the site tables nest once per Type in the generated Lua, so a chain stops loading at about 150 Types. That is left to #207.
+- Lua's limits on locals, upvalues and registers were a separate constraint on how large a description could be (#199). ADR 0019 removes it.
+- The Type dependency walk and the walk of the names a Type reads are made iterative. This does not make long chains of Types safe: other passes still recurse once per Type, which is left to #207. The site tables no longer nest in the generated Lua (ADR 0019), so a chain of 500 Types loads.
 
 ## Considered Options
 

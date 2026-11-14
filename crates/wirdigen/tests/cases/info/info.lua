@@ -128,87 +128,89 @@ end
 local wd_info_cases = {}
 
 local wd_proto = Proto("info", "INFO")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_Kind = {
+wd.enum_Kind = {
     [1] = "Login",
     [2] = "Code",
 }
 
 -- The names of values, for switch Fields and the Info column
-local names_kind = {
+wd.names_kind = {
     { 1, 1, "Login" },
     { 2, 2, "Code" },
 }
-local names_flags__prio = {
+wd.names_flags__prio = {
     { 0, 0, "low" },
     { 7, 7, "high" },
 }
-local names_big = {
+wd.names_big = {
     { -1, -1, "max" },
 }
 
-local f_kind = ProtoField.uint8("info.kind", "Kind", base.DEC, enum_Kind)
-local f_seq = ProtoField.uint16("info.seq", "Seq", base.HEX)
-local f_flags = ProtoField.uint8("info.flags", "Flags", base.DEC)
-local f_flags__urgent = ProtoField.bool("info.flags.urgent", "Urgent", 8, { "Set", "Not set" }, 0x80)
-local f_flags__prio = ProtoField.uint8("info.flags.prio", "Prio", base.DEC, {
+wd.f_kind = ProtoField.uint8("info.kind", "Kind", base.DEC, wd.enum_Kind)
+wd.f_seq = ProtoField.uint16("info.seq", "Seq", base.HEX)
+wd.f_flags = ProtoField.uint8("info.flags", "Flags", base.DEC)
+wd.f_flags__urgent = ProtoField.bool("info.flags.urgent", "Urgent", 8, { "Set", "Not set" }, 0x80)
+wd.f_flags__prio = ProtoField.uint8("info.flags.prio", "Prio", base.DEC, {
     [0] = "low",
     [7] = "high",
 }, 0x70)
-local f_body = ProtoField.none("info.body", "Body")
-local f_body__user = ProtoField.string("info.body.user", "User", base.NONE)
-local f_body__code = ProtoField.uint8("info.body.code", "Code", base.DEC)
-local f_note = ProtoField.string("info.note", "Note", base.NONE)
-local f_hdr = ProtoField.none("info.hdr", "Hdr")
-local f_hdr__len = ProtoField.uint16("info.hdr.len", "Len", base.DEC + base.UNIT_STRING, { " byte", " bytes" })
-local f_addr = ProtoField.ipv4("info.addr", "Addr")
-local f_big = ProtoField.uint64("info.big", "Big", base.DEC, {
+wd.f_body = ProtoField.none("info.body", "Body")
+wd.f_body__user = ProtoField.string("info.body.user", "User", base.NONE)
+wd.f_body__code = ProtoField.uint8("info.body.code", "Code", base.DEC)
+wd.f_note = ProtoField.string("info.note", "Note", base.NONE)
+wd.f_hdr = ProtoField.none("info.hdr", "Hdr")
+wd.f_hdr__len = ProtoField.uint16("info.hdr.len", "Len", base.DEC + base.UNIT_STRING, { " byte", " bytes" })
+wd.f_addr = ProtoField.ipv4("info.addr", "Addr")
+wd.f_big = ProtoField.uint64("info.big", "Big", base.DEC, {
     [-1] = "max",
 })
-local f_ok = ProtoField.bool("info.ok", "Ok", base.NONE, { "yes", "no" })
-local f_secret = ProtoField.uint8("info.secret", "Secret", base.DEC)
+wd.f_ok = ProtoField.bool("info.ok", "Ok", base.NONE, { "yes", "no" })
+wd.f_secret = ProtoField.uint8("info.secret", "Secret", base.DEC)
 local wd_f_unmatched = wd_field_unmatched("info")
 
 wd_proto.fields = {
-    f_kind,
-    f_seq,
-    f_flags,
-    f_flags__urgent,
-    f_flags__prio,
-    f_body,
-    f_body__user,
-    f_body__code,
-    f_note,
-    f_hdr,
-    f_hdr__len,
-    f_addr,
-    f_big,
-    f_ok,
-    f_secret,
+    wd.f_kind,
+    wd.f_seq,
+    wd.f_flags,
+    wd.f_flags__urgent,
+    wd.f_flags__prio,
+    wd.f_body,
+    wd.f_body__user,
+    wd.f_body__code,
+    wd.f_note,
+    wd.f_hdr,
+    wd.f_hdr__len,
+    wd.f_addr,
+    wd.f_big,
+    wd.f_ok,
+    wd.f_secret,
     wd_f_unmatched,
 }
 
 -- The Fields the Info column shows, extracted from each packet once it is read
-local x_kind = Field.new("info.kind")
-local x_seq = Field.new("info.seq")
-local x_flags__urgent = Field.new("info.flags.urgent")
-local x_flags__prio = Field.new("info.flags.prio")
-local x_body__user = Field.new("info.body.user")
-local x_note = Field.new("info.note")
-local x_hdr__len = Field.new("info.hdr.len")
-local x_addr = Field.new("info.addr")
-local x_big = Field.new("info.big")
-local x_ok = Field.new("info.ok")
-local x_secret = Field.new("info.secret")
+wd.x_kind = Field.new("info.kind")
+wd.x_seq = Field.new("info.seq")
+wd.x_flags__urgent = Field.new("info.flags.urgent")
+wd.x_flags__prio = Field.new("info.flags.prio")
+wd.x_body__user = Field.new("info.body.user")
+wd.x_note = Field.new("info.note")
+wd.x_hdr__len = Field.new("info.hdr.len")
+wd.x_addr = Field.new("info.addr")
+wd.x_big = Field.new("info.big")
+wd.x_ok = Field.new("info.ok")
+wd.x_secret = Field.new("info.secret")
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_body__Login = {
+wd.site_body__Login = {
     path = "body",
-    f_user = f_body__user,
+    f_user = wd.f_body__user,
 }
-local site_hdr = {
+wd.site_hdr = {
     path = "hdr",
-    f_len = f_hdr__len,
+    f_len = wd.f_hdr__len,
 }
 
 local wd_ei_truncated = wd_expert_truncated("info")
@@ -216,7 +218,7 @@ local wd_ei_unmatched = wd_expert_unmatched("info")
 wd_proto.experts = { wd_ei_truncated, wd_ei_unmatched }
 
 -- Type: Login
-local function dissect_Login(tvb, pinfo, tree, offset, site)
+function wd.dissect_Login(tvb, pinfo, tree, offset, site)
     -- Field: user
     if not wd_fits(tvb, offset, 3) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".user")
@@ -228,7 +230,7 @@ local function dissect_Login(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Header
-local function dissect_Header(tvb, pinfo, tree, offset, site)
+function wd.dissect_Header(tvb, pinfo, tree, offset, site)
     -- Field: len
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".len")
@@ -240,22 +242,22 @@ local function dissect_Header(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_kind
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: kind
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "kind")
         return nil
     end
-    tree:add(f_kind, tvb(offset, 1))
-    v_kind = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_kind, tvb(offset, 1))
+    v.kind = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: seq
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "seq")
         return nil
     end
-    tree:add(f_seq, tvb(offset, 2))
+    tree:add(wd.f_seq, tvb(offset, 2))
     offset = offset + 2
     -- Field: flags
     if not wd_fits(tvb, offset, 1) then
@@ -263,21 +265,21 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_flags, tvb(offset, 1))
-        item:add(f_flags__urgent, tvb(offset, 1))
-        item:add(f_flags__prio, tvb(offset, 1))
+        local item = tree:add(wd.f_flags, tvb(offset, 1))
+        item:add(wd.f_flags__urgent, tvb(offset, 1))
+        item:add(wd.f_flags__prio, tvb(offset, 1))
     end
     offset = offset + 1
     -- Switch: body
     do
-        local subject = v_kind
+        local subject = v.kind
         local start = offset
-        local tree = tree:add(f_body, tvb(offset, tvb:len() - offset))
-        local name = wd_case_name(names_kind, subject)
+        local tree = tree:add(wd.f_body, tvb(offset, tvb:len() - offset))
+        local name = wd_case_name(wd.names_kind, subject)
         tree:append_text(": " .. name)
         wd_info_cases["body"] = name
         if subject == 1 then
-            offset = dissect_Login(tvb, pinfo, tree, offset, site_body__Login)
+            offset = wd.dissect_Login(tvb, pinfo, tree, offset, wd.site_body__Login)
             if not offset then
                 return nil
             end
@@ -287,7 +289,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "body.code")
                 return nil
             end
-            tree:add(f_body__code, tvb(offset, 1))
+            tree:add(wd.f_body__code, tvb(offset, 1))
             offset = offset + 1
         else
             wd_unmatched(tree, wd_f_unmatched, wd_ei_unmatched, tvb, offset, subject, "body")
@@ -297,7 +299,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- If: note
     do
-        local condition = wd_eq(v_kind, 2)
+        local condition = wd_eq(v.kind, 2)
         if condition ~= 0 then
             -- Field: note
             do
@@ -311,7 +313,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                     wd_truncated(tree, wd_ei_truncated, "note")
                     return nil
                 end
-                tree:add_packet_field(f_note, tvb(offset, len), ENC_UTF_8)
+                tree:add_packet_field(wd.f_note, tvb(offset, len), ENC_UTF_8)
                 offset = offset + len
             end
         end
@@ -319,8 +321,8 @@ local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: hdr
     do
         local start = offset
-        local tree = tree:add(f_hdr, tvb(offset, tvb:len() - offset))
-        offset = dissect_Header(tvb, pinfo, tree, offset, site_hdr)
+        local tree = tree:add(wd.f_hdr, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Header(tvb, pinfo, tree, offset, wd.site_hdr)
         if not offset then
             return nil
         end
@@ -331,28 +333,28 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "addr")
         return nil
     end
-    tree:add(f_addr, tvb(offset, 4))
+    tree:add(wd.f_addr, tvb(offset, 4))
     offset = offset + 4
     -- Field: big
     if not wd_fits(tvb, offset, 8) then
         wd_truncated(tree, wd_ei_truncated, "big")
         return nil
     end
-    tree:add(f_big, tvb(offset, 8))
+    tree:add(wd.f_big, tvb(offset, 8))
     offset = offset + 8
     -- Field: ok
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "ok")
         return nil
     end
-    tree:add(f_ok, tvb(offset, 1))
+    tree:add(wd.f_ok, tvb(offset, 1))
     offset = offset + 1
     -- Field: secret
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "secret")
         return nil
     end
-    tree:add(f_secret, tvb(offset, 1)):set_hidden(true)
+    tree:add(wd.f_secret, tvb(offset, 1)):set_hidden(true)
     offset = offset + 1
     return offset
 end
@@ -360,11 +362,11 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "INFO"
     wd_info_cases = {}
-    local before = wd_info_counts({ x_kind, x_seq, x_flags__urgent, x_flags__prio, x_body__user, x_note, x_hdr__len, x_addr, x_big, x_ok, x_secret })
+    local before = wd_info_counts({ wd.x_kind, wd.x_seq, wd.x_flags__urgent, wd.x_flags__prio, wd.x_body__user, wd.x_note, wd.x_hdr__len, wd.x_addr, wd.x_big, wd.x_ok, wd.x_secret })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     pinfo.cols.info:clear_fence()
-    pinfo.cols.info = wd_info_label(x_kind, before, names_kind) .. " #" .. wd_info_display(x_seq, before) .. " [" .. wd_info_display(x_flags__urgent, before) .. " " .. wd_info_label(x_flags__prio, before, names_flags__prio) .. "] {" .. (wd_info_cases["body"] or "") .. "} user=" .. wd_info_display(x_body__user, before) .. " note=" .. wd_info_display(x_note, before) .. " " .. wd_info_display(x_hdr__len, before) .. " from " .. wd_info_display(x_addr, before) .. " " .. wd_info_label(x_big, before, names_big) .. " ok=" .. wd_info_display(x_ok, before) .. " " .. wd_info_display(x_secret, before)
+    pinfo.cols.info = wd_info_label(wd.x_kind, before, wd.names_kind) .. " #" .. wd_info_display(wd.x_seq, before) .. " [" .. wd_info_display(wd.x_flags__urgent, before) .. " " .. wd_info_label(wd.x_flags__prio, before, wd.names_flags__prio) .. "] {" .. (wd_info_cases["body"] or "") .. "} user=" .. wd_info_display(wd.x_body__user, before) .. " note=" .. wd_info_display(wd.x_note, before) .. " " .. wd_info_display(wd.x_hdr__len, before) .. " from " .. wd_info_display(wd.x_addr, before) .. " " .. wd_info_label(wd.x_big, before, wd.names_big) .. " ok=" .. wd_info_display(wd.x_ok, before) .. " " .. wd_info_display(wd.x_secret, before)
     return tvb:len()
 end
 

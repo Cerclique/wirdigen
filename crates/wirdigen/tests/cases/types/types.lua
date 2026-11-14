@@ -46,94 +46,98 @@ local function wd_terminated(tvb, offset, terminator, width)
 end
 
 local wd_proto = Proto("types", "TYPES")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_Kind = {
+wd.enum_Kind = {
     [1] = "Request",
     [2] = "Response",
 }
 
-local f_req_hdr = ProtoField.none("types.req_hdr", "Request header")
-local f_req_hdr__kind = ProtoField.uint8("types.req_hdr.kind", "Kind", base.DEC, enum_Kind)
-local f_req_hdr__len = ProtoField.uint16("types.req_hdr.len", "Len", base.DEC)
-local f_req_hdr__opts = ProtoField.none("types.req_hdr.opts", "Opts")
-local f_req_hdr__opts__ttl = ProtoField.uint8("types.req_hdr.opts.ttl", "Ttl", base.DEC)
-local f_req_hdr__stamp = ProtoField.none("types.req_hdr.stamp", "Stamp")
-local f_req_hdr__stamp__secs = ProtoField.uint32("types.req_hdr.stamp.secs", "Secs", base.DEC)
-local f_req_hdr__stamp__tag = ProtoField.stringz("types.req_hdr.stamp.tag", "Tag", base.NONE)
-local f_resp_hdr = ProtoField.none("types.resp_hdr", "Resp hdr")
-local f_resp_hdr__kind = ProtoField.uint8("types.resp_hdr.kind", "Kind", base.DEC, enum_Kind)
-local f_resp_hdr__len = ProtoField.uint16("types.resp_hdr.len", "Len", base.DEC)
-local f_resp_hdr__opts = ProtoField.none("types.resp_hdr.opts", "Opts")
-local f_resp_hdr__opts__ttl = ProtoField.uint8("types.resp_hdr.opts.ttl", "Ttl", base.DEC)
-local f_resp_hdr__stamp = ProtoField.none("types.resp_hdr.stamp", "Stamp")
-local f_resp_hdr__stamp__secs = ProtoField.uint32("types.resp_hdr.stamp.secs", "Secs", base.DEC)
-local f_resp_hdr__stamp__tag = ProtoField.stringz("types.resp_hdr.stamp.tag", "Tag", base.NONE)
-local f_trailer = ProtoField.none("types.trailer", "Trailer")
-local f_trailer__stamp = ProtoField.none("types.trailer.stamp", "Stamp")
-local f_trailer__stamp__secs = ProtoField.uint32("types.trailer.stamp.secs", "Secs", base.DEC)
-local f_trailer__stamp__tag = ProtoField.stringz("types.trailer.stamp.tag", "Tag", base.NONE)
+wd.f_req_hdr = ProtoField.none("types.req_hdr", "Request header")
+wd.f_req_hdr__kind = ProtoField.uint8("types.req_hdr.kind", "Kind", base.DEC, wd.enum_Kind)
+wd.f_req_hdr__len = ProtoField.uint16("types.req_hdr.len", "Len", base.DEC)
+wd.f_req_hdr__opts = ProtoField.none("types.req_hdr.opts", "Opts")
+wd.f_req_hdr__opts__ttl = ProtoField.uint8("types.req_hdr.opts.ttl", "Ttl", base.DEC)
+wd.f_req_hdr__stamp = ProtoField.none("types.req_hdr.stamp", "Stamp")
+wd.f_req_hdr__stamp__secs = ProtoField.uint32("types.req_hdr.stamp.secs", "Secs", base.DEC)
+wd.f_req_hdr__stamp__tag = ProtoField.stringz("types.req_hdr.stamp.tag", "Tag", base.NONE)
+wd.f_resp_hdr = ProtoField.none("types.resp_hdr", "Resp hdr")
+wd.f_resp_hdr__kind = ProtoField.uint8("types.resp_hdr.kind", "Kind", base.DEC, wd.enum_Kind)
+wd.f_resp_hdr__len = ProtoField.uint16("types.resp_hdr.len", "Len", base.DEC)
+wd.f_resp_hdr__opts = ProtoField.none("types.resp_hdr.opts", "Opts")
+wd.f_resp_hdr__opts__ttl = ProtoField.uint8("types.resp_hdr.opts.ttl", "Ttl", base.DEC)
+wd.f_resp_hdr__stamp = ProtoField.none("types.resp_hdr.stamp", "Stamp")
+wd.f_resp_hdr__stamp__secs = ProtoField.uint32("types.resp_hdr.stamp.secs", "Secs", base.DEC)
+wd.f_resp_hdr__stamp__tag = ProtoField.stringz("types.resp_hdr.stamp.tag", "Tag", base.NONE)
+wd.f_trailer = ProtoField.none("types.trailer", "Trailer")
+wd.f_trailer__stamp = ProtoField.none("types.trailer.stamp", "Stamp")
+wd.f_trailer__stamp__secs = ProtoField.uint32("types.trailer.stamp.secs", "Secs", base.DEC)
+wd.f_trailer__stamp__tag = ProtoField.stringz("types.trailer.stamp.tag", "Tag", base.NONE)
 
 wd_proto.fields = {
-    f_req_hdr,
-    f_req_hdr__kind,
-    f_req_hdr__len,
-    f_req_hdr__opts,
-    f_req_hdr__opts__ttl,
-    f_req_hdr__stamp,
-    f_req_hdr__stamp__secs,
-    f_req_hdr__stamp__tag,
-    f_resp_hdr,
-    f_resp_hdr__kind,
-    f_resp_hdr__len,
-    f_resp_hdr__opts,
-    f_resp_hdr__opts__ttl,
-    f_resp_hdr__stamp,
-    f_resp_hdr__stamp__secs,
-    f_resp_hdr__stamp__tag,
-    f_trailer,
-    f_trailer__stamp,
-    f_trailer__stamp__secs,
-    f_trailer__stamp__tag,
+    wd.f_req_hdr,
+    wd.f_req_hdr__kind,
+    wd.f_req_hdr__len,
+    wd.f_req_hdr__opts,
+    wd.f_req_hdr__opts__ttl,
+    wd.f_req_hdr__stamp,
+    wd.f_req_hdr__stamp__secs,
+    wd.f_req_hdr__stamp__tag,
+    wd.f_resp_hdr,
+    wd.f_resp_hdr__kind,
+    wd.f_resp_hdr__len,
+    wd.f_resp_hdr__opts,
+    wd.f_resp_hdr__opts__ttl,
+    wd.f_resp_hdr__stamp,
+    wd.f_resp_hdr__stamp__secs,
+    wd.f_resp_hdr__stamp__tag,
+    wd.f_trailer,
+    wd.f_trailer__stamp,
+    wd.f_trailer__stamp__secs,
+    wd.f_trailer__stamp__tag,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_req_hdr = {
+wd.site_req_hdr__stamp = {
+    path = "req_hdr.stamp",
+    f_secs = wd.f_req_hdr__stamp__secs,
+    f_tag = wd.f_req_hdr__stamp__tag,
+}
+wd.site_req_hdr = {
     path = "req_hdr",
-    f_kind = f_req_hdr__kind,
-    f_len = f_req_hdr__len,
-    f_opts = f_req_hdr__opts,
-    f_opts__ttl = f_req_hdr__opts__ttl,
-    f_stamp = f_req_hdr__stamp,
-    t_stamp = {
-        path = "req_hdr.stamp",
-        f_secs = f_req_hdr__stamp__secs,
-        f_tag = f_req_hdr__stamp__tag,
-    },
+    f_kind = wd.f_req_hdr__kind,
+    f_len = wd.f_req_hdr__len,
+    f_opts = wd.f_req_hdr__opts,
+    f_opts__ttl = wd.f_req_hdr__opts__ttl,
+    f_stamp = wd.f_req_hdr__stamp,
+    t_stamp = wd.site_req_hdr__stamp,
 }
-local site_resp_hdr = {
+wd.site_resp_hdr__stamp = {
+    path = "resp_hdr.stamp",
+    f_secs = wd.f_resp_hdr__stamp__secs,
+    f_tag = wd.f_resp_hdr__stamp__tag,
+}
+wd.site_resp_hdr = {
     path = "resp_hdr",
-    f_kind = f_resp_hdr__kind,
-    f_len = f_resp_hdr__len,
-    f_opts = f_resp_hdr__opts,
-    f_opts__ttl = f_resp_hdr__opts__ttl,
-    f_stamp = f_resp_hdr__stamp,
-    t_stamp = {
-        path = "resp_hdr.stamp",
-        f_secs = f_resp_hdr__stamp__secs,
-        f_tag = f_resp_hdr__stamp__tag,
-    },
+    f_kind = wd.f_resp_hdr__kind,
+    f_len = wd.f_resp_hdr__len,
+    f_opts = wd.f_resp_hdr__opts,
+    f_opts__ttl = wd.f_resp_hdr__opts__ttl,
+    f_stamp = wd.f_resp_hdr__stamp,
+    t_stamp = wd.site_resp_hdr__stamp,
 }
-local site_trailer__stamp = {
+wd.site_trailer__stamp = {
     path = "trailer.stamp",
-    f_secs = f_trailer__stamp__secs,
-    f_tag = f_trailer__stamp__tag,
+    f_secs = wd.f_trailer__stamp__secs,
+    f_tag = wd.f_trailer__stamp__tag,
 }
 
 local wd_ei_truncated = wd_expert_truncated("types")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Type: Stamp
-local function dissect_Stamp(tvb, pinfo, tree, offset, site)
+function wd.dissect_Stamp(tvb, pinfo, tree, offset, site)
     -- Field: secs
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".secs")
@@ -155,7 +159,7 @@ local function dissect_Stamp(tvb, pinfo, tree, offset, site)
 end
 
 -- Type: Header
-local function dissect_Header(tvb, pinfo, tree, offset, site)
+function wd.dissect_Header(tvb, pinfo, tree, offset, site)
     -- Field: kind
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".kind")
@@ -187,7 +191,7 @@ local function dissect_Header(tvb, pinfo, tree, offset, site)
     do
         local start = offset
         local tree = tree:add(site.f_stamp, tvb(offset, tvb:len() - offset))
-        offset = dissect_Stamp(tvb, pinfo, tree, offset, site.t_stamp)
+        offset = wd.dissect_Stamp(tvb, pinfo, tree, offset, site.t_stamp)
         if not offset then
             return nil
         end
@@ -197,12 +201,12 @@ local function dissect_Header(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: req_hdr
     do
         local start = offset
-        local tree = tree:add(f_req_hdr, tvb(offset, tvb:len() - offset))
-        offset = dissect_Header(tvb, pinfo, tree, offset, site_req_hdr)
+        local tree = tree:add(wd.f_req_hdr, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Header(tvb, pinfo, tree, offset, wd.site_req_hdr)
         if not offset then
             return nil
         end
@@ -211,8 +215,8 @@ local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: resp_hdr
     do
         local start = offset
-        local tree = tree:add(f_resp_hdr, tvb(offset, tvb:len() - offset))
-        offset = dissect_Header(tvb, pinfo, tree, offset, site_resp_hdr)
+        local tree = tree:add(wd.f_resp_hdr, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Header(tvb, pinfo, tree, offset, wd.site_resp_hdr)
         if not offset then
             return nil
         end
@@ -221,12 +225,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
     -- Field: trailer
     do
         local start = offset
-        local tree = tree:add(f_trailer, tvb(offset, tvb:len() - offset))
+        local tree = tree:add(wd.f_trailer, tvb(offset, tvb:len() - offset))
         -- Field: trailer.stamp
         do
             local start = offset
-            local tree = tree:add(f_trailer__stamp, tvb(offset, tvb:len() - offset))
-            offset = dissect_Stamp(tvb, pinfo, tree, offset, site_trailer__stamp)
+            local tree = tree:add(wd.f_trailer__stamp, tvb(offset, tvb:len() - offset))
+            offset = wd.dissect_Stamp(tvb, pinfo, tree, offset, wd.site_trailer__stamp)
             if not offset then
                 return nil
             end
@@ -240,7 +244,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "TYPES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "TYPES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

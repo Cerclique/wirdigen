@@ -96,37 +96,39 @@ local function wd_expect(item, value, ranges, expected, expert_info, path)
 end
 
 local wd_proto = Proto("expect", "EXPECT")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_magic = ProtoField.uint16("expect.magic", "Magic", base.HEX)
-local f_version = ProtoField.uint8("expect.version", "Version", base.DEC)
-local f_delta = ProtoField.int8("expect.delta", "Delta", base.DEC)
-local f_big = ProtoField.uint64("expect.big", "Big", base.DEC)
-local f_ready = ProtoField.bool("expect.ready", "Ready", base.NONE)
-local f_secret = ProtoField.uint8("expect.secret", "Secret", base.DEC)
-local f_flags = ProtoField.uint16("expect.flags", "Flags", base.DEC)
-local f_flags__kind = ProtoField.uint16("expect.flags.kind", "Kind", base.DEC, nil, 0xF000)
-local f_flags__on = ProtoField.bool("expect.flags.on", "On", 16, { "Set", "Not set" }, 0x0800)
-local f_point = ProtoField.none("expect.point", "Point")
-local f_point__x = ProtoField.uint8("expect.point.x", "X", base.DEC)
+wd.f_magic = ProtoField.uint16("expect.magic", "Magic", base.HEX)
+wd.f_version = ProtoField.uint8("expect.version", "Version", base.DEC)
+wd.f_delta = ProtoField.int8("expect.delta", "Delta", base.DEC)
+wd.f_big = ProtoField.uint64("expect.big", "Big", base.DEC)
+wd.f_ready = ProtoField.bool("expect.ready", "Ready", base.NONE)
+wd.f_secret = ProtoField.uint8("expect.secret", "Secret", base.DEC)
+wd.f_flags = ProtoField.uint16("expect.flags", "Flags", base.DEC)
+wd.f_flags__kind = ProtoField.uint16("expect.flags.kind", "Kind", base.DEC, nil, 0xF000)
+wd.f_flags__on = ProtoField.bool("expect.flags.on", "On", 16, { "Set", "Not set" }, 0x0800)
+wd.f_point = ProtoField.none("expect.point", "Point")
+wd.f_point__x = ProtoField.uint8("expect.point.x", "X", base.DEC)
 
 wd_proto.fields = {
-    f_magic,
-    f_version,
-    f_delta,
-    f_big,
-    f_ready,
-    f_secret,
-    f_flags,
-    f_flags__kind,
-    f_flags__on,
-    f_point,
-    f_point__x,
+    wd.f_magic,
+    wd.f_version,
+    wd.f_delta,
+    wd.f_big,
+    wd.f_ready,
+    wd.f_secret,
+    wd.f_flags,
+    wd.f_flags__kind,
+    wd.f_flags__on,
+    wd.f_point,
+    wd.f_point__x,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_point = {
+wd.site_point = {
     path = "point",
-    f_x = f_point__x,
+    f_x = wd.f_point__x,
 }
 
 local wd_ei_truncated = wd_expert_truncated("expect")
@@ -134,7 +136,7 @@ local wd_ei_unexpected = wd_expert_unexpected("expect")
 wd_proto.experts = { wd_ei_truncated, wd_ei_unexpected }
 
 -- Type: Point
-local function dissect_Point(tvb, pinfo, tree, offset, site)
+function wd.dissect_Point(tvb, pinfo, tree, offset, site)
     -- Field: x
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".x")
@@ -150,14 +152,14 @@ local function dissect_Point(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: magic
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "magic")
         return nil
     end
     do
-        local item = tree:add(f_magic, tvb(offset, 2))
+        local item = tree:add(wd.f_magic, tvb(offset, 2))
         local value = string.unpack(">I2", tvb:raw(offset, 2))
         wd_expect(item, value, { 51966, 51966 }, "0xcafe", wd_ei_unexpected, "magic")
     end
@@ -168,7 +170,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_version, tvb(offset, 1))
+        local item = tree:add(wd.f_version, tvb(offset, 1))
         local value = string.unpack(">I1", tvb:raw(offset, 1))
         wd_expect(item, value, { 1, 1, 5, 7 }, "1, 5-7", wd_ei_unexpected, "version")
     end
@@ -179,7 +181,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_delta, tvb(offset, 1))
+        local item = tree:add(wd.f_delta, tvb(offset, 1))
         local value = string.unpack(">i1", tvb:raw(offset, 1))
         wd_expect(item, value, { -2, -1 }, "-2--1", wd_ei_unexpected, "delta")
     end
@@ -190,7 +192,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_big, tvb(offset, 8))
+        local item = tree:add(wd.f_big, tvb(offset, 8))
         local value = string.unpack(">I8", tvb:raw(offset, 8))
         wd_expect(item, value, { 9223372036854775806, 9223372036854775807, (-9223372036854775807 - 1), -9223372036854775807 }, "9223372036854775806-9223372036854775809", wd_ei_unexpected, "big")
     end
@@ -201,7 +203,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_ready, tvb(offset, 1))
+        local item = tree:add(wd.f_ready, tvb(offset, 1))
         local value = wd_bool(tvb(offset, 1):uint() ~= 0)
         wd_expect(item, value, { 1, 1 }, "1", wd_ei_unexpected, "ready")
     end
@@ -212,7 +214,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_secret, tvb(offset, 1))
+        local item = tree:add(wd.f_secret, tvb(offset, 1))
         item:set_hidden(true)
         local value = string.unpack(">I1", tvb:raw(offset, 1))
         wd_expect(item, value, { 0, 0 }, "0", wd_ei_unexpected, "secret")
@@ -224,18 +226,18 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add_le(f_flags, tvb(offset, 2))
+        local item = tree:add_le(wd.f_flags, tvb(offset, 2))
         local value = string.unpack("<I2", tvb:raw(offset, 2))
         wd_expect(item, value, { 0, 32767 }, "0-0x7fff", wd_ei_unexpected, "flags")
-        wd_expect(item:add_le(f_flags__kind, tvb(offset, 2)), wd_band(wd_shr(value, 12), 15), { 2, 2, 3, 3 }, "2, 3", wd_ei_unexpected, "flags.kind")
-        wd_expect(item:add_le(f_flags__on, tvb(offset, 2)), wd_band(wd_shr(value, 11), 1), { 1, 1 }, "1", wd_ei_unexpected, "flags.on")
+        wd_expect(item:add_le(wd.f_flags__kind, tvb(offset, 2)), wd_band(wd_shr(value, 12), 15), { 2, 2, 3, 3 }, "2, 3", wd_ei_unexpected, "flags.kind")
+        wd_expect(item:add_le(wd.f_flags__on, tvb(offset, 2)), wd_band(wd_shr(value, 11), 1), { 1, 1 }, "1", wd_ei_unexpected, "flags.on")
     end
     offset = offset + 2
     -- Field: point
     do
         local start = offset
-        local tree = tree:add(f_point, tvb(offset, tvb:len() - offset))
-        offset = dissect_Point(tvb, pinfo, tree, offset, site_point)
+        local tree = tree:add(wd.f_point, tvb(offset, tvb:len() - offset))
+        offset = wd.dissect_Point(tvb, pinfo, tree, offset, wd.site_point)
         if not offset then
             return nil
         end
@@ -247,7 +249,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "EXPECT"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "EXPECT")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

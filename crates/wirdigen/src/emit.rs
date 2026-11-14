@@ -7,6 +7,15 @@
 //! The body, from the dissect functions on, is printed first. The prelude chunks it uses are
 //! worked out from its text, and the header (the prelude, the `ProtoField`s, the expert infos)
 //! is printed from them.
+//!
+//! No function may grow past Lua's limits of 200 locals, 255 upvalues and 255 registers,
+//! however large the description (#199). So the main chunk keeps each of the Dissector's own
+//! declarations (`ProtoField`s, value tables, site tables, field extractors, dissect functions)
+//! in one table, `wd`, rather than in a local each; a dissect function keeps the values
+//! Expressions read in one table, `v`; and a statement nested [`NESTING`] statements deep is a
+//! part: a function of its own, defined before the function it is in. Lua's parser also limits
+//! how deep blocks nest in the source (about 200 levels, counting each statement and
+//! expression), so the part cannot be a closure written in place.
 
 use std::fmt::Write as _;
 
@@ -28,6 +37,25 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct Writer {
     out: String,
     depth: usize,
+    /// How many statements holding statements the line being written is in, in the current Lua
+    /// function.
+    nesting: usize,
+    /// The dissect function being written.
+    frame: Frame,
+    /// The parts of the dissect function being written, each a function definition, in the
+    /// order they are defined: each after the parts it calls.
+    parts: Vec<String>,
+    /// How many parts the Dissector has so far.
+    part_count: usize,
+}
+
+/// A dissect function, as its parts see it.
+#[derive(Default)]
+struct Frame {
+    /// Its key in `wd` (`dissect_top`).
+    key: String,
+    /// The arguments it passes its parts: its own parameters, and its values table.
+    args: String,
 }
 
 impl Writer {
@@ -54,6 +82,28 @@ impl Writer {
         self.depth -= 1;
         self.line(close);
     }
+
+    /// What `write` writes, from no indentation and no nesting, rather than into `out`.
+    fn detached(&mut self, write: impl FnOnce(&mut Self)) -> String {
+        let out = std::mem::take(&mut self.out);
+        let depth = std::mem::replace(&mut self.depth, 0);
+        let nesting = std::mem::replace(&mut self.nesting, 0);
+        write(self);
+        self.depth = depth;
+        self.nesting = nesting;
+        std::mem::replace(&mut self.out, out)
+    }
+}
+
+/// How many statements holding statements (`if:`, `switch`, inline structures, arrays) nest in
+/// one Lua function before the next one is a part. Each holds at most 10 locals and 4 levels of
+/// blocks, so a function keeps well within Lua's 200 locals, 255 registers and 200 levels of
+/// blocks, an Expression as deep as ADR 0018 allows included.
+const NESTING: usize = 4;
+
+/// The table holding the Dissector's own declarations, `wd.<key>`.
+fn own(key: &str) -> String {
+    format!("wd.{key}")
 }
 
 /// The `wd_` names the emitter declares itself, outside the prelude.
@@ -84,16 +134,18 @@ pub(crate) fn emit(model: &Dissector) -> String {
 
     let proto = lua_string(&model.filter_name);
     w.line(&format!("local wd_proto = Proto({proto}, {})", lua_string(&model.full_name)));
+    w.line("-- The Dissector's own declarations");
+    w.line("local wd = {}");
     w.line("");
     for shared in &model.tables {
-        w.block(&format!("local {} = {{", shared.local), |w| table_entries(w, &shared.table), "}");
+        w.block(&format!("{} = {{", own(&shared.local)), |w| table_entries(w, &shared.table), "}");
         w.line("");
     }
     if !model.names.is_empty() {
         w.line("-- The names of values, for switch Fields and the Info column");
         for names in &model.names {
             let entries = LuaTable::Ranges(names.entries.clone());
-            w.block(&format!("local {} = {{", names.local), |w| table_entries(w, &entries), "}");
+            w.block(&format!("{} = {{", own(&names.local)), |w| table_entries(w, &entries), "}");
         }
         w.line("");
     }
@@ -108,7 +160,7 @@ pub(crate) fn emit(model: &Dissector) -> String {
     w.block(
         "wd_proto.fields = {",
         |w| {
-            model.proto_fields.iter().for_each(|f| w.line(&format!("{},", f.local)));
+            model.proto_fields.iter().for_each(|f| w.line(&format!("{},", own(&f.local))));
             if unmatched {
                 w.line("wd_f_unmatched,");
             }
@@ -119,14 +171,14 @@ pub(crate) fn emit(model: &Dissector) -> String {
     if !model.extractors.is_empty() {
         w.line("-- The Fields the Info column shows, extracted from each packet once it is read");
         for extractor in &model.extractors {
-            w.line(&format!("local {} = Field.new({})", extractor.local, lua_string(&extractor.abbrev)));
+            w.line(&format!("{} = Field.new({})", own(&extractor.local), lua_string(&extractor.abbrev)));
         }
         w.line("");
     }
     if !model.sites.is_empty() {
         w.line("-- The ProtoFields of each use of a Type, passed to the Type's dissect function");
         for shared in &model.sites {
-            w.block(&format!("local {} = {{", shared.local), |w| site_entries(w, model, &shared.site), "}");
+            w.block(&format!("{} = {{", own(&shared.local)), |w| site_entries(w, model, &shared.site), "}");
         }
         w.line("");
     }
@@ -143,39 +195,27 @@ fn body(model: &Dissector) -> String {
     // on a truncated or malformed packet, so that its callers stop too. A Type whose caller
     // reads inside it also returns the values read, in a table.
     for function in &model.types {
-        w.line(&format!("-- Type: {}", function.name));
         let context = if function.context { ", ctx" } else { "" };
-        w.block(
-            &format!("local function dissect_{}(tvb, pinfo, tree, offset, site{context})", function.name),
-            |w| {
-                declare(w, &function.locals);
-                for stmt in &function.body {
-                    statement(w, model, stmt, Scope::Type);
-                }
-                if function.exports.is_empty() {
-                    w.line("return offset");
-                } else {
-                    w.line(&format!("return offset, {}", export_table(&function.exports)));
-                }
-            },
-            "end",
-        );
-        w.line("");
+        let frame = (format!("dissect_{}", function.name), format!("tvb, pinfo, tree, offset, site{context}"));
+        dissect_function(&mut w, &format!("-- Type: {}", function.name), frame, &function.values, |w| {
+            for stmt in &function.body {
+                statement(w, model, stmt, Scope::Type);
+            }
+            if function.exports.is_empty() {
+                w.line("return offset");
+            } else {
+                w.line(&format!("return offset, {}", export_table(&function.exports)));
+            }
+        });
     }
 
-    w.line("-- Layout");
-    w.block(
-        "local function dissect_top(tvb, pinfo, tree, offset)",
-        |w| {
-            declare(w, &model.locals);
-            for stmt in &model.layout {
-                statement(w, model, stmt, Scope::Top);
-            }
-            w.line("return offset");
-        },
-        "end",
-    );
-    w.line("");
+    let frame = ("dissect_top".to_owned(), "tvb, pinfo, tree, offset".to_owned());
+    dissect_function(&mut w, "-- Layout", frame, &model.values, |w| {
+        for stmt in &model.layout {
+            statement(w, model, stmt, Scope::Top);
+        }
+        w.line("return offset");
+    });
 
     dissector(&mut w, model);
     w.line("");
@@ -187,6 +227,37 @@ fn body(model: &Dissector) -> String {
     w.line("DissectorTable.get(\"udp.port\"):add_for_decode_as(wd_proto)");
     w.line("DissectorTable.get(\"tcp.port\"):add_for_decode_as(wd_proto)");
     w.out
+}
+
+/// Writes the dissect function `wd.<key>(<params>)`, with the comment `comment`, keeping the
+/// values Expressions read under `values` and running the statements `body` writes. Its parts
+/// are defined before it.
+fn dissect_function(
+    w: &mut Writer,
+    comment: &str,
+    (key, params): (String, String),
+    values: &[String],
+    body: impl FnOnce(&mut Writer),
+) {
+    let open = format!("function wd.{key}({params})");
+    let args = if values.is_empty() { params } else { format!("{params}, v") };
+    w.frame = Frame { key, args };
+    let function = w.detached(|w| {
+        w.block(
+            &open,
+            |w| {
+                declare(w, values);
+                body(w);
+            },
+            "end",
+        );
+    });
+    for part in std::mem::take(&mut w.parts) {
+        w.out.push_str(&part);
+    }
+    w.line(comment);
+    w.out.push_str(&function);
+    w.line("");
 }
 
 /// The Dissector's entry point: it sets the columns and reads the Message into the protocol's
@@ -208,9 +279,10 @@ fn dissector(w: &mut Writer, model: &Dissector) {
     w.block(
         "local function wd_message_length(tvb, offset)",
         |w| {
+            w.line("local v = {}");
             for read in &framing.reads {
                 let at = format!("offset + {}", read.offset);
-                w.line(&format!("local {} = {}", read.local, read_value_at(&read.read, &at, read.size)));
+                w.line(&format!("{} = {}", value(&read.local), read_value_at(&read.read, &at, read.size)));
             }
             // The prelude evaluates it under `wd_evaluate`, which catches its faults.
             w.line(&format!("return {}", lua_expr(&framing.length.value)));
@@ -268,11 +340,11 @@ fn message(w: &mut Writer, model: &Dissector) {
         w.line("wd_info_cases = {}");
     }
     if !model.extractors.is_empty() {
-        let fields: Vec<&str> = model.extractors.iter().map(|x| x.local.as_str()).collect();
+        let fields: Vec<String> = model.extractors.iter().map(|x| own(&x.local)).collect();
         w.line(&format!("local before = wd_info_counts({{ {} }})", fields.join(", ")));
     }
     w.line(&root_line(model));
-    w.line("dissect_top(tvb, pinfo, root, 0)");
+    w.line("wd.dissect_top(tvb, pinfo, root, 0)");
     if let Some(info) = &model.info {
         info_column(w, model, info);
     }
@@ -290,11 +362,11 @@ fn info_column(w: &mut Writer, model: &Dissector, info: &Info) {
                 .map(|part| match part {
                     InfoPart::Text(text) => lua_string(text),
                     InfoPart::Display(extractor) => {
-                        format!("wd_info_display({}, before)", model.extractors[*extractor].local)
+                        format!("wd_info_display({}, before)", own(&model.extractors[*extractor].local))
                     }
                     InfoPart::Label { extractor, names } => {
-                        let names = names.map_or_else(|| "{}".to_owned(), |n| model.names[n].local.clone());
-                        format!("wd_info_label({}, before, {names})", model.extractors[*extractor].local)
+                        let names = names.map_or_else(|| "{}".to_owned(), |n| own(&model.names[n].local));
+                        format!("wd_info_label({}, before, {names})", own(&model.extractors[*extractor].local))
                     }
                     InfoPart::Case(path) => format!("({} or \"\")", case(path)),
                 })
@@ -379,7 +451,7 @@ fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
     };
     match &field.strings {
         None | Some(Strings::Table { table: TableRef::Inline(_), .. }) => {}
-        Some(Strings::Table { table: TableRef::Shared(index), .. }) => args.push(model.tables[*index].local.clone()),
+        Some(Strings::Table { table: TableRef::Shared(index), .. }) => args.push(own(&model.tables[*index].local)),
         Some(Strings::Unit { singular, plural }) => {
             let forms: Vec<String> =
                 [Some(singular), plural.as_ref()].into_iter().flatten().map(|s| lua_string(s)).collect();
@@ -402,7 +474,7 @@ fn proto_field(w: &mut Writer, model: &Dissector, field: &ProtoField) {
         );
     }
     tail.extend(description);
-    let open = format!("local {} = ProtoField.{}({}", field.local, field.field_type.constructor, args.join(", "));
+    let open = format!("{} = ProtoField.{}({}", own(&field.local), field.field_type.constructor, args.join(", "));
     let close = if tail.is_empty() { String::new() } else { format!(", {}", tail.join(", ")) };
     match inline {
         Some(table) => w.block(&format!("{open}, {{"), |w| table_entries(w, table), &format!("}}{close})")),
@@ -432,23 +504,31 @@ fn lua_integer(value: i64) -> String {
     if value == i64::MIN { "(-9223372036854775807 - 1)".to_owned() } else { value.to_string() }
 }
 
-/// The slots of a site table, a nested site table spanning several lines.
+/// The slots of a site table, one per line. A nested site table is declared before it, so
+/// no table constructor nests in another, however deep Types use Types.
 fn site_entries(w: &mut Writer, model: &Dissector, site: &Site) {
     w.line(&format!("path = {},", lua_string(&site.path)));
     for (key, entry) in &site.entries {
-        match entry {
-            SiteEntry::Field(index) => w.line(&format!("{key} = {},", model.proto_fields[*index].local)),
-            SiteEntry::Site(nested) => w.block(&format!("{key} = {{"), |w| site_entries(w, model, nested), "},"),
-        }
+        let value = match entry {
+            SiteEntry::Field(index) => &model.proto_fields[*index].local,
+            SiteEntry::Site(index) => &model.sites[*index].local,
+        };
+        w.line(&format!("{key} = {},", own(value)));
     }
 }
 
-/// Declares, up front, the locals a function keeps values in: values read inside a structure
-/// are read later, after the structure's `do` block has ended.
-fn declare(w: &mut Writer, locals: &[String]) {
-    if !locals.is_empty() {
-        w.line(&format!("local {}", locals.join(", ")));
+/// Declares, up front, the table a function keeps the values Expressions read in, when it keeps
+/// any: values read inside a structure are read later, after the structure's `do` block has
+/// ended.
+fn declare(w: &mut Writer, values: &[String]) {
+    if !values.is_empty() {
+        w.line("local v = {}");
     }
+}
+
+/// The Lua expression of the value kept under `key` in the function's values table.
+fn value(key: &str) -> String {
+    format!("v{}", index(key))
 }
 
 /// The table constructor of what a Type returns.
@@ -457,7 +537,7 @@ fn export_table(exports: &BTreeMap<String, Export>) -> String {
         .iter()
         .map(|(key, export)| {
             let value = match export {
-                Export::Local(local) => local.clone(),
+                Export::Local(local) => value(local),
                 Export::Table(inner) => export_table(inner),
             };
             format!("{} = {value}", table_key(key))
@@ -502,7 +582,7 @@ enum Scope {
 /// The Lua expression of a `ProtoField`.
 fn field_ref(model: &Dissector, r: &Ref) -> String {
     match r {
-        Ref::Local(index) => model.proto_fields[*index].local.clone(),
+        Ref::Local(index) => own(&model.proto_fields[*index].local),
         Ref::Slot(key) => format!("site.{key}"),
     }
 }
@@ -510,7 +590,7 @@ fn field_ref(model: &Dissector, r: &Ref) -> String {
 /// The Lua expression of a site table.
 fn site_ref(model: &Dissector, r: &Ref) -> String {
     match r {
-        Ref::Local(index) => model.sites[*index].local.clone(),
+        Ref::Local(index) => own(&model.sites[*index].local),
         Ref::Slot(key) => format!("site.{key}"),
     }
 }
@@ -561,8 +641,8 @@ fn call(w: &mut Writer, model: &Dissector, ty: &str, site: &Ref, context: &[(Str
             context.iter().map(|(key, value)| format!("{} = {}", table_key(key), lua_expr(value))).collect();
         args.push(format!("{{ {} }}", entries.join(", ")));
     }
-    let assigned = result.map_or_else(|| "offset".to_owned(), |r| format!("offset, {r}"));
-    w.line(&format!("{assigned} = dissect_{ty}(tvb, pinfo, tree, offset, {})", args.join(", ")));
+    let assigned = result.map_or_else(|| "offset".to_owned(), |r| format!("offset, {}", value(r)));
+    w.line(&format!("{assigned} = wd.dissect_{ty}(tvb, pinfo, tree, offset, {})", args.join(", ")));
     w.block("if not offset then", |w| w.line("return nil"), "end");
 }
 
@@ -597,7 +677,7 @@ fn switch(w: &mut Writer, model: &Dissector, path: &str, stmt: &SwitchStmt<'_>, 
             open_subtree(w, model, stmt.field, stmt.hidden);
             let name = stmt.names.map_or_else(
                 || "subject".to_owned(),
-                |index| format!("wd_case_name({}, subject)", model.names[index].local),
+                |index| format!("wd_case_name({}, subject)", own(&model.names[index].local)),
             );
             if stmt.info {
                 // The label of the subject's value is kept for the Info column, as text (spec §3.14).
@@ -792,7 +872,45 @@ fn padding(w: &mut Writer, parent: &str, length: &Length, scope: Scope) {
     }
 }
 
+/// Writes `stmt`. A statement holding statements, [`NESTING`] such statements deep in the
+/// current Lua function, is a part: a function of its own, which starts again from no locals
+/// and no nesting. It takes what the dissect function it is part of takes, and its values
+/// table, and returns the offset after what it read, or `nil` once it stopped the dissection.
+/// No statement reads a local of the statements around it, so it needs nothing else.
 fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
+    if !matches!(stmt, Stmt::If { .. } | Stmt::Switch { .. } | Stmt::Structure { .. } | Stmt::Array { .. }) {
+        return plain_statement(w, model, stmt, scope);
+    }
+    if w.nesting < NESTING {
+        w.nesting += 1;
+        plain_statement(w, model, stmt, scope);
+        w.nesting -= 1;
+        return;
+    }
+    w.part_count += 1;
+    let key = format!("part_{}", w.part_count);
+    let args = w.frame.args.clone();
+    let comment = format!("-- Part of {}, nested too deep to stay in it", w.frame.key);
+    let part = w.detached(|w| {
+        w.line(&comment);
+        w.block(
+            &format!("function wd.{key}({args})"),
+            |w| {
+                w.nesting = 1;
+                plain_statement(w, model, stmt, scope);
+                w.line("return offset");
+            },
+            "end",
+        );
+        w.line("");
+    });
+    w.parts.push(part);
+    w.line(&format!("offset = wd.{key}({args})"));
+    w.block("if not offset then", |w| w.line("return nil"), "end");
+}
+
+/// Writes `stmt` in the current Lua function.
+fn plain_statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
     match stmt {
         Stmt::Padding { parent, length } => padding(w, parent, length, scope),
         Stmt::If { path, condition, body } => conditional(w, model, path, condition, body, scope),
@@ -850,8 +968,8 @@ fn statement(w: &mut Writer, model: &Dissector, stmt: &Stmt, scope: Scope) {
                     };
                     add_item(w, model, &item, scope);
                     handoff_line(w, &range);
-                    if let Some(value) = value {
-                        w.line(&format!("{} = {}", value.local, read_value(&value.read, *size)));
+                    if let Some(kept) = value {
+                        w.line(&format!("{} = {}", self::value(&kept.local), read_value(&kept.read, *size)));
                     }
                     w.line(&format!("offset = offset + {size}"));
                 }
@@ -1015,7 +1133,8 @@ fn lua_expr(expr: &LuaExpr) -> String {
             }
             lua
         }
-        LuaExpr::Local { local, keys } => keys.iter().fold(local.clone(), |access, key| access + &index(key)),
+        LuaExpr::Local { local, keys } => keys.iter().fold(value(local), |access, key| access + &index(key)),
+        LuaExpr::Checked => "value".to_owned(),
         LuaExpr::Context(key) => format!("ctx{}", index(key)),
         LuaExpr::Offset => "offset".to_owned(),
         LuaExpr::Remaining => "tvb:len() - offset".to_owned(),

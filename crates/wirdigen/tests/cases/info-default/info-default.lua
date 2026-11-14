@@ -115,50 +115,52 @@ end
 local wd_info_cases = {}
 
 local wd_proto = Proto("info-default", "INFO-DEFAULT")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_count = ProtoField.uint8("info-default.count", "Count", base.DEC)
-local f_items = ProtoField.none("info-default.items", "Items")
-local f_items__sub = ProtoField.none("info-default.items.sub", "Sub")
-local f_items__sub__v = ProtoField.uint8("info-default.items.sub.v", "V", base.DEC)
-local f_msg = ProtoField.none("info-default.msg", "Msg")
-local f_msg__tag = ProtoField.uint8("info-default.msg.tag", "Tag", base.DEC)
-local f_msg__payload = ProtoField.none("info-default.msg.payload", "Payload")
-local f_msg__payload__inner = ProtoField.none("info-default.msg.payload.inner", "Inner")
-local f_msg__payload__inner__x = ProtoField.uint8("info-default.msg.payload.inner.x", "X", base.DEC)
-local f_msg__payload__inner__z = ProtoField.uint8("info-default.msg.payload.inner.z", "Z", base.DEC)
-local f_msg__op = ProtoField.none("info-default.msg.op", "Op")
-local f_msg__op__y = ProtoField.uint8("info-default.msg.op.y", "Y", base.DEC)
-local f_msg__op__w = ProtoField.uint8("info-default.msg.op.w", "W", base.DEC)
+wd.f_count = ProtoField.uint8("info-default.count", "Count", base.DEC)
+wd.f_items = ProtoField.none("info-default.items", "Items")
+wd.f_items__sub = ProtoField.none("info-default.items.sub", "Sub")
+wd.f_items__sub__v = ProtoField.uint8("info-default.items.sub.v", "V", base.DEC)
+wd.f_msg = ProtoField.none("info-default.msg", "Msg")
+wd.f_msg__tag = ProtoField.uint8("info-default.msg.tag", "Tag", base.DEC)
+wd.f_msg__payload = ProtoField.none("info-default.msg.payload", "Payload")
+wd.f_msg__payload__inner = ProtoField.none("info-default.msg.payload.inner", "Inner")
+wd.f_msg__payload__inner__x = ProtoField.uint8("info-default.msg.payload.inner.x", "X", base.DEC)
+wd.f_msg__payload__inner__z = ProtoField.uint8("info-default.msg.payload.inner.z", "Z", base.DEC)
+wd.f_msg__op = ProtoField.none("info-default.msg.op", "Op")
+wd.f_msg__op__y = ProtoField.uint8("info-default.msg.op.y", "Y", base.DEC)
+wd.f_msg__op__w = ProtoField.uint8("info-default.msg.op.w", "W", base.DEC)
 local wd_f_unmatched = wd_field_unmatched("info-default")
 
 wd_proto.fields = {
-    f_count,
-    f_items,
-    f_items__sub,
-    f_items__sub__v,
-    f_msg,
-    f_msg__tag,
-    f_msg__payload,
-    f_msg__payload__inner,
-    f_msg__payload__inner__x,
-    f_msg__payload__inner__z,
-    f_msg__op,
-    f_msg__op__y,
-    f_msg__op__w,
+    wd.f_count,
+    wd.f_items,
+    wd.f_items__sub,
+    wd.f_items__sub__v,
+    wd.f_msg,
+    wd.f_msg__tag,
+    wd.f_msg__payload,
+    wd.f_msg__payload__inner,
+    wd.f_msg__payload__inner__x,
+    wd.f_msg__payload__inner__z,
+    wd.f_msg__op,
+    wd.f_msg__op__y,
+    wd.f_msg__op__w,
     wd_f_unmatched,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_msg = {
+wd.site_msg = {
     path = "msg",
-    f_tag = f_msg__tag,
-    f_payload = f_msg__payload,
-    f_payload__inner = f_msg__payload__inner,
-    f_payload__inner__x = f_msg__payload__inner__x,
-    f_payload__inner__z = f_msg__payload__inner__z,
-    f_op = f_msg__op,
-    f_op__y = f_msg__op__y,
-    f_op__w = f_msg__op__w,
+    f_tag = wd.f_msg__tag,
+    f_payload = wd.f_msg__payload,
+    f_payload__inner = wd.f_msg__payload__inner,
+    f_payload__inner__x = wd.f_msg__payload__inner__x,
+    f_payload__inner__z = wd.f_msg__payload__inner__z,
+    f_op = wd.f_msg__op,
+    f_op__y = wd.f_msg__op__y,
+    f_op__w = wd.f_msg__op__w,
 }
 
 local wd_ei_truncated = wd_expert_truncated("info-default")
@@ -168,15 +170,15 @@ local wd_ei_unmatched = wd_expert_unmatched("info-default")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty, wd_ei_unmatched }
 
 -- Type: Message
-local function dissect_Message(tvb, pinfo, tree, offset, site)
-    local v_tag
+function wd.dissect_Message(tvb, pinfo, tree, offset, site)
+    local v = {}
     -- Field: tag
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".tag")
         return nil
     end
     tree:add(site.f_tag, tvb(offset, 1))
-    v_tag = string.unpack(">I1", tvb:raw(offset, 1))
+    v.tag = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: payload
     do
@@ -184,7 +186,7 @@ local function dissect_Message(tvb, pinfo, tree, offset, site)
         local tree = tree:add(site.f_payload, tvb(offset, tvb:len() - offset))
         -- Switch: payload.inner
         do
-            local subject = v_tag
+            local subject = v.tag
             local start = offset
             local tree = tree:add(site.f_payload__inner, tvb(offset, tvb:len() - offset))
             tree:append_text(": " .. subject)
@@ -211,7 +213,7 @@ local function dissect_Message(tvb, pinfo, tree, offset, site)
     end
     -- Switch: op
     do
-        local subject = wd_add(v_tag, 1)
+        local subject = wd_add(v.tag, 1)
         local start = offset
         local tree = tree:add(site.f_op, tvb(offset, tvb:len() - offset))
         local name = tostring(subject)
@@ -240,32 +242,32 @@ local function dissect_Message(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_count
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: count
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "count")
         return nil
     end
-    tree:add(f_count, tvb(offset, 1))
-    v_count = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_count, tvb(offset, 1))
+    v.count = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: items
     do
-        local count = v_count
+        local count = v.count
         if count < 0 then
             wd_invalid(tree, wd_ei_invalid, "count " .. count .. " is negative", "items")
             return nil
         end
         for i = 0, count - 1 do
             local start = offset
-            local tree = tree:add(f_items, tvb(offset, tvb:len() - offset))
+            local tree = tree:add(wd.f_items, tvb(offset, tvb:len() - offset))
             tree:append_text(" [" .. i .. "]")
             -- Switch: items.sub
             do
                 local subject = 1
                 local start = offset
-                local tree = tree:add(f_items__sub, tvb(offset, tvb:len() - offset))
+                local tree = tree:add(wd.f_items__sub, tvb(offset, tvb:len() - offset))
                 tree:append_text(": " .. subject)
                 if subject == 1 then
                     -- Field: items.sub.v
@@ -273,7 +275,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                         wd_truncated(tree, wd_ei_truncated, "items.sub.v")
                         return nil
                     end
-                    tree:add(f_items__sub__v, tvb(offset, 1))
+                    tree:add(wd.f_items__sub__v, tvb(offset, 1))
                     offset = offset + 1
                 else
                     wd_unmatched(tree, wd_f_unmatched, wd_ei_unmatched, tvb, offset, subject, "items.sub")
@@ -290,13 +292,13 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- If: msg
     do
-        local condition = wd_lt(v_count, 5)
+        local condition = wd_lt(v.count, 5)
         if condition ~= 0 then
             -- Field: msg
             do
                 local start = offset
-                local tree = tree:add(f_msg, tvb(offset, tvb:len() - offset))
-                offset = dissect_Message(tvb, pinfo, tree, offset, site_msg)
+                local tree = tree:add(wd.f_msg, tvb(offset, tvb:len() - offset))
+                offset = wd.dissect_Message(tvb, pinfo, tree, offset, wd.site_msg)
                 if not offset then
                     return nil
                 end
@@ -311,7 +313,7 @@ function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "INFO-DEFAULT"
     wd_info_cases = {}
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "INFO-DEFAULT")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     if wd_info_cases["msg.op"] then
         pinfo.cols.info:clear_fence()
         pinfo.cols.info = wd_info_cases["msg.op"]

@@ -135,25 +135,27 @@ local function wd_evaluate(compute)
 end
 
 local wd_proto = Proto("runtime", "RUNTIME")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_a = ProtoField.int8("runtime.a", "A", base.DEC)
-local f_b = ProtoField.int8("runtime.b", "B", base.DEC)
-local f_s = ProtoField.int8("runtime.s", "S", base.DEC)
-local f_quotient = ProtoField.bytes("runtime.quotient", "Quotient", base.NONE)
-local f_remainder = ProtoField.bytes("runtime.remainder", "Remainder", base.NONE)
-local f_shifted = ProtoField.bytes("runtime.shifted", "Shifted", base.NONE)
-local f_big = ProtoField.uint64("runtime.big", "Big", base.DEC)
-local f_wrapped = ProtoField.bytes("runtime.wrapped", "Wrapped", base.NONE)
+wd.f_a = ProtoField.int8("runtime.a", "A", base.DEC)
+wd.f_b = ProtoField.int8("runtime.b", "B", base.DEC)
+wd.f_s = ProtoField.int8("runtime.s", "S", base.DEC)
+wd.f_quotient = ProtoField.bytes("runtime.quotient", "Quotient", base.NONE)
+wd.f_remainder = ProtoField.bytes("runtime.remainder", "Remainder", base.NONE)
+wd.f_shifted = ProtoField.bytes("runtime.shifted", "Shifted", base.NONE)
+wd.f_big = ProtoField.uint64("runtime.big", "Big", base.DEC)
+wd.f_wrapped = ProtoField.bytes("runtime.wrapped", "Wrapped", base.NONE)
 
 wd_proto.fields = {
-    f_a,
-    f_b,
-    f_s,
-    f_quotient,
-    f_remainder,
-    f_shifted,
-    f_big,
-    f_wrapped,
+    wd.f_a,
+    wd.f_b,
+    wd.f_s,
+    wd.f_quotient,
+    wd.f_remainder,
+    wd.f_shifted,
+    wd.f_big,
+    wd.f_wrapped,
 }
 
 local wd_ei_truncated = wd_expert_truncated("runtime")
@@ -161,35 +163,35 @@ local wd_ei_invalid = wd_expert_invalid("runtime")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_a, v_b, v_big, v_s
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: a
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "a")
         return nil
     end
-    tree:add(f_a, tvb(offset, 1))
-    v_a = string.unpack(">i1", tvb:raw(offset, 1))
+    tree:add(wd.f_a, tvb(offset, 1))
+    v.a = string.unpack(">i1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: b
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "b")
         return nil
     end
-    tree:add(f_b, tvb(offset, 1))
-    v_b = string.unpack(">i1", tvb:raw(offset, 1))
+    tree:add(wd.f_b, tvb(offset, 1))
+    v.b = string.unpack(">i1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: s
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "s")
         return nil
     end
-    tree:add(f_s, tvb(offset, 1))
-    v_s = string.unpack(">i1", tvb:raw(offset, 1))
+    tree:add(wd.f_s, tvb(offset, 1))
+    v.s = string.unpack(">i1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: quotient
     do
-        local len, fault = wd_evaluate(function() return wd_add(wd_div(v_a, v_b), 4) end)
+        local len, fault = wd_evaluate(function() return wd_add(wd_div(v.a, v.b), 4) end)
         if not len then
             wd_invalid(tree, wd_ei_invalid, fault, "quotient")
             return nil
@@ -202,12 +204,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "quotient")
             return nil
         end
-        tree:add(f_quotient, tvb(offset, len))
+        tree:add(wd.f_quotient, tvb(offset, len))
         offset = offset + len
     end
     -- Field: remainder
     do
-        local len, fault = wd_evaluate(function() return wd_add(wd_mod(v_a, v_s), 2) end)
+        local len, fault = wd_evaluate(function() return wd_add(wd_mod(v.a, v.s), 2) end)
         if not len then
             wd_invalid(tree, wd_ei_invalid, fault, "remainder")
             return nil
@@ -220,12 +222,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "remainder")
             return nil
         end
-        tree:add(f_remainder, tvb(offset, len))
+        tree:add(wd.f_remainder, tvb(offset, len))
         offset = offset + len
     end
     -- Field: shifted
     do
-        local len, fault = wd_evaluate(function() return wd_sub(wd_add(wd_shr(v_a, v_s), wd_shl(1, v_s)), 1) end)
+        local len, fault = wd_evaluate(function() return wd_sub(wd_add(wd_shr(v.a, v.s), wd_shl(1, v.s)), 1) end)
         if not len then
             wd_invalid(tree, wd_ei_invalid, fault, "shifted")
             return nil
@@ -238,7 +240,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "shifted")
             return nil
         end
-        tree:add(f_shifted, tvb(offset, len))
+        tree:add(wd.f_shifted, tvb(offset, len))
         offset = offset + len
     end
     -- Field: big
@@ -246,12 +248,12 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "big")
         return nil
     end
-    tree:add(f_big, tvb(offset, 8))
-    v_big = string.unpack(">I8", tvb:raw(offset, 8))
+    tree:add(wd.f_big, tvb(offset, 8))
+    v.big = string.unpack(">I8", tvb:raw(offset, 8))
     offset = offset + 8
     -- Field: wrapped
     do
-        local len = wd_add(wd_add(v_big, v_big), wd_lt(v_big, 0))
+        local len = wd_add(wd_add(v.big, v.big), wd_lt(v.big, 0))
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "wrapped")
             return nil
@@ -260,7 +262,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "wrapped")
             return nil
         end
-        tree:add(f_wrapped, tvb(offset, len))
+        tree:add(wd.f_wrapped, tvb(offset, len))
         offset = offset + len
     end
     return offset
@@ -269,7 +271,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "RUNTIME"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "RUNTIME")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

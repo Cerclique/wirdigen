@@ -261,8 +261,10 @@ local function wd_info_display(field, before)
 end
 
 local wd_proto = Proto("tracker", "Asset Tracker")
+-- The Dissector's own declarations
+local wd = {}
 
-local enum_Tag = {
+wd.enum_Tag = {
     [1] = "Position",
     [2] = "Heading",
     [3] = "Note",
@@ -270,64 +272,64 @@ local enum_Tag = {
 }
 
 -- The names of values, for switch Fields and the Info column
-local names_value = {
+wd.names_value = {
     { 1, 1, "Position" },
     { 2, 2, "Heading" },
     { 3, 3, "Note" },
     { 4, 4, "Manifest" },
 }
 
-local f_magic = ProtoField.uint16("tracker.magic", "Magic", base.HEX)
-local f_version = ProtoField.uint8("tracker.version", "Version", base.DEC)
-local f_flags = ProtoField.uint8("tracker.flags", "Flags", base.HEX)
-local f_flags__on_trip = ProtoField.bool("tracker.flags.on_trip", "On trip", 8, { "Set", "Not set" }, 0x80)
-local f_asset = ProtoField.uint16("tracker.asset", "Asset", base.DEC, nil, nil, "Identifier of the tracked container")
-local f_trip = ProtoField.uint32("tracker.trip", "Trip", base.DEC, nil, nil, "Present while on a trip")
-local f_records = ProtoField.none("tracker.records", "Records")
-local f_records__tag = ProtoField.uint8("tracker.records.tag", "Tag", base.DEC, enum_Tag)
-local f_records__length = ProtoField.uint8("tracker.records.length", "Length", base.DEC)
-local f_records__value = ProtoField.none("tracker.records.value", "Value")
-local f_records__value__latitude = ProtoField.int32("tracker.records.value.latitude", "Latitude", base.DEC, nil, nil, "Millionths of a degree")
-local f_records__value__longitude = ProtoField.int32("tracker.records.value.longitude", "Longitude", base.DEC, nil, nil, "Millionths of a degree")
-local f_records__value__heading = ProtoField.uint16("tracker.records.value.heading", "Heading", base.DEC + base.UNIT_STRING, { " degree", " degrees" })
-local f_records__value__note = ProtoField.string("tracker.records.value.note", "Note", base.NONE)
-local f_records__value__manifest = ProtoField.bytes("tracker.records.value.manifest", "Manifest", base.NONE)
-local f_records__value__data = ProtoField.bytes("tracker.records.value.data", "Data", base.NONE)
+wd.f_magic = ProtoField.uint16("tracker.magic", "Magic", base.HEX)
+wd.f_version = ProtoField.uint8("tracker.version", "Version", base.DEC)
+wd.f_flags = ProtoField.uint8("tracker.flags", "Flags", base.HEX)
+wd.f_flags__on_trip = ProtoField.bool("tracker.flags.on_trip", "On trip", 8, { "Set", "Not set" }, 0x80)
+wd.f_asset = ProtoField.uint16("tracker.asset", "Asset", base.DEC, nil, nil, "Identifier of the tracked container")
+wd.f_trip = ProtoField.uint32("tracker.trip", "Trip", base.DEC, nil, nil, "Present while on a trip")
+wd.f_records = ProtoField.none("tracker.records", "Records")
+wd.f_records__tag = ProtoField.uint8("tracker.records.tag", "Tag", base.DEC, wd.enum_Tag)
+wd.f_records__length = ProtoField.uint8("tracker.records.length", "Length", base.DEC)
+wd.f_records__value = ProtoField.none("tracker.records.value", "Value")
+wd.f_records__value__latitude = ProtoField.int32("tracker.records.value.latitude", "Latitude", base.DEC, nil, nil, "Millionths of a degree")
+wd.f_records__value__longitude = ProtoField.int32("tracker.records.value.longitude", "Longitude", base.DEC, nil, nil, "Millionths of a degree")
+wd.f_records__value__heading = ProtoField.uint16("tracker.records.value.heading", "Heading", base.DEC + base.UNIT_STRING, { " degree", " degrees" })
+wd.f_records__value__note = ProtoField.string("tracker.records.value.note", "Note", base.NONE)
+wd.f_records__value__manifest = ProtoField.bytes("tracker.records.value.manifest", "Manifest", base.NONE)
+wd.f_records__value__data = ProtoField.bytes("tracker.records.value.data", "Data", base.NONE)
 
 wd_proto.fields = {
-    f_magic,
-    f_version,
-    f_flags,
-    f_flags__on_trip,
-    f_asset,
-    f_trip,
-    f_records,
-    f_records__tag,
-    f_records__length,
-    f_records__value,
-    f_records__value__latitude,
-    f_records__value__longitude,
-    f_records__value__heading,
-    f_records__value__note,
-    f_records__value__manifest,
-    f_records__value__data,
+    wd.f_magic,
+    wd.f_version,
+    wd.f_flags,
+    wd.f_flags__on_trip,
+    wd.f_asset,
+    wd.f_trip,
+    wd.f_records,
+    wd.f_records__tag,
+    wd.f_records__length,
+    wd.f_records__value,
+    wd.f_records__value__latitude,
+    wd.f_records__value__longitude,
+    wd.f_records__value__heading,
+    wd.f_records__value__note,
+    wd.f_records__value__manifest,
+    wd.f_records__value__data,
 }
 
 -- The Fields the Info column shows, extracted from each packet once it is read
-local x_asset = Field.new("tracker.asset")
+wd.x_asset = Field.new("tracker.asset")
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_records = {
+wd.site_records = {
     path = "records",
-    f_tag = f_records__tag,
-    f_length = f_records__length,
-    f_value = f_records__value,
-    f_value__latitude = f_records__value__latitude,
-    f_value__longitude = f_records__value__longitude,
-    f_value__heading = f_records__value__heading,
-    f_value__note = f_records__value__note,
-    f_value__manifest = f_records__value__manifest,
-    f_value__data = f_records__value__data,
+    f_tag = wd.f_records__tag,
+    f_length = wd.f_records__length,
+    f_value = wd.f_records__value,
+    f_value__latitude = wd.f_records__value__latitude,
+    f_value__longitude = wd.f_records__value__longitude,
+    f_value__heading = wd.f_records__value__heading,
+    f_value__note = wd.f_records__value__note,
+    f_value__manifest = wd.f_records__value__manifest,
+    f_value__data = wd.f_records__value__data,
 }
 
 local wd_ei_truncated = wd_expert_truncated("tracker")
@@ -338,15 +340,15 @@ local wd_ei_dissector = wd_expert_dissector("tracker")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty, wd_ei_unexpected, wd_ei_dissector }
 
 -- Type: Record
-local function dissect_Record(tvb, pinfo, tree, offset, site)
-    local v_length, v_tag
+function wd.dissect_Record(tvb, pinfo, tree, offset, site)
+    local v = {}
     -- Field: tag
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".tag")
         return nil
     end
     tree:add(site.f_tag, tvb(offset, 1))
-    v_tag = string.unpack(">I1", tvb:raw(offset, 1))
+    v.tag = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: length
     if not wd_fits(tvb, offset, 1) then
@@ -354,14 +356,14 @@ local function dissect_Record(tvb, pinfo, tree, offset, site)
         return nil
     end
     tree:add(site.f_length, tvb(offset, 1)):set_hidden(true)
-    v_length = string.unpack(">I1", tvb:raw(offset, 1))
+    v.length = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Switch: value
     do
-        local subject = v_tag
+        local subject = v.tag
         local start = offset
         local tree = tree:add(site.f_value, tvb(offset, tvb:len() - offset))
-        tree:append_text(": " .. wd_case_name(names_value, subject))
+        tree:append_text(": " .. wd_case_name(wd.names_value, subject))
         if subject == 1 then
             -- Field: value.latitude
             if not wd_fits(tvb, offset, 4) then
@@ -392,7 +394,7 @@ local function dissect_Record(tvb, pinfo, tree, offset, site)
         elseif subject == 3 then
             -- Field: value.note
             do
-                local len = v_length
+                local len = v.length
                 if len < 0 then
                     wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", site.path .. ".value.note")
                     return nil
@@ -407,7 +409,7 @@ local function dissect_Record(tvb, pinfo, tree, offset, site)
         elseif subject == 4 then
             -- Field: value.manifest
             do
-                local len = v_length
+                local len = v.length
                 if len < 0 then
                     wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", site.path .. ".value.manifest")
                     return nil
@@ -423,7 +425,7 @@ local function dissect_Record(tvb, pinfo, tree, offset, site)
         else
             -- Field: value.data
             do
-                local len = v_length
+                local len = v.length
                 if len < 0 then
                     wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", site.path .. ".value.data")
                     return nil
@@ -440,7 +442,7 @@ local function dissect_Record(tvb, pinfo, tree, offset, site)
     end
     -- Padding
     do
-        local len, fault = wd_evaluate(function() return wd_mod(wd_sub(4, wd_mod(wd_add(v_length, 2), 4)), 4) end)
+        local len, fault = wd_evaluate(function() return wd_mod(wd_sub(4, wd_mod(wd_add(v.length, 2), 4)), 4) end)
         if not len then
             wd_invalid(tree, wd_ei_invalid, fault, "Padding in " .. site.path)
             return nil
@@ -460,15 +462,15 @@ local function dissect_Record(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_flags
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: magic
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "magic")
         return nil
     end
     do
-        local item = tree:add(f_magic, tvb(offset, 2))
+        local item = tree:add(wd.f_magic, tvb(offset, 2))
         item:set_hidden(true)
         local value = string.unpack(">I2", tvb:raw(offset, 2))
         wd_expect(item, value, { 16724, 16724 }, "0x4154", wd_ei_unexpected, "magic")
@@ -480,7 +482,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_version, tvb(offset, 1))
+        local item = tree:add(wd.f_version, tvb(offset, 1))
         local value = string.unpack(">I1", tvb:raw(offset, 1))
         wd_expect(item, value, { 1, 1 }, "1", wd_ei_unexpected, "version")
     end
@@ -491,28 +493,28 @@ local function dissect_top(tvb, pinfo, tree, offset)
         return nil
     end
     do
-        local item = tree:add(f_flags, tvb(offset, 1))
-        item:add(f_flags__on_trip, tvb(offset, 1))
+        local item = tree:add(wd.f_flags, tvb(offset, 1))
+        item:add(wd.f_flags__on_trip, tvb(offset, 1))
     end
-    v_flags = string.unpack(">I1", tvb:raw(offset, 1))
+    v.flags = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- Field: asset
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "asset")
         return nil
     end
-    tree:add(f_asset, tvb(offset, 2))
+    tree:add(wd.f_asset, tvb(offset, 2))
     offset = offset + 2
     -- If: trip
     do
-        local condition = wd_band(wd_shr(v_flags, 7), 1)
+        local condition = wd_band(wd_shr(v.flags, 7), 1)
         if condition ~= 0 then
             -- Field: trip
             if not wd_fits(tvb, offset, 4) then
                 wd_truncated(tree, wd_ei_truncated, "trip")
                 return nil
             end
-            tree:add(f_trip, tvb(offset, 4))
+            tree:add(wd.f_trip, tvb(offset, 4))
             offset = offset + 4
         end
     end
@@ -521,9 +523,9 @@ local function dissect_top(tvb, pinfo, tree, offset)
         local i = 0
         while offset < tvb:len() do
             local start = offset
-            local tree = tree:add(f_records, tvb(offset, tvb:len() - offset))
+            local tree = tree:add(wd.f_records, tvb(offset, tvb:len() - offset))
             tree:append_text(" [" .. i .. "]")
-            offset = dissect_Record(tvb, pinfo, tree, offset, site_records)
+            offset = wd.dissect_Record(tvb, pinfo, tree, offset, wd.site_records)
             if not offset then
                 return nil
             end
@@ -540,11 +542,11 @@ end
 
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "TRACKER"
-    local before = wd_info_counts({ x_asset })
+    local before = wd_info_counts({ wd.x_asset })
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "Asset Tracker")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     pinfo.cols.info:clear_fence()
-    pinfo.cols.info = "Asset " .. wd_info_display(x_asset, before)
+    pinfo.cols.info = "Asset " .. wd_info_display(wd.x_asset, before)
     return tvb:len()
 end
 

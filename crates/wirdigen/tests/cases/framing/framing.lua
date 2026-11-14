@@ -159,23 +159,25 @@ local function wd_framed(tvb, pinfo, tree, header, message_length, dissect_messa
 end
 
 local wd_proto = Proto("framing", "FRAMING")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_flags = ProtoField.uint8("framing.flags", "Flags", base.DEC)
-local f_flags__version = ProtoField.uint8("framing.flags.version", "Version", base.DEC, nil, 0xF0)
-local f_flags__extra = ProtoField.uint8("framing.flags.extra", "Extra", base.DEC, nil, 0x0F)
-local f_len = ProtoField.uint16("framing.len", "Len", base.DEC)
-local f_seq = ProtoField.uint8("framing.seq", "Seq", base.DEC)
-local f_body = ProtoField.bytes("framing.body", "Body", base.NONE)
-local f_trailer = ProtoField.bytes("framing.trailer", "Trailer", base.NONE)
+wd.f_flags = ProtoField.uint8("framing.flags", "Flags", base.DEC)
+wd.f_flags__version = ProtoField.uint8("framing.flags.version", "Version", base.DEC, nil, 0xF0)
+wd.f_flags__extra = ProtoField.uint8("framing.flags.extra", "Extra", base.DEC, nil, 0x0F)
+wd.f_len = ProtoField.uint16("framing.len", "Len", base.DEC)
+wd.f_seq = ProtoField.uint8("framing.seq", "Seq", base.DEC)
+wd.f_body = ProtoField.bytes("framing.body", "Body", base.NONE)
+wd.f_trailer = ProtoField.bytes("framing.trailer", "Trailer", base.NONE)
 
 wd_proto.fields = {
-    f_flags,
-    f_flags__version,
-    f_flags__extra,
-    f_len,
-    f_seq,
-    f_body,
-    f_trailer,
+    wd.f_flags,
+    wd.f_flags__version,
+    wd.f_flags__extra,
+    wd.f_len,
+    wd.f_seq,
+    wd.f_body,
+    wd.f_trailer,
 }
 
 local wd_ei_truncated = wd_expert_truncated("framing")
@@ -183,17 +185,17 @@ local wd_ei_invalid = wd_expert_invalid("framing")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_len
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: flags
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flags")
         return nil
     end
     do
-        local item = tree:add(f_flags, tvb(offset, 1))
-        item:add(f_flags__version, tvb(offset, 1))
-        item:add(f_flags__extra, tvb(offset, 1))
+        local item = tree:add(wd.f_flags, tvb(offset, 1))
+        item:add(wd.f_flags__version, tvb(offset, 1))
+        item:add(wd.f_flags__extra, tvb(offset, 1))
     end
     offset = offset + 1
     -- Field: len
@@ -201,8 +203,8 @@ local function dissect_top(tvb, pinfo, tree, offset)
         wd_truncated(tree, wd_ei_truncated, "len")
         return nil
     end
-    tree:add(f_len, tvb(offset, 2))
-    v_len = string.unpack(">I2", tvb:raw(offset, 2))
+    tree:add(wd.f_len, tvb(offset, 2))
+    v.len = string.unpack(">I2", tvb:raw(offset, 2))
     offset = offset + 2
     -- If: seq
     do
@@ -213,13 +215,13 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "seq")
                 return nil
             end
-            tree:add(f_seq, tvb(offset, 1))
+            tree:add(wd.f_seq, tvb(offset, 1))
             offset = offset + 1
         end
     end
     -- Field: body
     do
-        local len = wd_sub(v_len, offset)
+        local len = wd_sub(v.len, offset)
         if len < 0 then
             wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "body")
             return nil
@@ -228,7 +230,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "body")
             return nil
         end
-        tree:add(f_body, tvb(offset, len))
+        tree:add(wd.f_body, tvb(offset, len))
         offset = offset + len
     end
     -- Field: trailer
@@ -242,7 +244,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "trailer")
             return nil
         end
-        tree:add(f_trailer, tvb(offset, len))
+        tree:add(wd.f_trailer, tvb(offset, len))
         offset = offset + len
     end
     return offset
@@ -250,9 +252,10 @@ end
 
 -- Framing: the length of the Message at `offset`, from its 3-byte header
 local function wd_message_length(tvb, offset)
-    local v_flags = string.unpack(">I1", tvb:raw(offset + 0, 1))
-    local v_len = string.unpack(">I2", tvb:raw(offset + 1, 2))
-    return wd_add(v_len, wd_band(v_flags, 15))
+    local v = {}
+    v.flags = string.unpack(">I1", tvb:raw(offset + 0, 1))
+    v.len = string.unpack(">I2", tvb:raw(offset + 1, 2))
+    return wd_add(v.len, wd_band(v.flags, 15))
 end
 
 local function wd_dissect_message(tvb, pinfo, tree, malformed)
@@ -262,7 +265,7 @@ local function wd_dissect_message(tvb, pinfo, tree, malformed)
         return
     end
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "FRAMING")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
 end
 
 function wd_proto.dissector(tvb, pinfo, tree)

@@ -33,28 +33,30 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("prefixes", "PREFIXES")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_p16 = ProtoField.bytes("prefixes.p16", "P16", base.NONE)
-local f_p24 = ProtoField.bytes("prefixes.p24", "P24", base.NONE)
-local f_p32_le = ProtoField.bytes("prefixes.p32_le", "P32 le", base.NONE)
-local f_p40 = ProtoField.bytes("prefixes.p40", "P40", base.NONE)
-local f_p56_le = ProtoField.string("prefixes.p56_le", "P56 le", base.NONE)
-local f_p64 = ProtoField.string("prefixes.p64", "P64", base.NONE)
+wd.f_p16 = ProtoField.bytes("prefixes.p16", "P16", base.NONE)
+wd.f_p24 = ProtoField.bytes("prefixes.p24", "P24", base.NONE)
+wd.f_p32_le = ProtoField.bytes("prefixes.p32_le", "P32 le", base.NONE)
+wd.f_p40 = ProtoField.bytes("prefixes.p40", "P40", base.NONE)
+wd.f_p56_le = ProtoField.string("prefixes.p56_le", "P56 le", base.NONE)
+wd.f_p64 = ProtoField.string("prefixes.p64", "P64", base.NONE)
 
 wd_proto.fields = {
-    f_p16,
-    f_p24,
-    f_p32_le,
-    f_p40,
-    f_p56_le,
-    f_p64,
+    wd.f_p16,
+    wd.f_p24,
+    wd.f_p32_le,
+    wd.f_p40,
+    wd.f_p56_le,
+    wd.f_p64,
 }
 
 local wd_ei_truncated = wd_expert_truncated("prefixes")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: p16
     do
         if not wd_fits(tvb, offset, 2) then
@@ -67,7 +69,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "p16")
             return nil
         end
-        tree:add(f_p16, tvb(offset, len))
+        tree:add(wd.f_p16, tvb(offset, len))
         offset = offset + len
     end
     -- Field: p24
@@ -82,7 +84,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "p24")
             return nil
         end
-        tree:add(f_p24, tvb(offset, len))
+        tree:add(wd.f_p24, tvb(offset, len))
         offset = offset + len
     end
     -- Field: p32_le
@@ -97,7 +99,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "p32_le")
             return nil
         end
-        tree:add(f_p32_le, tvb(offset, len))
+        tree:add(wd.f_p32_le, tvb(offset, len))
         offset = offset + len
     end
     -- Field: p40
@@ -112,7 +114,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "p40")
             return nil
         end
-        tree:add(f_p40, tvb(offset, len))
+        tree:add(wd.f_p40, tvb(offset, len))
         offset = offset + len
     end
     -- Field: p56_le
@@ -127,7 +129,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "p56_le")
             return nil
         end
-        tree:add_packet_field(f_p56_le, tvb(offset, len), ENC_UTF_8)
+        tree:add_packet_field(wd.f_p56_le, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
     end
     -- Field: p64
@@ -142,7 +144,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "p64")
             return nil
         end
-        tree:add_packet_field(f_p64, tvb(offset, len), ENC_UTF_8)
+        tree:add_packet_field(wd.f_p64, tvb(offset, len), ENC_UTF_8)
         offset = offset + len
     end
     return offset
@@ -151,7 +153,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "PREFIXES"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "PREFIXES")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

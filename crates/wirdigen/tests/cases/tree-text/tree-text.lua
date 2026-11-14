@@ -33,60 +33,62 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("tree_text", "TREE_TEXT")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_msg_type = ProtoField.uint8("tree_text.msg_type", "Msg type", base.DEC)
-local f_id = ProtoField.uint16("tree_text.id", "Message ID", base.HEX, nil, nil, "Identifies the request")
-local f_flag = ProtoField.bool("tree_text.flag", "Flag \"urgent\"", base.NONE)
-local f_ratio = ProtoField.float("tree_text.ratio", "Ratio", "Ratio, 0 to 1")
-local f_addr = ProtoField.ipv4("tree_text.addr", "Émetteur IPv4", "Where it came from")
+wd.f_msg_type = ProtoField.uint8("tree_text.msg_type", "Msg type", base.DEC)
+wd.f_id = ProtoField.uint16("tree_text.id", "Message ID", base.HEX, nil, nil, "Identifies the request")
+wd.f_flag = ProtoField.bool("tree_text.flag", "Flag \"urgent\"", base.NONE)
+wd.f_ratio = ProtoField.float("tree_text.ratio", "Ratio", "Ratio, 0 to 1")
+wd.f_addr = ProtoField.ipv4("tree_text.addr", "Émetteur IPv4", "Where it came from")
 
 wd_proto.fields = {
-    f_msg_type,
-    f_id,
-    f_flag,
-    f_ratio,
-    f_addr,
+    wd.f_msg_type,
+    wd.f_id,
+    wd.f_flag,
+    wd.f_ratio,
+    wd.f_addr,
 }
 
 local wd_ei_truncated = wd_expert_truncated("tree_text")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: msg_type
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "msg_type")
         return nil
     end
-    tree:add(f_msg_type, tvb(offset, 1))
+    tree:add(wd.f_msg_type, tvb(offset, 1))
     offset = offset + 1
     -- Field: id
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "id")
         return nil
     end
-    tree:add(f_id, tvb(offset, 2))
+    tree:add(wd.f_id, tvb(offset, 2))
     offset = offset + 2
     -- Field: flag
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flag")
         return nil
     end
-    tree:add(f_flag, tvb(offset, 1))
+    tree:add(wd.f_flag, tvb(offset, 1))
     offset = offset + 1
     -- Field: ratio
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "ratio")
         return nil
     end
-    tree:add(f_ratio, tvb(offset, 4))
+    tree:add(wd.f_ratio, tvb(offset, 4))
     offset = offset + 4
     -- Field: addr
     if not wd_fits(tvb, offset, 4) then
         wd_truncated(tree, wd_ei_truncated, "addr")
         return nil
     end
-    tree:add(f_addr, tvb(offset, 4))
+    tree:add(wd.f_addr, tvb(offset, 4))
     offset = offset + 4
     return offset
 end
@@ -94,7 +96,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "TREE_TEXT"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "TREE_TEXT")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

@@ -33,33 +33,35 @@ local function wd_fits(tvb, offset, size)
 end
 
 local wd_proto = Proto("keywords", "Lua \"keywords\" as Field names")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_end = ProtoField.uint8("keywords.end", "End", base.DEC)
-local f_type = ProtoField.uint16("keywords.type", "Type", base.DEC)
+wd.f_end = ProtoField.uint8("keywords.end", "End", base.DEC)
+wd.f_type = ProtoField.uint16("keywords.type", "Type", base.DEC)
 
 wd_proto.fields = {
-    f_end,
-    f_type,
+    wd.f_end,
+    wd.f_type,
 }
 
 local wd_ei_truncated = wd_expert_truncated("keywords")
 wd_proto.experts = { wd_ei_truncated }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: end
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "end")
         return nil
     end
-    tree:add(f_end, tvb(offset, 1))
+    tree:add(wd.f_end, tvb(offset, 1))
     offset = offset + 1
     -- Field: type
     if not wd_fits(tvb, offset, 2) then
         wd_truncated(tree, wd_ei_truncated, "type")
         return nil
     end
-    tree:add(f_type, tvb(offset, 2))
+    tree:add(wd.f_type, tvb(offset, 2))
     offset = offset + 2
     return offset
 end
@@ -67,7 +69,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "KEYWORDS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "Lua \"keywords\" as Field names")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

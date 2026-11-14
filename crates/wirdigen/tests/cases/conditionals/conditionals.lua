@@ -150,42 +150,44 @@ local function wd_empty(tree, expert_info, index, path)
 end
 
 local wd_proto = Proto("conditionals", "CONDITIONALS")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_flags = ProtoField.uint8("conditionals.flags", "Flags", base.DEC)
-local f_id = ProtoField.uint16("conditionals.id", "Id", base.DEC)
-local f_ext = ProtoField.none("conditionals.ext", "Ext")
-local f_ext__len = ProtoField.uint8("conditionals.ext.len", "Len", base.DEC)
-local f_ext__data = ProtoField.bytes("conditionals.ext.data", "Data", base.NONE)
-local f_point = ProtoField.none("conditionals.point", "Point")
-local f_point__n = ProtoField.uint8("conditionals.point.n", "N", base.DEC)
-local f_point__m = ProtoField.uint8("conditionals.point.m", "M", base.DEC)
-local f_items = ProtoField.none("conditionals.items", "Items")
-local f_items__x = ProtoField.uint8("conditionals.items.x", "X", base.DEC)
-local f_never = ProtoField.uint8("conditionals.never", "Never", base.DEC)
-local f_tail = ProtoField.uint8("conditionals.tail", "Tail", base.DEC)
-local f_last = ProtoField.uint8("conditionals.last", "Last", base.DEC)
+wd.f_flags = ProtoField.uint8("conditionals.flags", "Flags", base.DEC)
+wd.f_id = ProtoField.uint16("conditionals.id", "Id", base.DEC)
+wd.f_ext = ProtoField.none("conditionals.ext", "Ext")
+wd.f_ext__len = ProtoField.uint8("conditionals.ext.len", "Len", base.DEC)
+wd.f_ext__data = ProtoField.bytes("conditionals.ext.data", "Data", base.NONE)
+wd.f_point = ProtoField.none("conditionals.point", "Point")
+wd.f_point__n = ProtoField.uint8("conditionals.point.n", "N", base.DEC)
+wd.f_point__m = ProtoField.uint8("conditionals.point.m", "M", base.DEC)
+wd.f_items = ProtoField.none("conditionals.items", "Items")
+wd.f_items__x = ProtoField.uint8("conditionals.items.x", "X", base.DEC)
+wd.f_never = ProtoField.uint8("conditionals.never", "Never", base.DEC)
+wd.f_tail = ProtoField.uint8("conditionals.tail", "Tail", base.DEC)
+wd.f_last = ProtoField.uint8("conditionals.last", "Last", base.DEC)
 
 wd_proto.fields = {
-    f_flags,
-    f_id,
-    f_ext,
-    f_ext__len,
-    f_ext__data,
-    f_point,
-    f_point__n,
-    f_point__m,
-    f_items,
-    f_items__x,
-    f_never,
-    f_tail,
-    f_last,
+    wd.f_flags,
+    wd.f_id,
+    wd.f_ext,
+    wd.f_ext__len,
+    wd.f_ext__data,
+    wd.f_point,
+    wd.f_point__n,
+    wd.f_point__m,
+    wd.f_items,
+    wd.f_items__x,
+    wd.f_never,
+    wd.f_tail,
+    wd.f_last,
 }
 
 -- The ProtoFields of each use of a Type, passed to the Type's dissect function
-local site_point = {
+wd.site_point = {
     path = "point",
-    f_n = f_point__n,
-    f_m = f_point__m,
+    f_n = wd.f_point__n,
+    f_m = wd.f_point__m,
 }
 
 local wd_ei_truncated = wd_expert_truncated("conditionals")
@@ -194,19 +196,19 @@ local wd_ei_empty = wd_expert_empty("conditionals")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid, wd_ei_empty }
 
 -- Type: Point
-local function dissect_Point(tvb, pinfo, tree, offset, site)
-    local v_n
+function wd.dissect_Point(tvb, pinfo, tree, offset, site)
+    local v = {}
     -- Field: n
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, site.path .. ".n")
         return nil
     end
     tree:add(site.f_n, tvb(offset, 1))
-    v_n = string.unpack(">I1", tvb:raw(offset, 1))
+    v.n = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- If: m
     do
-        local condition = wd_gt(v_n, 1)
+        local condition = wd_gt(v.n, 1)
         if condition ~= 0 then
             -- Field: m
             if not wd_fits(tvb, offset, 1) then
@@ -221,48 +223,48 @@ local function dissect_Point(tvb, pinfo, tree, offset, site)
 end
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
-    local v_ext__len, v_flags
+function wd.dissect_top(tvb, pinfo, tree, offset)
+    local v = {}
     -- Field: flags
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "flags")
         return nil
     end
-    tree:add(f_flags, tvb(offset, 1))
-    v_flags = string.unpack(">I1", tvb:raw(offset, 1))
+    tree:add(wd.f_flags, tvb(offset, 1))
+    v.flags = string.unpack(">I1", tvb:raw(offset, 1))
     offset = offset + 1
     -- If: id
     do
-        local condition = wd_band(v_flags, 1)
+        local condition = wd_band(v.flags, 1)
         if condition ~= 0 then
             -- Field: id
             if not wd_fits(tvb, offset, 2) then
                 wd_truncated(tree, wd_ei_truncated, "id")
                 return nil
             end
-            tree:add(f_id, tvb(offset, 2))
+            tree:add(wd.f_id, tvb(offset, 2))
             offset = offset + 2
         end
     end
     -- If: ext
     do
-        local condition = wd_band(v_flags, 2)
+        local condition = wd_band(v.flags, 2)
         if condition ~= 0 then
             -- Field: ext
             do
                 local start = offset
-                local tree = tree:add(f_ext, tvb(offset, tvb:len() - offset))
+                local tree = tree:add(wd.f_ext, tvb(offset, tvb:len() - offset))
                 -- Field: ext.len
                 if not wd_fits(tvb, offset, 1) then
                     wd_truncated(tree, wd_ei_truncated, "ext.len")
                     return nil
                 end
-                tree:add(f_ext__len, tvb(offset, 1))
-                v_ext__len = string.unpack(">I1", tvb:raw(offset, 1))
+                tree:add(wd.f_ext__len, tvb(offset, 1))
+                v.ext__len = string.unpack(">I1", tvb:raw(offset, 1))
                 offset = offset + 1
                 -- Field: ext.data
                 do
-                    local len = v_ext__len
+                    local len = v.ext__len
                     if len < 0 then
                         wd_invalid(tree, wd_ei_invalid, "size " .. len .. " is negative", "ext.data")
                         return nil
@@ -271,7 +273,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                         wd_truncated(tree, wd_ei_truncated, "ext.data")
                         return nil
                     end
-                    tree:add(f_ext__data, tvb(offset, len))
+                    tree:add(wd.f_ext__data, tvb(offset, len))
                     offset = offset + len
                 end
                 tree:set_len(offset - start)
@@ -280,13 +282,13 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- If: point
     do
-        local condition = wd_band(v_flags, 4)
+        local condition = wd_band(v.flags, 4)
         if condition ~= 0 then
             -- Field: point
             do
                 local start = offset
-                local tree = tree:add(f_point, tvb(offset, tvb:len() - offset))
-                offset = dissect_Point(tvb, pinfo, tree, offset, site_point)
+                local tree = tree:add(wd.f_point, tvb(offset, tvb:len() - offset))
+                offset = wd.dissect_Point(tvb, pinfo, tree, offset, wd.site_point)
                 if not offset then
                     return nil
                 end
@@ -296,21 +298,21 @@ local function dissect_top(tvb, pinfo, tree, offset)
     end
     -- If: items
     do
-        local condition = wd_band(v_flags, 8)
+        local condition = wd_band(v.flags, 8)
         if condition ~= 0 then
             -- Field: items
             do
                 local count = 2
                 for i = 0, count - 1 do
                     local start = offset
-                    local tree = tree:add(f_items, tvb(offset, tvb:len() - offset))
+                    local tree = tree:add(wd.f_items, tvb(offset, tvb:len() - offset))
                     tree:append_text(" [" .. i .. "]")
                     -- Field: items.x
                     if not wd_fits(tvb, offset, 1) then
                         wd_truncated(tree, wd_ei_truncated, "items.x")
                         return nil
                     end
-                    tree:add(f_items__x, tvb(offset, 1))
+                    tree:add(wd.f_items__x, tvb(offset, 1))
                     offset = offset + 1
                     tree:set_len(offset - start)
                     if offset == start then
@@ -330,13 +332,13 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "never")
                 return nil
             end
-            tree:add(f_never, tvb(offset, 1))
+            tree:add(wd.f_never, tvb(offset, 1))
             offset = offset + 1
         end
     end
     -- If: tail
     do
-        local condition, fault = wd_evaluate(function() return wd_sub(wd_shr(wd_band(v_flags, 16), 4), 1) end)
+        local condition, fault = wd_evaluate(function() return wd_sub(wd_shr(wd_band(v.flags, 16), 4), 1) end)
         if not condition then
             wd_invalid(tree, wd_ei_invalid, fault, "tail")
             return nil
@@ -347,13 +349,13 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "tail")
                 return nil
             end
-            tree:add(f_tail, tvb(offset, 1))
+            tree:add(wd.f_tail, tvb(offset, 1))
             offset = offset + 1
         end
     end
     -- If: last
     do
-        local condition, fault = wd_evaluate(function() return wd_div(1, wd_sub(1, wd_shr(wd_band(v_flags, 32), 5))) end)
+        local condition, fault = wd_evaluate(function() return wd_div(1, wd_sub(1, wd_shr(wd_band(v.flags, 32), 5))) end)
         if not condition then
             wd_invalid(tree, wd_ei_invalid, fault, "last")
             return nil
@@ -364,7 +366,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
                 wd_truncated(tree, wd_ei_truncated, "last")
                 return nil
             end
-            tree:add(f_last, tvb(offset, 1))
+            tree:add(wd.f_last, tvb(offset, 1))
             offset = offset + 1
         end
     end
@@ -374,7 +376,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "CONDITIONALS"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "CONDITIONALS")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 

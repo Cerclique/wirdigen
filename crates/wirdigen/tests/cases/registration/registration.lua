@@ -81,13 +81,15 @@ local function wd_register_ports(proto, ports)
 end
 
 local wd_proto = Proto("registration", "REGISTRATION")
+-- The Dissector's own declarations
+local wd = {}
 
-local f_id = ProtoField.uint8("registration.id", "Id", base.DEC)
-local f_rest = ProtoField.bytes("registration.rest", "Rest", base.NONE)
+wd.f_id = ProtoField.uint8("registration.id", "Id", base.DEC)
+wd.f_rest = ProtoField.bytes("registration.rest", "Rest", base.NONE)
 
 wd_proto.fields = {
-    f_id,
-    f_rest,
+    wd.f_id,
+    wd.f_rest,
 }
 
 local wd_ei_truncated = wd_expert_truncated("registration")
@@ -95,13 +97,13 @@ local wd_ei_invalid = wd_expert_invalid("registration")
 wd_proto.experts = { wd_ei_truncated, wd_ei_invalid }
 
 -- Layout
-local function dissect_top(tvb, pinfo, tree, offset)
+function wd.dissect_top(tvb, pinfo, tree, offset)
     -- Field: id
     if not wd_fits(tvb, offset, 1) then
         wd_truncated(tree, wd_ei_truncated, "id")
         return nil
     end
-    tree:add(f_id, tvb(offset, 1))
+    tree:add(wd.f_id, tvb(offset, 1))
     offset = offset + 1
     -- Field: rest
     do
@@ -114,7 +116,7 @@ local function dissect_top(tvb, pinfo, tree, offset)
             wd_truncated(tree, wd_ei_truncated, "rest")
             return nil
         end
-        tree:add(f_rest, tvb(offset, len))
+        tree:add(wd.f_rest, tvb(offset, len))
         offset = offset + len
     end
     return offset
@@ -123,7 +125,7 @@ end
 function wd_proto.dissector(tvb, pinfo, tree)
     pinfo.cols.protocol = "REGISTRATION"
     local root = tree:add(wd_proto, tvb(0, tvb:len()), "REGISTRATION")
-    dissect_top(tvb, pinfo, root, 0)
+    wd.dissect_top(tvb, pinfo, root, 0)
     return tvb:len()
 end
 
