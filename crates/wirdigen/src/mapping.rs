@@ -520,9 +520,8 @@ pub(crate) fn check_integer(
             Values::Inline(table)
         }
         RawValues::Enum(name) => {
-            let names: Vec<String> = enums.names().into_iter().map(str::to_owned).collect();
             let Some(found) = enums.get_mut(&name.value) else {
-                diagnostics.push(unknown_enum(name, &names));
+                diagnostics.push(unknown_enum(name, &enums.names()));
                 return Err(Invalid);
             };
             for (entry, reported) in found.raw.entries.iter().zip(&mut found.unreachable_reported) {
@@ -617,11 +616,10 @@ fn has_errors(diagnostics: &[Diagnostic]) -> bool {
 }
 
 /// Why `values:` names no Enum, given the names of the Enums there are.
-fn unknown_enum(name: &Spanned<String>, names: &[String]) -> Diagnostic {
+fn unknown_enum(name: &Spanned<String>, candidates: &[&str]) -> Diagnostic {
     let unknown =
         Diagnostic::new(Name::UnknownEnum, name.span.clone(), format!("there is no Enum named `{}`", name.value));
-    let candidates: Vec<&str> = names.iter().map(String::as_str).collect();
-    let note = match closest(&name.value, &candidates) {
+    let note = match closest(&name.value, candidates) {
         Some(guess) => format!("did you mean `{guess}`?"),
         None if candidates.is_empty() => "declare it under the top-level `enums`".to_owned(),
         None => format!("the Enums are: {}", candidates.join(", ")),
