@@ -55,10 +55,11 @@ A Protocol Description is written in a subset of YAML 1.2. Fields are reused thr
   is read as a Field name, so it is [`unknown-field`](../diagnostics.md#unknown-field). Compare
   with the number instead.
 - **Framing's `length` reads only the header.** It reads top-level Fields, and their bitfield
-  sub-Fields, lying entirely in the first `header` bytes, and not `_offset` or `_remaining`.
-  Anything else is [`invalid-framing`](../diagnostics.md#invalid-framing). See
+  sub-Fields, at a fixed place entirely in the first `header` bytes, and not `_offset` or
+  `_remaining`. A Field under `if:`, after a Field of variable size, or inside a structure is
+  [`invalid-framing`](../diagnostics.md#invalid-framing) too. See
   [The header](framing.md#header).
-- **The Info template takes Field Paths only.** No Expressions or format specifiers in braces:
+- **The Info Template takes Field Paths only.** No Expressions or format specifiers in braces:
   those are [`invalid-info`](../diagnostics.md#invalid-info). See
   [Templates](info.md#templates). `info:` is top-level only: on a Type it is
   [`unknown-key`](../diagnostics.md#unknown-key).
@@ -71,8 +72,9 @@ A Protocol Description is written in a subset of YAML 1.2. Fields are reused thr
 - **A Lua error at load time does not fail tshark.** tshark prints it on stderr, reads the
   capture without the Dissector and exits 0. See
   [Troubleshooting](../installing.md#exit-status).
-- **Wireshark shows a tree at most 500 levels deep** (the `gui.max_tree_depth` preference). The
-  Field depth limit keeps a Dissector's own tree well below that.
+- **Wireshark shows a tree at most 500 levels deep** (the `gui.max_tree_depth` preference). No
+  description reaches it: the Field depth limit keeps a Dissector's own tree far below 500
+  levels, so the preference never needs raising for Wirdigen.
 
 ## Not in v1 {#later}
 
@@ -81,7 +83,8 @@ error, most often [`unknown-key`](../diagnostics.md#unknown-key),
 [`unknown-type`](../diagnostics.md#unknown-type) or
 [`expression-syntax`](../diagnostics.md#expression-syntax).
 
-- **Layout**: repeating until a condition (only [`count:` and `repeat: to_end`](arrays.md)),
+- **Layout**: repeating until a condition (only [`count:` and `repeat: to_end`](arrays.md);
+  `repeat: { until: … }` is [`invalid-repeat`](../diagnostics.md#invalid-repeat)),
   `align:`, a byte order chosen at runtime, computed Fields, and checksum verification.
 - **Framing**: messages ended by a delimiter rather than a [length](framing.md#header).
 - **Handoff**: choosing the next dissector from a Field's value or through a dissector table;
