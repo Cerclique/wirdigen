@@ -283,6 +283,7 @@ jobs:
         with:
           scopes: |
             diagnostics
+            deps
           requireScope: false
 
   package:
